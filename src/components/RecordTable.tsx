@@ -6,15 +6,19 @@ import {
   softDeleteRecord,
   emptyRecord,
   checkForDuplicates,
+  calculatePaymentStatus,
+  calculatePendingAmount,
   STATUS_OPTIONS,
   STAFF_USERS,
   staffLabel,
   type Bucket,
   type RegistryRecord,
   type RecordStatus,
+  type PaymentStatus,
 } from "@/lib/records";
 import { syncTaskFromRecord } from "@/lib/tasks";
 import { getSession } from "@/lib/auth";
+import { transformInput, getForceCapsSetting } from "@/lib/capitalize-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { DeleteRecordDialog } from "@/components/DeleteRecordDialog";
 import { DuplicateDetectionDialog } from "@/components/DuplicateDetectionDialog";
 import { useDuplicateDetection } from "@/hooks/useDuplicateDetection";
+import { WhatsAppQuickActions } from "@/components/WhatsAppQuickActions";
 
 interface Props {
   bucket: Bucket;
@@ -45,6 +50,9 @@ const COLS: { key: keyof RegistryRecord; label: string }[] = [
   { key: "fitness", label: "FITNESS" },
   { key: "tax", label: "TAX" },
   { key: "co", label: "C/O" },
+  { key: "serviceAmount", label: "SERVICE" },
+  { key: "amountReceived", label: "RECEIVED" },
+  { key: "paymentStatus", label: "PAYMENT" },
 ];
 
 function statusClass(status: RecordStatus) {
@@ -56,6 +64,14 @@ function statusClass(status: RecordStatus) {
   }
 }
 
+function paymentStatusClass(status?: PaymentStatus) {
+  switch (status) {
+    case "Paid": return "bg-green-500/15 text-green-700 border-green-500/30";
+    case "Partially Paid": return "bg-yellow-500/15 text-yellow-700 border-yellow-500/30";
+    default: return "bg-red-500/15 text-red-700 border-red-500/30";
+  }
+}
+
 export function RecordTable({ bucket, title, description }: Props) {
   const [records, setRecords] = useState<RegistryRecord[]>([]);
   const [query, setQuery] = useState("");
@@ -64,6 +80,8 @@ export function RecordTable({ bucket, title, description }: Props) {
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<RegistryRecord | null>(null);
+  const [forceCaps, setForceCaps] = useState(() => getForceCapsSetting());
+  
   const session = getSession();
   const isAdmin = session?.role === "admin";
   const username = session?.username ?? "system";
@@ -82,6 +100,15 @@ export function RecordTable({ bucket, title, description }: Props) {
     const unsub = subscribeToRecords(bucket, setRecords);
     return unsub;
   }, [bucket]);
+
+  // ── Listen for force caps setting changes ──────────────────────────────────
+  useEffect(() => {
+    const handleSettingChange = () => {
+      setForceCaps(getForceCapsSetting());
+    };
+    window.addEventListener("force-caps-changed", handleSettingChange);
+    return () => window.removeEventListener("force-caps-changed", handleSettingChange);
+  }, []);
 
   const filtered = useMemo(() => {
     if (!query) return records;
@@ -186,6 +213,13 @@ export function RecordTable({ bucket, title, description }: Props) {
                   <td className="px-3 py-3 whitespace-nowrap">{r.fitness || "—"}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{r.tax || "—"}</td>
                   <td className="px-3 py-3">{r.co || "—"}</td>
+                  <td className="px-3 py-3 font-mono text-xs">₹{(r.serviceAmount || 0).toLocaleString("en-IN")}</td>
+                  <td className="px-3 py-3 font-mono text-xs">₹{(r.amountReceived || 0).toLocaleString("en-IN")}</td>
+                  <td className="px-3 py-3">
+                    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs", paymentStatusClass(r.paymentStatus))}>
+                      {r.paymentStatus || "—"}
+                    </span>
+                  </td>
                   <td className="px-3 py-3 whitespace-nowrap text-xs">{staffLabel(r.assignee) || <span className="text-muted-foreground">Unassigned</span>}</td>
                   <td className="px-3 py-3 text-right">
                     <div className="inline-flex gap-1">
@@ -217,11 +251,11 @@ export function RecordTable({ bucket, title, description }: Props) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="SR NO"><Input type="number" value={editing.srNo} onChange={(e) => setEditing({ ...editing, srNo: Number(e.target.value) })} /></Field>
               <Field label="DATE"><Input type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} /></Field>
-              <Field label="MV NO"><Input value={editing.mvNo} onChange={(e) => setEditing({ ...editing, mvNo: e.target.value })} /></Field>
-              <Field label="APPLICATION"><Input value={editing.application} onChange={(e) => setEditing({ ...editing, application: e.target.value })} /></Field>
-              <Field label="WORK" full><Input value={editing.work} onChange={(e) => setEditing({ ...editing, work: e.target.value })} /></Field>
-              <Field label="NAME"><Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
-              <Field label="GROUP NAME"><Input value={editing.groupName || ""} onChange={(e) => setEditing({ ...editing, groupName: e.target.value })} placeholder="Customer group / company" /></Field>
+              <Field label="MV NO"><Input value={editing.mvNo} onChange={(e) => setEditing({ ...editing, mvNo: transformInput(e.target.value, forceCaps) })} /></Field>
+              <Field label="APPLICATION"><Input value={editing.application} onChange={(e) => setEditing({ ...editing, application: transformInput(e.target.value, forceCaps) })} /></Field>
+              <Field label="WORK" full><Input value={editing.work} onChange={(e) => setEditing({ ...editing, work: transformInput(e.target.value, forceCaps) })} /></Field>
+              <Field label="NAME"><Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: transformInput(e.target.value, forceCaps) })} /></Field>
+              <Field label="GROUP NAME"><Input value={editing.groupName || ""} onChange={(e) => setEditing({ ...editing, groupName: transformInput(e.target.value, forceCaps) })} placeholder="Customer group / company" /></Field>
               <Field label="STATUS">
                 <Select value={editing.status} onValueChange={(v) => setEditing({ ...editing, status: v as RecordStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -230,11 +264,84 @@ export function RecordTable({ bucket, title, description }: Props) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="MO"><Input value={editing.mo} onChange={(e) => setEditing({ ...editing, mo: e.target.value })} /></Field>
+              <Field label="MO"><Input value={editing.mo} onChange={(e) => setEditing({ ...editing, mo: transformInput(e.target.value, forceCaps) })} /></Field>
               <Field label="INSURANCE"><Input value={editing.insurance} onChange={(e) => setEditing({ ...editing, insurance: e.target.value })} placeholder="Expiry / status" /></Field>
               <Field label="FITNESS"><Input value={editing.fitness} onChange={(e) => setEditing({ ...editing, fitness: e.target.value })} placeholder="Expiry / status" /></Field>
               <Field label="TAX"><Input value={editing.tax} onChange={(e) => setEditing({ ...editing, tax: e.target.value })} placeholder="Paid / Due" /></Field>
-              <Field label="C/O"><Input value={editing.co} onChange={(e) => setEditing({ ...editing, co: e.target.value })} /></Field>
+              <Field label="C/O"><Input value={editing.co} onChange={(e) => setEditing({ ...editing, co: transformInput(e.target.value, forceCaps) })} /></Field>
+              
+              {/* Accounting Fields */}
+              <div className="sm:col-span-2 border-t pt-4 mt-2">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">Accounting</h3>
+              </div>
+              <Field label="Total Service Amount">
+                <Input
+                  type="number"
+                  value={editing.serviceAmount || ""}
+                  onChange={(e) => {
+                    const amount = Number(e.target.value) || 0;
+                    const paymentStatus = calculatePaymentStatus(amount, editing.amountReceived);
+                    setEditing({
+                      ...editing,
+                      serviceAmount: amount,
+                      paymentStatus,
+                    });
+                  }}
+                  placeholder="0"
+                  min="0"
+                />
+              </Field>
+              <Field label="Amount Received">
+                <Input
+                  type="number"
+                  value={editing.amountReceived || ""}
+                  onChange={(e) => {
+                    const amount = Number(e.target.value) || 0;
+                    const paymentStatus = calculatePaymentStatus(editing.serviceAmount, amount);
+                    setEditing({
+                      ...editing,
+                      amountReceived: amount,
+                      paymentStatus,
+                    });
+                  }}
+                  placeholder="0"
+                  min="0"
+                />
+              </Field>
+              <Field label="Payment Date">
+                <Input
+                  type="date"
+                  value={editing.paymentDate || ""}
+                  onChange={(e) => setEditing({ ...editing, paymentDate: e.target.value })}
+                />
+              </Field>
+              <Field label="Pending Amount" full>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    value={calculatePendingAmount(editing.serviceAmount, editing.amountReceived)}
+                    disabled
+                    className="bg-muted"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    (Auto-calculated)
+                  </span>
+                </div>
+              </Field>
+              <Field label="Payment Status" full>
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={editing.paymentStatus || "Unpaid"}
+                    disabled
+                    className="bg-muted"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    (Auto-calculated)
+                  </span>
+                </div>
+              </Field>
+
               <Field label={isAdmin ? "ASSIGN TO STAFF" : "ASSIGNED TO"} full>
                 <Select
                   value={editing.assignee || "__none"}
@@ -249,6 +356,11 @@ export function RecordTable({ bucket, title, description }: Props) {
                 </Select>
                 {isAdmin && <p className="text-xs text-muted-foreground">A task is auto-created for the assignee and stays in sync with the record status.</p>}
               </Field>
+
+              {/* WhatsApp Quick Actions */}
+              <div className="sm:col-span-2 border-t pt-4 mt-2">
+                <WhatsAppQuickActions mobile={editing.mo} name={editing.name} />
+              </div>
             </div>
           )}
           <DialogFooter>

@@ -22,6 +22,8 @@ export type RecordStatus = "Pending" | "In Progress" | "Completed" | "On Hold";
 
 export type DeleteReason = "Duplicate Entry" | "Wrong Customer" | "Testing Data" | "Other";
 
+export type PaymentStatus = "Paid" | "Partially Paid" | "Unpaid";
+
 export interface RegistryRecord {
   id: string;
   srNo: number;
@@ -45,6 +47,11 @@ export interface RegistryRecord {
   deletedAt?: string;
   deletedBy?: string;
   deleteReason?: DeleteReason;
+  // Accounting fields
+  serviceAmount?: number; // Total service charge
+  amountReceived?: number; // Amount paid
+  paymentDate?: string; // Date of last payment
+  paymentStatus?: PaymentStatus; // Calculated: Paid | Partially Paid | Unpaid
 }
 
 export type Bucket = "clients" | "leads" | "customers";
@@ -59,6 +66,29 @@ export const STAFF_USERS: { username: string; name: string }[] = [
 
 export const staffLabel = (username?: string) =>
   STAFF_USERS.find((s) => s.username === username)?.name ?? "";
+
+// ─── Accounting helpers ────────────────────────────────────────────────────────
+
+/** Calculate payment status based on amounts. */
+export function calculatePaymentStatus(
+  serviceAmount?: number,
+  amountReceived?: number,
+): PaymentStatus {
+  if (!serviceAmount || serviceAmount === 0) return "Unpaid";
+  if (!amountReceived || amountReceived === 0) return "Unpaid";
+  if (amountReceived >= serviceAmount) return "Paid";
+  return "Partially Paid";
+}
+
+/** Calculate pending amount (serviceAmount - amountReceived). */
+export function calculatePendingAmount(
+  serviceAmount?: number,
+  amountReceived?: number,
+): number {
+  if (!serviceAmount) return 0;
+  if (!amountReceived) return serviceAmount;
+  return Math.max(0, serviceAmount - amountReceived);
+}
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
 
@@ -95,7 +125,17 @@ export async function saveRecord(
     : null;
 
   // Track field changes for important fields
-  const tracked = ["status", "assignee", "priority", "work", "application"];
+  const tracked = [
+    "status",
+    "assignee",
+    "priority",
+    "work",
+    "application",
+    "serviceAmount",
+    "amountReceived",
+    "paymentDate",
+    "paymentStatus",
+  ];
   const activities: ActivityLog[] = [];
 
   if (existing && actor) {
@@ -217,6 +257,11 @@ export function emptyRecord(srNo: number): RegistryRecord {
     tax: "",
     co: "",
     assignee: "",
+    // Accounting defaults
+    serviceAmount: 0,
+    amountReceived: 0,
+    paymentDate: "",
+    paymentStatus: "Unpaid",
   };
 }
 
