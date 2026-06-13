@@ -61,7 +61,7 @@ function DashboardLayout() {
     return () => window.removeEventListener("auth-change", handler);
   }, []);
 
-  const handleLogout = () => { logout(); navigate({ to: "/" }); };
+  const handleLogout = async () => { await logout(); navigate({ to: "/" }); };
 
   const initials = (user?.name ?? "U").split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 

@@ -7,6 +7,8 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { initAuth, type StaffUser } from "@/lib/auth";
 
 import appCss from "../styles.css?url";
 
@@ -110,10 +112,27 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    const unsub = initAuth(() => setAuthReady(true));
+    return unsub;
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      {authReady ? (
+        <Outlet />
+      ) : (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-3">
+            <div className="size-10 rounded-lg bg-primary grid place-items-center font-bold text-primary-foreground animate-pulse">
+              R
+            </div>
+            <p className="text-sm text-muted-foreground">Starting up…</p>
+          </div>
+        </div>
+      )}
     </QueryClientProvider>
   );
 }

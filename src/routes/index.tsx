@@ -32,10 +32,15 @@ function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      login(username, password);
+      await login(username, password);
       navigate({ to: "/dashboard" });
     } catch (err) {
-      setError((err as Error).message);
+      const code = (err as any)?.code ?? "";
+      if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+        setError("Invalid username or password.");
+      } else {
+        setError((err as Error).message);
+      }
     } finally {
       setLoading(false);
     }

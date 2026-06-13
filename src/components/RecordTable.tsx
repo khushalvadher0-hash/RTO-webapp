@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import {
-  loadRecords,
-  saveRecords,
+  subscribeToRecords,
+  saveRecord,
+  softDeleteRecord,
   emptyRecord,
+  checkForDuplicates,
   STATUS_OPTIONS,
   STAFF_USERS,
   staffLabel,
@@ -19,6 +21,9 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { DeleteRecordDialog } from "@/components/DeleteRecordDialog";
+import { DuplicateDetectionDialog } from "@/components/DuplicateDetectionDialog";
+import { useDuplicateDetection } from "@/hooks/useDuplicateDetection";
 
 interface Props {
   bucket: Bucket;
@@ -33,6 +38,7 @@ const COLS: { key: keyof RegistryRecord; label: string }[] = [
   { key: "application", label: "APPLICATION" },
   { key: "work", label: "WORK" },
   { key: "name", label: "NAME" },
+  { key: "groupName", label: "GROUP" },
   { key: "status", label: "STATUS" },
   { key: "mo", label: "MO" },
   { key: "insurance", label: "INSURANCE" },
@@ -55,28 +61,37 @@ export function RecordTable({ bucket, title, description }: Props) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<RegistryRecord | null>(null);
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<RegistryRecord | null>(null);
   const session = getSession();
   const isAdmin = session?.role === "admin";
+  const username = session?.username ?? "system";
 
+  const {
+    duplicateDialogOpen,
+    duplicates,
+    loading: dupLoading,
+    checkAndSave,
+    handleContinueWithDuplicate,
+    handleCancelDuplicate,
+  } = useDuplicateDetection({ bucket, actor: username });
+
+  // ── Firestore real-time subscription ────────────────────────────────────────
   useEffect(() => {
-    setRecords(loadRecords(bucket));
-    const handler = () => setRecords(loadRecords(bucket));
-    window.addEventListener("records-change", handler);
-    return () => window.removeEventListener("records-change", handler);
+    const unsub = subscribeToRecords(bucket, setRecords);
+    return unsub;
   }, [bucket]);
 
   const filtered = useMemo(() => {
     if (!query) return records;
     const q = query.toLowerCase();
     return records.filter((r) =>
-      [r.mvNo, r.application, r.work, r.name, r.mo, r.co].some((v) => v.toLowerCase().includes(q)),
+      [r.mvNo, r.application, r.work, r.name, r.mo, r.co, r.groupName].some((v) =>
+        (v ?? "").toLowerCase().includes(q),
+      ),
     );
   }, [records, query]);
-
-  const persist = (next: RegistryRecord[]) => {
-    setRecords(next);
-    saveRecords(bucket, next);
-  };
 
   const openNew = () => {
     const nextSr = records.length ? Math.max(...records.map((r) => r.srNo)) + 1 : 1;
@@ -89,17 +104,35 @@ export function RecordTable({ bucket, title, description }: Props) {
     setOpen(true);
   };
 
-  const remove = (id: string) => {
-    if (!confirm("Delete this record?")) return;
-    persist(records.filter((r) => r.id !== id));
+  const initiateDelete = (r: RegistryRecord) => {
+    setRecordToDelete(r);
+    setDeleteOpen(true);
   };
 
-  const save = () => {
+  const handleDeleteSuccess = () => {
+    setDeleteOpen(false);
+    setRecordToDelete(null);
+  };
+
+  const save = async () => {
     if (!editing) return;
-    const exists = records.some((r) => r.id === editing.id);
-    persist(exists ? records.map((r) => (r.id === editing.id ? editing : r)) : [...records, editing]);
-    syncTaskFromRecord(bucket, editing, session?.username ?? "system");
-    setOpen(false);
+    setSaving(true);
+    try {
+      // Check for duplicates before saving
+      await checkAndSave(
+        editing.mvNo,
+        editing.work,
+        async () => {
+          await saveRecord(bucket, editing, username);
+          await syncTaskFromRecord(bucket, editing, username);
+          setOpen(false);
+        },
+      );
+    } catch (error) {
+      console.error("Error saving record:", error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -142,6 +175,7 @@ export function RecordTable({ bucket, title, description }: Props) {
                   <td className="px-3 py-3 whitespace-nowrap">{r.application || "—"}</td>
                   <td className="px-3 py-3">{r.work || "—"}</td>
                   <td className="px-3 py-3 font-medium">{r.name || "—"}</td>
+                  <td className="px-3 py-3 text-xs">{r.groupName || "—"}</td>
                   <td className="px-3 py-3">
                     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs", statusClass(r.status))}>
                       {r.status}
@@ -156,7 +190,15 @@ export function RecordTable({ bucket, title, description }: Props) {
                   <td className="px-3 py-3 text-right">
                     <div className="inline-flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(r)}><Pencil className="size-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => remove(r.id)}><Trash2 className="size-4 text-destructive" /></Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => initiateDelete(r)}
+                        disabled={!isAdmin}
+                        title={!isAdmin ? "Only administrators can delete records" : "Delete record"}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -179,6 +221,7 @@ export function RecordTable({ bucket, title, description }: Props) {
               <Field label="APPLICATION"><Input value={editing.application} onChange={(e) => setEditing({ ...editing, application: e.target.value })} /></Field>
               <Field label="WORK" full><Input value={editing.work} onChange={(e) => setEditing({ ...editing, work: e.target.value })} /></Field>
               <Field label="NAME"><Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
+              <Field label="GROUP NAME"><Input value={editing.groupName || ""} onChange={(e) => setEditing({ ...editing, groupName: e.target.value })} placeholder="Customer group / company" /></Field>
               <Field label="STATUS">
                 <Select value={editing.status} onValueChange={(v) => setEditing({ ...editing, status: v as RecordStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -209,11 +252,31 @@ export function RecordTable({ bucket, title, description }: Props) {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save}>Save</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DuplicateDetectionDialog
+        open={duplicateDialogOpen}
+        onOpenChange={(open) => !open && handleCancelDuplicate()}
+        duplicates={duplicates}
+        onContinue={handleContinueWithDuplicate}
+        onCancel={handleCancelDuplicate}
+        loading={dupLoading}
+      />
+
+      <DeleteRecordDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        recordId={recordToDelete?.id || ""}
+        recordName={recordToDelete?.name || ""}
+        bucket={bucket}
+        userRole={isAdmin ? "admin" : "staff"}
+        username={username}
+        onSuccess={handleDeleteSuccess}
+      />
     </div>
   );
 }

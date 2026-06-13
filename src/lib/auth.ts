@@ -1,55 +1,131 @@
-// Mock staff auth backed by localStorage. Replace with real auth when ready.
+// Auth — Firebase Auth + Firestore user profiles.
+// Maintains the same public API as the old localStorage auth so routes
+// don't need major changes.
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+} from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
 import { STAFF_USERS } from "./records";
 
-const KEY = "registry-staff-session";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-export type StaffUser = { username: string; name: string; role: "admin" | "staff" };
-
-type Entry = { password: string; user: StaffUser };
-
-// Admin account
-const ACCOUNTS: Record<string, Entry> = {
-  admin: { password: "admin123", user: { username: "admin", name: "Office Admin", role: "admin" } },
+export type StaffUser = {
+  uid: string;
+  username: string;
+  name: string;
+  role: "admin" | "staff";
 };
 
-// Default passwords for each staff member (username -> password)
-const STAFF_PASSWORDS: Record<string, string> = {
-  staff: "staff123",
-  priya: "priya123",
-  rahul: "rahul123",
-};
+// ─── In-memory session cache ──────────────────────────────────────────────────
+// Populated by initAuth() so getSession() stays synchronous (needed by
+// beforeLoad guards in routes).
 
-// Auto-register every staff user from records.ts so admin-assigned tasks
-// always have a matching login.
-for (const s of STAFF_USERS) {
-  ACCOUNTS[s.username] = {
-    password: STAFF_PASSWORDS[s.username] ?? `${s.username}123`,
-    user: { username: s.username, name: s.name, role: "staff" },
-  };
-}
+let _session: StaffUser | null = null;
+let _initialized = false;
 
-export const STAFF_CREDENTIALS = STAFF_USERS.map((s) => ({
-  username: s.username,
-  name: s.name,
-  password: ACCOUNTS[s.username].password,
+const EMAIL_DOMAIN = "staff-focus-hub.app";
+const toEmail = (username: string) => `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
+
+// ─── Staff account definitions ────────────────────────────────────────────────
+
+const ALL_ACCOUNTS = [
+  { username: "admin", password: "admin123", name: "Office Admin", role: "admin" as const },
+  ...STAFF_USERS.map((s) => ({
+    username: s.username,
+    password: `${s.username}123`,
+    name: s.name,
+    role: "staff" as const,
+  })),
+];
+
+export const STAFF_CREDENTIALS = ALL_ACCOUNTS.map((a) => ({
+  username: a.username,
+  name: a.name,
+  password: a.password,
 }));
 
+// ─── First-run provisioning ───────────────────────────────────────────────────
+
+async function provisionUsers(): Promise<void> {
+  // Check whether we've already provisioned
+  const metaRef = doc(db, "_meta", "provisioned");
+  const metaSnap = await getDoc(metaRef);
+  if (metaSnap.exists()) return;
+
+  // Create Firebase Auth accounts and Firestore profiles
+  for (const acct of ALL_ACCOUNTS) {
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, toEmail(acct.username), acct.password);
+      await setDoc(doc(db, "users", cred.user.uid), {
+        username: acct.username,
+        name: acct.name,
+        role: acct.role,
+      });
+    } catch {
+      // auth/email-already-in-use → already provisioned, skip
+    }
+  }
+
+  // Seed initial Firestore records
+  const { seedInitialData } = await import("./seed");
+  await seedInitialData();
+
+  // Mark as provisioned
+  await setDoc(metaRef, { provisionedAt: new Date().toISOString() });
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Bootstrap Firebase auth state.  Call once in the root component.
+ * The callback fires every time the signed-in user changes.
+ * Returns an unsubscribe function for cleanup.
+ */
+export function initAuth(onChange: (user: StaffUser | null) => void): () => void {
+  // Kick off provisioning in the background (no-op if already done)
+  provisionUsers().catch(console.error);
+
+  return onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+      _session = snap.exists()
+        ? ({ uid: firebaseUser.uid, ...snap.data() } as StaffUser)
+        : null;
+    } else {
+      _session = null;
+    }
+    _initialized = true;
+    onChange(_session);
+  });
+}
+
+/** Synchronous getter — populated after initAuth fires. */
 export function getSession(): StaffUser | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(KEY);
-  if (!raw) return null;
-  try { return JSON.parse(raw) as StaffUser; } catch { return null; }
+  return _session;
 }
 
-export function login(username: string, password: string): StaffUser {
-  const entry = ACCOUNTS[username.trim().toLowerCase()];
-  if (!entry || entry.password !== password) throw new Error("Invalid credentials");
-  localStorage.setItem(KEY, JSON.stringify(entry.user));
+/** True once the first onAuthStateChanged callback has fired. */
+export function isAuthReady(): boolean {
+  return _initialized;
+}
+
+/** Sign in by username + password (maps to Firebase email internally). */
+export async function login(username: string, password: string): Promise<StaffUser> {
+  const cred = await signInWithEmailAndPassword(auth, toEmail(username), password);
+  const snap = await getDoc(doc(db, "users", cred.user.uid));
+  if (!snap.exists()) throw new Error("User profile not found — contact admin.");
+  _session = { uid: cred.user.uid, ...snap.data() } as StaffUser;
   window.dispatchEvent(new Event("auth-change"));
-  return entry.user;
+  return _session;
 }
 
-export function logout() {
-  localStorage.removeItem(KEY);
+/** Sign out the current user. */
+export async function logout(): Promise<void> {
+  await signOut(auth);
+  _session = null;
   window.dispatchEvent(new Event("auth-change"));
 }

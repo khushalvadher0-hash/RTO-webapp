@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { loadRecords, type RegistryRecord } from "@/lib/records";
+import { subscribeToRecords, type RegistryRecord } from "@/lib/records";
 import { ArrowRight, Users, UserPlus, CheckCircle2, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/")({
@@ -12,8 +12,9 @@ function Overview() {
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
 
   useEffect(() => {
-    setClients(loadRecords("clients"));
-    setLeads(loadRecords("leads"));
+    const u1 = subscribeToRecords("clients", setClients);
+    const u2 = subscribeToRecords("leads", setLeads);
+    return () => { u1(); u2(); };
   }, []);
 
   const completed = clients.filter((c) => c.status === "Completed").length;

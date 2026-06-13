@@ -6,6 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -14,16 +16,21 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import {
-  Trash2, Plus, Link2, Search, Pencil, CheckCircle2, Eye, Paperclip, Send, Calendar as CalIcon, Clock, AlertTriangle,
+  Trash2, Plus, Link2, Search, Pencil, CheckCircle2, Eye, Paperclip, Send,
+  Calendar as CalIcon, Clock, AlertTriangle, Loader2, ExternalLink, Users,
 } from "lucide-react";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebase";
 import { getSession } from "@/lib/auth";
-import { STAFF_USERS, staffLabel, loadRecords, type Bucket, type RegistryRecord } from "@/lib/records";
+import { STAFF_USERS, staffLabel, subscribeToRecords, type Bucket, type RegistryRecord } from "@/lib/records";
 import {
-  loadTasks, createManualTask, setTaskDone, removeTask, updateTask, addComment, addAttachment,
+  subscribeToTasks, createManualTask, setTaskDone, softDeleteTask, updateTask,
+  addComment, addAttachment, toggleSubtask, addSubtask, reassignTask,
   PRIORITY_OPTIONS, TASK_STATUS_OPTIONS,
-  type Task, type TaskStatus, type TaskPriority, type AssociationType,
+  type Task, type TaskStatus, type TaskPriority, type AssociationType, type TaskAttachment,
 } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
+import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
 
 export const Route = createFileRoute("/dashboard/tasks")({ component: TasksPage });
 
@@ -39,7 +46,8 @@ const priorityBadgeClass = (p: TaskPriority) => ({
 }[p]);
 
 const statusBadgeClass = (s: TaskStatus) => ({
-  Pending: "bg-amber-100 text-amber-700 border-amber-200",
+  Assigned: "bg-orange-100 text-orange-700 border-orange-200",
+  Read: "bg-cyan-100 text-cyan-700 border-cyan-200",
   "In Progress": "bg-indigo-100 text-indigo-700 border-indigo-200",
   Completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
   "On Hold": "bg-zinc-100 text-zinc-700 border-zinc-200",
@@ -47,8 +55,7 @@ const statusBadgeClass = (s: TaskStatus) => ({
 
 function formatDate(iso?: string) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function isOverdue(t: Task) {
@@ -56,47 +63,58 @@ function isOverdue(t: Task) {
 }
 
 function TasksPage() {
-  const [session, setSession] = useState<ReturnType<typeof getSession>>(null);
+  const [session] = useState(() => getSession());
   const [tasks, setTasks] = useState<Task[]>([]);
   const [clients, setClients] = useState<RegistryRecord[]>([]);
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
 
-  // filters
+  // view and filters
+  const [viewTab, setViewTab] = useState<"my" | "all">("my");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [associationFilter, setAssociationFilter] = useState<string>("all");
-  const [dueFilter, setDueFilter] = useState<string>("all"); // all|overdue|today|week
+  const [dueFilter, setDueFilter] = useState<string>("all");
   const [sort, setSort] = useState<SortMode>("latest");
 
   // dialogs
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   useEffect(() => {
-    setSession(getSession());
-    const refresh = () => {
-      setTasks(loadTasks());
-      setClients(loadRecords("clients"));
-      setLeads(loadRecords("leads"));
-    };
-    refresh();
-    window.addEventListener("tasks-change", refresh);
-    window.addEventListener("records-change", refresh);
-    return () => {
-      window.removeEventListener("tasks-change", refresh);
-      window.removeEventListener("records-change", refresh);
-    };
+    const u1 = subscribeToTasks(setTasks);
+    const u2 = subscribeToRecords("clients", setClients);
+    const u3 = subscribeToRecords("leads", setLeads);
+    return () => { u1(); u2(); u3(); };
   }, []);
 
   const isAdmin = session?.role === "admin";
+  const canSeeAllTasks = isAdmin;
   const detailsTask = tasks.find((t) => t.id === detailsId) ?? null;
 
+  // Separate task lists for tab counting
+  const myTasks = useMemo(() => {
+    if (!session) return [];
+    return tasks.filter((t) => t.assignee === session.username);
+  }, [tasks, session]);
+
+  const allTasks = tasks;
+
+  // Apply filters based on view tab
+  const baseList = useMemo(() => {
+    if (viewTab === "my") return myTasks;
+    if (viewTab === "all" && canSeeAllTasks) return allTasks;
+    return [];
+  }, [viewTab, myTasks, allTasks, canSeeAllTasks]);
+
+  // Apply all filters to base list
   const visible = useMemo(() => {
     if (!session) return [];
-    let list = isAdmin ? tasks : tasks.filter((t) => t.assignee === session.username);
+    let list = baseList;
 
     if (query.trim()) {
       const q = query.toLowerCase();
@@ -137,14 +155,16 @@ function TasksPage() {
       return 0;
     });
     return sorted;
-  }, [tasks, isAdmin, session, query, statusFilter, priorityFilter, assigneeFilter, associationFilter, dueFilter, sort]);
+  }, [baseList, session, query, statusFilter, priorityFilter, assigneeFilter, associationFilter, dueFilter, sort]);
 
   const stats = useMemo(() => ({
-    total: visible.length,
+    my: myTasks.length,
+    all: allTasks.length,
+    visible: visible.length,
     pending: visible.filter((t) => !t.done).length,
     overdue: visible.filter(isOverdue).length,
     completed: visible.filter((t) => t.done).length,
-  }), [visible]);
+  }), [visible, myTasks, allTasks]);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (t: Task) => { setEditing(t); setFormOpen(true); };
@@ -156,8 +176,7 @@ function TasksPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Tasks</h2>
           <p className="text-sm text-muted-foreground">
-            {stats.total} total • {stats.pending} pending • {stats.overdue} overdue • {stats.completed} done
-            {isAdmin ? " • Admin view" : " • Your tasks"}
+            {stats.visible} shown • {stats.pending} pending • {stats.overdue} overdue • {stats.completed} done
           </p>
         </div>
         {isAdmin && (
@@ -165,84 +184,177 @@ function TasksPage() {
         )}
       </div>
 
-      {/* Search + filters */}
-      <div className="rounded-xl border bg-card p-3 space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Search tasks by title, description, assignee…"
-            value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All status</SelectItem>
-              {TASK_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All priority</SelectItem>
-              {PRIORITY_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={assigneeFilter} onValueChange={setAssigneeFilter} disabled={!isAdmin}>
-            <SelectTrigger><SelectValue placeholder="Assignee" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All staff</SelectItem>
-              {STAFF_USERS.map((s) => <SelectItem key={s.username} value={s.username}>{s.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={associationFilter} onValueChange={setAssociationFilter}>
-            <SelectTrigger><SelectValue placeholder="Linked to" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All links</SelectItem>
-              <SelectItem value="client">Client</SelectItem>
-              <SelectItem value="lead">Lead</SelectItem>
-              <SelectItem value="none">Standalone</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={dueFilter} onValueChange={setDueFilter}>
-            <SelectTrigger><SelectValue placeholder="Due date" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Any due date</SelectItem>
-              <SelectItem value="overdue">Overdue</SelectItem>
-              <SelectItem value="today">Due today</SelectItem>
-              <SelectItem value="week">Due this week</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-            <SelectTrigger><SelectValue placeholder="Sort" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest">Latest first</SelectItem>
-              <SelectItem value="oldest">Oldest first</SelectItem>
-              <SelectItem value="priority">Priority (high → low)</SelectItem>
-              <SelectItem value="due">Due date (soonest)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      {/* Tab Navigation */}
+      <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as "my" | "all")}>
+        <TabsList className="grid w-full max-w-xs grid-cols-2">
+          <TabsTrigger value="my">My Tasks ({stats.my})</TabsTrigger>
+          <TabsTrigger value="all" disabled={!canSeeAllTasks}>
+            All Tasks {canSeeAllTasks && `(${stats.all})`}
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Task list */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {visible.length === 0 && (
-          <div className="col-span-full rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
-            No tasks match your filters.
+        <TabsContent value="my" className="space-y-3">
+          {/* Search + filters */}
+          <div className="rounded-xl border bg-card p-3 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input className="pl-9" placeholder="Search tasks by title, description, assignee…"
+                value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  {TASK_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All priority</SelectItem>
+                  {PRIORITY_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={assigneeFilter} onValueChange={setAssigneeFilter} disabled={!isAdmin}>
+                <SelectTrigger><SelectValue placeholder="Assignee" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All staff</SelectItem>
+                  {STAFF_USERS.map((s) => <SelectItem key={s.username} value={s.username}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={associationFilter} onValueChange={setAssociationFilter}>
+                <SelectTrigger><SelectValue placeholder="Linked to" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All links</SelectItem>
+                  <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="none">Standalone</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={dueFilter} onValueChange={setDueFilter}>
+                <SelectTrigger><SelectValue placeholder="Due date" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any due date</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                  <SelectItem value="today">Due today</SelectItem>
+                  <SelectItem value="week">Due this week</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+                <SelectTrigger><SelectValue placeholder="Sort" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="latest">Latest first</SelectItem>
+                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="priority">Priority (high → low)</SelectItem>
+                  <SelectItem value="due">Due date (soonest)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        )}
-        {visible.map((t) => (
-          <TaskCard
-            key={t.id}
-            task={t}
-            isAdmin={!!isAdmin}
-            onView={() => setDetailsId(t.id)}
-            onEdit={() => openEdit(t)}
-            onDelete={() => { if (confirm("Delete this task?")) removeTask(t.id); }}
-            onToggleDone={(v) => setTaskDone(t.id, v, session?.username ?? "system")}
-          />
-        ))}
-      </div>
+
+          {/* Task list */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {visible.length === 0 && (
+              <div className="col-span-full rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
+                No tasks match your filters.
+              </div>
+            )}
+            {visible.map((t) => (
+              <TaskCard
+                key={t.id}
+                task={t}
+                isAdmin={!!isAdmin}
+                onView={() => setDetailsId(t.id)}
+                onEdit={() => openEdit(t)}
+                onDelete={() => { if (confirm("Delete this task?")) removeTask(t.id); }}
+                onToggleDone={(v) => setTaskDone(t.id, v, session?.username ?? "system")}
+              />
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="all" className="space-y-3">
+          {/* Search + filters */}
+          <div className="rounded-xl border bg-card p-3 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input className="pl-9" placeholder="Search tasks by title, description, assignee…"
+                value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  {TASK_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All priority</SelectItem>
+                  {PRIORITY_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={assigneeFilter} onValueChange={setAssigneeFilter} disabled={!isAdmin}>
+                <SelectTrigger><SelectValue placeholder="Assignee" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All staff</SelectItem>
+                  {STAFF_USERS.map((s) => <SelectItem key={s.username} value={s.username}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={associationFilter} onValueChange={setAssociationFilter}>
+                <SelectTrigger><SelectValue placeholder="Linked to" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All links</SelectItem>
+                  <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="none">Standalone</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={dueFilter} onValueChange={setDueFilter}>
+                <SelectTrigger><SelectValue placeholder="Due date" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any due date</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                  <SelectItem value="today">Due today</SelectItem>
+                  <SelectItem value="week">Due this week</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+                <SelectTrigger><SelectValue placeholder="Sort" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="latest">Latest first</SelectItem>
+                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="priority">Priority (high → low)</SelectItem>
+                  <SelectItem value="due">Due date (soonest)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Task list */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {visible.length === 0 && (
+              <div className="col-span-full rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
+                No tasks match your filters.
+              </div>
+            )}
+            {visible.map((t) => (
+              <TaskCard
+                key={t.id}
+                task={t}
+                isAdmin={!!isAdmin}
+                onView={() => setDetailsId(t.id)}
+                onEdit={() => openEdit(t)}
+                onDelete={() => { if (confirm("Delete this task?")) removeTask(t.id); }}
+                onToggleDone={(v) => setTaskDone(t.id, v, session?.username ?? "system")}
+              />
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <TaskFormDialog
         open={formOpen}
@@ -275,6 +387,7 @@ function TaskCard({ task, isAdmin, onView, onEdit, onDelete, onToggleDone }: {
   onView: () => void; onEdit: () => void; onDelete: () => void; onToggleDone: (v: boolean) => void;
 }) {
   const overdue = isOverdue(task);
+  const hasSubtasks = (task.subtasks ?? []).length > 0;
   return (
     <div className={cn("rounded-xl border bg-card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow",
       overdue && "border-red-300")}>
@@ -307,15 +420,30 @@ function TaskCard({ task, isAdmin, onView, onEdit, onDelete, onToggleDone }: {
         <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
       )}
 
-      <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
-        <div>👤 {staffLabel(task.assignee) || task.assignee}</div>
-        <div className="flex items-center gap-1"><CalIcon className="size-3" />{task.dueDate ? formatDate(task.dueDate) : "No due date"}</div>
-        <div className="col-span-2 flex items-center gap-1 text-[11px] opacity-70">
-          <Clock className="size-3" />Created {new Date(task.createdAt).toLocaleDateString()}
+      {hasSubtasks && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Progress</span>
+            <span className="font-semibold text-foreground">{task.progress ?? 0}%</span>
+          </div>
+          <Progress value={task.progress ?? 0} className="h-1.5" />
+        </div>
+      )}
+
+      <div className="text-xs text-muted-foreground space-y-1.5 py-2 border-t border-b">
+        <div className="flex items-center gap-2 font-medium text-foreground">
+          <span className="text-lg">👤</span>
+          {staffLabel(task.assignee) || task.assignee}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-1"><CalIcon className="size-3" />{task.dueDate ? formatDate(task.dueDate) : "No due date"}</div>
+          <div className="flex items-center gap-1 text-[11px] opacity-70">
+            <Clock className="size-3" />Created {new Date(task.createdAt).toLocaleDateString()}
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-1 pt-1 border-t">
+      <div className="flex items-center justify-end gap-1">
         <Button variant="ghost" size="sm" onClick={onView}><Eye className="size-4 mr-1" />View</Button>
         {!task.done && (
           <Button variant="ghost" size="sm" onClick={() => onToggleDone(true)}>
@@ -343,9 +471,10 @@ function TaskFormDialog({ open, onClose, editing, clients, leads, actor, isAdmin
   const [associationType, setAssociationType] = useState<AssociationType>("none");
   const [recordId, setRecordId] = useState<string>("");
   const [recordSearch, setRecordSearch] = useState("");
-  const [dueDate, setDueDate] = useState<string>(""); // yyyy-mm-dd
-  const [dueTime, setDueTime] = useState<string>(""); // HH:mm
+  const [dueDate, setDueDate] = useState<string>("");
+  const [dueTime, setDueTime] = useState<string>("");
   const [reminderMinutes, setReminderMinutes] = useState<string>("0");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -382,27 +511,32 @@ function TaskFormDialog({ open, onClose, editing, clients, leads, actor, isAdmin
       r.work.toLowerCase().includes(q)).slice(0, 30);
   }, [associationType, clients, leads, recordSearch]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!title.trim() || !assignee) return;
-    const dueIso = dueDate ? new Date(`${dueDate}T${dueTime || "09:00"}:00`).toISOString() : undefined;
-    const bucket: Bucket | undefined = associationType === "client" ? "clients" : associationType === "lead" ? "leads" : undefined;
-    const rec = associationType === "none" ? undefined : recordId || undefined;
+    setSaving(true);
+    try {
+      const dueIso = dueDate ? new Date(`${dueDate}T${dueTime || "09:00"}:00`).toISOString() : undefined;
+      const bucket: Bucket | undefined = associationType === "client" ? "clients" : associationType === "lead" ? "leads" : undefined;
+      const rec = associationType === "none" ? undefined : recordId || undefined;
 
-    if (editing) {
-      updateTask(editing.id, {
-        title: title.trim(), description, assignee, priority, status,
-        done: status === "Completed",
-        dueDate: dueIso, reminderMinutes: Number(reminderMinutes) || 0,
-        associationType, bucket, recordId: rec,
-      }, actor, "Task edited");
-    } else {
-      createManualTask({
-        title: title.trim(), description, assignee, priority, status,
-        dueDate: dueIso, reminderMinutes: Number(reminderMinutes) || 0,
-        associationType, bucket, recordId: rec, createdBy: actor,
-      });
+      if (editing) {
+        await updateTask(editing.id, {
+          title: title.trim(), description, assignee, priority, status,
+          done: status === "Completed",
+          dueDate: dueIso, reminderMinutes: Number(reminderMinutes) || 0,
+          associationType, bucket, recordId: rec,
+        }, actor, "Task edited");
+      } else {
+        await createManualTask({
+          title: title.trim(), description, assignee, priority, status,
+          dueDate: dueIso, reminderMinutes: Number(reminderMinutes) || 0,
+          associationType, bucket, recordId: rec, createdBy: actor,
+        });
+      }
+      onClose();
+    } finally {
+      setSaving(false);
     }
-    onClose();
   };
 
   return (
@@ -516,8 +650,9 @@ function TaskFormDialog({ open, onClose, editing, clients, leads, actor, isAdmin
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={!title.trim() || !assignee || (associationType !== "none" && !recordId)}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} disabled={saving || !title.trim() || !assignee || (associationType !== "none" && !recordId)}>
+            {saving ? <Loader2 className="size-4 mr-1 animate-spin" /> : null}
             {editing ? "Save changes" : "Create task"}
           </Button>
         </DialogFooter>
@@ -528,30 +663,71 @@ function TaskFormDialog({ open, onClose, editing, clients, leads, actor, isAdmin
 
 /* ---------- Details sheet ---------- */
 
+const MAX_ATTACH_MB = 10;
+
 function TaskDetailsSheet({ task, open, onClose, clients, leads, actor, isAdmin, onEdit }: {
   task: Task | null; open: boolean; onClose: () => void;
   clients: RegistryRecord[]; leads: RegistryRecord[]; actor: string; isAdmin: boolean;
   onEdit: (t: Task) => void;
 }) {
   const [comment, setComment] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+
+  // Auto-mark task as Read when opened by assignee
+  useEffect(() => {
+    if (task && task.status === "Assigned" && task.assignee === actor && !task.readBy) {
+      updateTask(
+        task.id,
+        { status: "Read", readBy: actor, readAt: new Date().toISOString() },
+        actor,
+        "Task opened"
+      );
+    }
+  }, [task?.id, task?.status, actor, task?.readBy]);
 
   if (!task) return null;
   const linked = task.recordId
     ? (task.bucket === "leads" ? leads : clients).find((r) => r.id === task.recordId)
     : null;
 
-  const onFile = (file: File) => {
-    if (file.size > 500_000) { alert("File too large (max 500 KB in demo storage)"); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      addAttachment(task.id, {
-        id: crypto.randomUUID(),
-        name: file.name, size: file.size, type: file.type,
-        dataUrl: String(reader.result),
-        addedAt: new Date().toISOString(), addedBy: actor,
+  const onFile = async (file: File) => {
+    if (file.size > MAX_ATTACH_MB * 1024 * 1024) {
+      alert(`File too large — max ${MAX_ATTACH_MB} MB.`);
+      return;
+    }
+    setUploading(true);
+    setUploadPct(0);
+    try {
+      const storageKey = `tasks/${task.id}/attachments/${crypto.randomUUID()}_${file.name}`;
+      const storageRef = ref(storage, storageKey);
+      let downloadUrl = "";
+      await new Promise<void>((resolve, reject) => {
+        const uploadTask = uploadBytesResumable(storageRef, file, { contentType: file.type });
+        uploadTask.on(
+          "state_changed",
+          (snap) => setUploadPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          reject,
+          async () => {
+            downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve();
+          },
+        );
       });
-    };
-    reader.readAsDataURL(file);
+      await addAttachment(task.id, {
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        storageKey,
+        downloadUrl,
+        addedAt: new Date().toISOString(),
+        addedBy: actor,
+      });
+    } finally {
+      setUploading(false);
+      setUploadPct(0);
+    }
   };
 
   return (
@@ -571,19 +747,26 @@ function TaskDetailsSheet({ task, open, onClose, clients, leads, actor, isAdmin,
         </SheetHeader>
 
         <div className="space-y-6 mt-4">
-          {/* Quick status */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={task.status} onValueChange={(v) => {
-              const s = v as TaskStatus;
-              updateTask(task.id, { status: s, done: s === "Completed" }, actor, `Status → ${s}`);
-              if (s === "Completed") setTaskDone(task.id, true, actor);
-            }}>
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {TASK_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {isAdmin && <Button variant="outline" size="sm" onClick={() => onEdit(task)}><Pencil className="size-4 mr-1" />Edit</Button>}
+          {/* Quick status & reassignment */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={task.status} onValueChange={(v) => {
+                const s = v as TaskStatus;
+                updateTask(task.id, { status: s, done: s === "Completed" }, actor, `Status → ${s}`);
+                if (s === "Completed") setTaskDone(task.id, true, actor);
+              }}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TASK_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {isAdmin && <Button variant="outline" size="sm" onClick={() => onEdit(task)}><Pencil className="size-4 mr-1" />Edit</Button>}
+            </div>
+
+            {/* Reassignment section - Admin only */}
+            {isAdmin && (
+              <ReassignmentSection task={task} actor={actor} />
+            )}
           </div>
 
           {/* Description */}
@@ -592,6 +775,9 @@ function TaskDetailsSheet({ task, open, onClose, clients, leads, actor, isAdmin,
               {task.description?.trim() ? task.description : "No description."}
             </p>
           </Section>
+
+          {/* Subtasks */}
+          <SubtasksSection task={task} actor={actor} />
 
           {/* Meta */}
           <Section title="Details">
@@ -602,6 +788,12 @@ function TaskDetailsSheet({ task, open, onClose, clients, leads, actor, isAdmin,
               <Meta label="Reminder" value={task.reminderMinutes ? `${task.reminderMinutes} min before` : "None"} />
               <Meta label="Created" value={new Date(task.createdAt).toLocaleString()} />
               <Meta label="Type" value={task.manual ? "Manual" : "Auto from record"} />
+              {task.readBy && (
+                <>
+                  <Meta label="Read By" value={staffLabel(task.readBy) || task.readBy} />
+                  <Meta label="Read On" value={task.readAt ? new Date(task.readAt).toLocaleString() : "—"} />
+                </>
+              )}
             </dl>
           </Section>
 
@@ -621,14 +813,38 @@ function TaskDetailsSheet({ task, open, onClose, clients, leads, actor, isAdmin,
             <div className="space-y-2">
               {(task.attachments ?? []).length === 0 && <p className="text-sm text-muted-foreground">No attachments yet.</p>}
               {(task.attachments ?? []).map((a) => (
-                <a key={a.id} href={a.dataUrl} download={a.name}
-                  className="flex items-center gap-2 text-sm text-primary hover:underline">
-                  <Paperclip className="size-4" />{a.name} <span className="text-muted-foreground text-xs">({Math.round(a.size / 1024)} KB)</span>
+                <a
+                  key={a.id}
+                  href={a.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-primary hover:underline"
+                >
+                  <Paperclip className="size-4" />{a.name}
+                  <span className="text-muted-foreground text-xs">({Math.round(a.size / 1024)} KB)</span>
+                  <ExternalLink className="size-3" />
                 </a>
               ))}
-              <label className="inline-flex items-center gap-2 text-sm cursor-pointer text-primary">
-                <Paperclip className="size-4" />Attach file
-                <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.currentTarget.value = ""; }} />
+
+              {uploading && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />Uploading… {uploadPct}%
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-primary transition-all" style={{ width: `${uploadPct}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <label className={cn("inline-flex items-center gap-2 text-sm cursor-pointer text-primary", uploading && "opacity-50 pointer-events-none")}>
+                <Paperclip className="size-4" />Attach file (max {MAX_ATTACH_MB} MB)
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.currentTarget.value = ""; }}
+                />
               </label>
             </div>
           </Section>
@@ -686,6 +902,139 @@ function Meta({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="font-medium">{value}</dd>
+    </div>
+  );
+}
+
+/* ---------- Subtasks section ---------- */
+
+function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const subtasks = task.subtasks ?? [];
+  const hasSubtasks = subtasks.length > 0;
+
+  const onAddSubtask = async () => {
+    if (!newSubtaskTitle.trim()) return;
+    setAdding(true);
+    try {
+      await addSubtask(task.id, newSubtaskTitle.trim(), actor);
+      setNewSubtaskTitle("");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const onToggleSubtask = async (subtaskId: string) => {
+    try {
+      await toggleSubtask(task.id, subtaskId, actor);
+    } catch (error) {
+      console.error("Failed to toggle subtask:", error);
+    }
+  };
+
+  return (
+    <Section title="Subtasks">
+      <div className="space-y-3">
+        {hasSubtasks && (
+          <>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Progress</span>
+                <span className="font-semibold text-foreground">{task.progress ?? 0}%</span>
+              </div>
+              <Progress value={task.progress ?? 0} className="h-2" />
+            </div>
+
+            <div className="space-y-2">
+              {subtasks.map((subtask) => (
+                <div key={subtask.id} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={subtask.completed}
+                    onCheckedChange={() => onToggleSubtask(subtask.id)}
+                  />
+                  <span className={cn("flex-1", subtask.completed && "line-through text-muted-foreground")}>
+                    {subtask.title}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {!hasSubtasks && (
+          <p className="text-sm text-muted-foreground mb-2">No subtasks yet.</p>
+        )}
+
+        <div className="flex gap-2 pt-2 border-t">
+          <Input
+            placeholder="Add a subtask…"
+            value={newSubtaskTitle}
+            onChange={(e) => setNewSubtaskTitle(e.target.value)}
+            disabled={adding}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newSubtaskTitle.trim()) {
+                onAddSubtask();
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            onClick={onAddSubtask}
+            disabled={adding || !newSubtaskTitle.trim()}
+          >
+            {adding ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/* ---------- Reassignment section ---------- */
+
+function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
+  const [reassigning, setReassigning] = useState(false);
+  const currentAssignee = staffLabel(task.assignee) || task.assignee;
+
+  const onReassign = async (newAssignee: string) => {
+    setReassigning(true);
+    try {
+      await reassignTask(task.id, newAssignee, actor);
+    } catch (error) {
+      console.error("Failed to reassign task:", error);
+      alert("Failed to reassign task");
+    } finally {
+      setReassigning(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+      <div className="text-sm font-medium">Assigned to: {currentAssignee}</div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onReassign(actor)}
+          disabled={reassigning || task.assignee === actor}
+        >
+          <Users className="size-4 mr-1" />Take Over Task
+        </Button>
+        <Select defaultValue="" disabled={reassigning} onValueChange={(v) => {
+          if (v && v !== task.assignee) onReassign(v);
+        }}>
+          <SelectTrigger className="w-44" disabled={reassigning}>
+            <SelectValue placeholder="Reassign to…" />
+          </SelectTrigger>
+          <SelectContent>
+            {STAFF_USERS.filter((s) => s.username !== task.assignee).map((s) => (
+              <SelectItem key={s.username} value={s.username}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }
