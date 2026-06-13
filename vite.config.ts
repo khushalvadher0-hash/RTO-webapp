@@ -1,33 +1,54 @@
-// Vercel SPA Deployment Configuration
-// This configuration builds the TanStack Start app as a static SPA (single-page app)
-// Perfect for Vercel deployment with Firebase backend only (no server-side rendering needed)
-//
-// The @lovable.dev/vite-tanstack-config includes:
-//   - tanstackStart, viteReact, tailwindcss, tsConfigPaths, React/TanStack dedupe,
-//     error logger plugins, and sandbox detection (port/host/strictPort).
-// Cloudflare and server-side rendering are explicitly disabled for Vercel SPA mode.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+/**
+ * Vercel SPA Configuration for TanStack Start + React Router
+ * 
+ * This configuration builds a pure client-side SPA (no SSR, no server bundle).
+ * - TanStack Router handles all routing in the browser
+ * - React runs entirely on the client
+ * - Firebase handles all backend operations
+ * - Vercel serves static files from dist/client
+ * 
+ * Key: NOT using @lovable.dev/vite-tanstack-config because it defaults to SSR.
+ * Instead, we use standard Vite + React plugins for SPA mode.
+ */
+
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
+import tailwindcss from "@tailwindcss/vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
-  // Disable SSR and server entry for Vercel static deployment
-  // This builds the app as a pure SPA with all routing handled client-side
-  tanstackStart: {
-    preloadClientEntry: true,
-    isServer: false,
-  },
-  // Vite configuration for SPA mode
-  vite: {
-    build: {
-      // Generate a single HTML file for SPA
-      rollupOptions: {
-        output: {
-          entryFileNames: "assets/[name].js",
-          chunkFileNames: "assets/[name].js",
-          assetFileNames: "assets/[name].[ext]",
-        },
+  plugins: [
+    TanStackRouterVite(),
+    react(),
+    tailwindcss(),
+    tsconfigPaths(),
+  ],
+  build: {
+    // Build client-side bundle only (no SSR)
+    outDir: "dist/client",
+    ssr: false,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Organized asset output
+        entryFileNames: "assets/[name].[hash].js",
+        chunkFileNames: "assets/[name].[hash].js",
+        assetFileNames: "assets/[name].[hash][extname]",
       },
     },
-    // Disable SSR mode
-    ssr: undefined,
+    // Use esbuild for minification (no additional deps needed)
+    minify: "esbuild",
+    target: "ES2022",
+  },
+  resolve: {
+    alias: {
+      "@": "/src",
+    },
+  },
+  server: {
+    // SPA dev server config
+    middlewareMode: false,
+    hmr: true,
   },
 });
