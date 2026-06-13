@@ -1,15 +1,33 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - tanstackStart, viteReact, tailwindcss, tsConfigPaths, cloudflare (build-only),
-//     componentTagger (dev-only), VITE_* env injection, @ path alias, React/TanStack dedupe,
+// Vercel SPA Deployment Configuration
+// This configuration builds the TanStack Start app as a static SPA (single-page app)
+// Perfect for Vercel deployment with Firebase backend only (no server-side rendering needed)
+//
+// The @lovable.dev/vite-tanstack-config includes:
+//   - tanstackStart, viteReact, tailwindcss, tsConfigPaths, React/TanStack dedupe,
 //     error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... } }) if needed.
+// Cloudflare and server-side rendering are explicitly disabled for Vercel SPA mode.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-// @cloudflare/vite-plugin builds from this — wrangler.jsonc main alone is insufficient.
 export default defineConfig({
+  // Disable SSR and server entry for Vercel static deployment
+  // This builds the app as a pure SPA with all routing handled client-side
   tanstackStart: {
-    server: { entry: "server" },
+    preloadClientEntry: true,
+    isServer: false,
+  },
+  // Vite configuration for SPA mode
+  vite: {
+    build: {
+      // Generate a single HTML file for SPA
+      rollupOptions: {
+        output: {
+          entryFileNames: "assets/[name].js",
+          chunkFileNames: "assets/[name].js",
+          assetFileNames: "assets/[name].[ext]",
+        },
+      },
+    },
+    // Disable SSR mode
+    ssr: undefined,
   },
 });
