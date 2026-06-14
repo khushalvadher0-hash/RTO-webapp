@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { createActivity, type ActivityLog } from "./activity";
+import { getServiceStats, type ServiceType } from "./services";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,7 +64,40 @@ export function calculateTargetMetrics(target: Target): TargetMetrics {
 const TARGETS_COLLECTION = "targets";
 
 /**
- * Subscribe to all targets with live updates.
+ * Map TargetCategory to ServiceType.
+ * They share the same names except for "PUC" and "License".
+ */
+function categoryToServiceType(category: TargetCategory): ServiceType {
+  return category as ServiceType;
+}
+
+/**
+ * Get actual completed count from service records.
+ */
+async function getRealCompletedCount(category: TargetCategory): Promise<number> {
+  try {
+    const serviceType = categoryToServiceType(category);
+    const stats = await getServiceStats(serviceType);
+    return stats.completed;
+  } catch (error) {
+    console.warn(`[getRealCompletedCount] Failed to get count for ${category}:`, error);
+    return 0;
+  }
+}
+
+/**
+ * Enrich a target with real completed count from service records.
+ */
+async function enrichTargetWithRealCount(target: Target): Promise<Target> {
+  const realCompleted = await getRealCompletedCount(target.category);
+  return {
+    ...target,
+    completed: realCompleted, // Override with real count
+  };
+}
+
+/**
+ * Subscribe to all targets with live updates (with real completed counts).
  * Returns an unsubscribe function for cleanup.
  */
 export function subscribeToTargets(
@@ -72,22 +106,34 @@ export function subscribeToTargets(
   const q = query(collection(db, TARGETS_COLLECTION));
 
   const unsub = onSnapshot(q, (snapshot) => {
-    const targets: TargetMetrics[] = snapshot.docs.map((doc) => {
+    // Get targets from Firestore
+    const firestoreTargets: Target[] = snapshot.docs.map((doc) => {
       const data = doc.data() as Omit<Target, "id">;
-      return calculateTargetMetrics({ ...data, id: doc.id });
+      return { ...data, id: doc.id };
     });
 
-    // Sort by category for consistent display
-    targets.sort((a, b) => a.category.localeCompare(b.category));
-
-    callback(targets);
+    // Enrich all targets with real completed counts
+    Promise.all(firestoreTargets.map(enrichTargetWithRealCount))
+      .then((enrichedTargets) => {
+        const metrics = enrichedTargets.map(calculateTargetMetrics);
+        // Sort by category for consistent display
+        metrics.sort((a, b) => a.category.localeCompare(b.category));
+        callback(metrics);
+      })
+      .catch((error) => {
+        console.error("[subscribeToTargets] Error enriching targets:", error);
+        // Fallback: use targets without real count enrichment
+        const metrics = firestoreTargets.map(calculateTargetMetrics);
+        metrics.sort((a, b) => a.category.localeCompare(b.category));
+        callback(metrics);
+      });
   });
 
   return unsub;
 }
 
 /**
- * Get a single target by category.
+ * Get a single target by category (with real completed count from service records).
  */
 export async function getTargetByCategory(category: TargetCategory): Promise<TargetMetrics | null> {
   const q = query(collection(db, TARGETS_COLLECTION));
@@ -96,7 +142,10 @@ export async function getTargetByCategory(category: TargetCategory): Promise<Tar
   for (const doc of snapshot.docs) {
     const data = doc.data() as Omit<Target, "id">;
     if (data.category === category) {
-      return calculateTargetMetrics({ ...data, id: doc.id });
+      // Enrich with real completed count
+      const target = { ...data, id: doc.id };
+      const enriched = await enrichTargetWithRealCount(target);
+      return calculateTargetMetrics(enriched);
     }
   }
 
