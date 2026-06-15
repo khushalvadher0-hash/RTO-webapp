@@ -2,7 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { subscribeToRecords, SERVICE_TYPES, serviceLabel, serviceToUrlParam, type RegistryRecord } from "@/lib/records";
 import { getTotalRevenue, getActiveServicesCount, getRevenueByService, getUpcomingRenewals } from "@/lib/services";
-import { ArrowRight, Users, UserPlus, CheckCircle2, Clock, TrendingUp, DollarSign, AlertCircle } from "lucide-react";
+import { subscribeToTasks, type Task } from "@/lib/tasks";
+import { subscribeToTargets, calculateTargetMetrics, type TargetMetrics } from "@/lib/targets";
+import { ArrowRight, Users, UserPlus, CheckCircle2, Clock, TrendingUp, DollarSign, AlertCircle, Zap, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/dashboard/")({
@@ -16,12 +18,19 @@ function Overview() {
   const [activeServices, setActiveServices] = useState(0);
   const [revenueByService, setRevenueByService] = useState<{ service: string; revenue: number }[]>([]);
   const [upcomingRenewals, setUpcomingRenewals] = useState<RegistryRecord[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [targets, setTargets] = useState<TargetMetrics[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const u1 = subscribeToRecords("clients", setClients);
     const u2 = subscribeToRecords("leads", setLeads);
-    return () => { u1(); u2(); };
+    const u3 = subscribeToTasks((allTasks) => setTasks(allTasks));
+    const u4 = subscribeToTargets((allTargets) => {
+      const enriched = allTargets.map(t => calculateTargetMetrics(t));
+      setTargets(enriched);
+    });
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   useEffect(() => {
@@ -195,6 +204,93 @@ function Overview() {
           </Card>
         )}
       </div>
+
+      {/* Pending Follow-ups Section */}
+      {tasks.filter(t => !t.done && t.status !== "Completed").length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Zap className="size-5 text-orange-500" />
+            Pending Follow-ups
+          </h3>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-3">
+                {tasks
+                  .filter(t => !t.done && t.status !== "Completed")
+                  .sort((a, b) => {
+                    const priorityOrder = { "Urgent": 0, "High": 1, "Medium": 2, "Low": 3 };
+                    return priorityOrder[a.priority as keyof typeof priorityOrder] - priorityOrder[b.priority as keyof typeof priorityOrder];
+                  })
+                  .slice(0, 5)
+                  .map((task) => (
+                    <Link
+                      key={task.id}
+                      to={`/dashboard/tasks`}
+                      className="flex items-start justify-between p-3 border rounded hover:bg-muted transition-colors group"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm">{task.title}</p>
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                            task.priority === "Urgent" ? "bg-red-100 text-red-700" :
+                            task.priority === "High" ? "bg-orange-100 text-orange-700" :
+                            task.priority === "Medium" ? "bg-yellow-100 text-yellow-700" :
+                            "bg-blue-100 text-blue-700"
+                          }`}>
+                            {task.priority}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {task.assignee} • {task.status}
+                        </p>
+                      </div>
+                      <ArrowRight className="size-4 text-muted-foreground group-hover:text-primary" />
+                    </Link>
+                  ))}
+              </div>
+              {tasks.filter(t => !t.done && t.status !== "Completed").length > 5 && (
+                <Link to="/dashboard/tasks" className="text-xs text-primary hover:underline mt-3 inline-block">
+                  View all {tasks.filter(t => !t.done && t.status !== "Completed").length} follow-ups →
+                </Link>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Targets Progress Section */}
+      {targets.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Target className="size-5 text-blue-500" />
+            Performance Targets
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {targets.map((target) => (
+              <Card key={target.id}>
+                <CardContent className="pt-6">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="font-semibold text-sm">{target.category}</p>
+                      <p className="text-2xl font-bold text-blue-600">{target.completed}/{target.target}</p>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all"
+                        style={{ width: `${Math.min(target.achievementPercentage, 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">{target.achievementPercentage.toFixed(0)}%</span>
+                      <span className="text-muted-foreground">{target.remaining} remaining</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border bg-card p-6">
         <h3 className="font-semibold">Quick actions</h3>

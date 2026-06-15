@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Search, Download, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Download, Printer, Paperclip, X } from "lucide-react";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebase";
 import {
   subscribeToRecords,
   saveRecord,
@@ -8,6 +10,7 @@ import {
   checkForDuplicates,
   calculatePaymentStatus,
   calculatePendingAmount,
+  addAttachment,
   STATUS_OPTIONS,
   STAFF_USERS,
   staffLabel,
@@ -17,6 +20,7 @@ import {
   type RegistryRecord,
   type RecordStatus,
   type PaymentStatus,
+  type RecordAttachment,
 } from "@/lib/records";
 import { syncTaskFromRecord } from "@/lib/tasks";
 import { getSession } from "@/lib/auth";
@@ -84,6 +88,9 @@ export function RecordTable({ bucket, title, description }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<RegistryRecord | null>(null);
   const [forceCaps, setForceCaps] = useState(() => getForceCapsSetting());
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   
   const session = getSession();
   const isAdmin = session?.role === "admin";
@@ -142,6 +149,115 @@ export function RecordTable({ bucket, title, description }: Props) {
   const handleDeleteSuccess = () => {
     setDeleteOpen(false);
     setRecordToDelete(null);
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!editing) {
+      setAttachmentError("No record selected");
+      return;
+    }
+
+    const MAX_FILE_MB = 10;
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setAttachmentError(`File too large — max ${MAX_FILE_MB} MB.`);
+      console.error("[Attachment Upload Error] File size exceeds limit:", {
+        fileName: file.name,
+        fileSize: file.size,
+        maxSize: MAX_FILE_MB * 1024 * 1024,
+      });
+      return;
+    }
+
+    setUploading(true);
+    setUploadPct(0);
+    setAttachmentError(null);
+
+    try {
+      // Generate unique storage path
+      const storagePath = `clients/${bucket}/${editing.id}/attachments/${crypto.randomUUID()}_${file.name}`;
+      const storageRef = ref(storage, storagePath);
+
+      console.error("[Attachment Upload] Starting upload:", {
+        recordId: editing.id,
+        recordName: editing.name,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        storagePath,
+      });
+
+      // Upload file with progress tracking
+      let downloadUrl = "";
+      await new Promise<void>((resolve, reject) => {
+        const uploadTask = uploadBytesResumable(storageRef, file, { contentType: file.type });
+        uploadTask.on(
+          "state_changed",
+          (snap) => {
+            const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+            setUploadPct(pct);
+            console.error("[Attachment Upload] Progress:", { pct, bytesTransferred: snap.bytesTransferred, totalBytes: snap.totalBytes });
+          },
+          (error) => {
+            console.error("[Attachment Upload Error] Upload failed:", error);
+            reject(error);
+          },
+          async () => {
+            try {
+              downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              console.error("[Attachment Upload] Download URL obtained:", { downloadUrl });
+              resolve();
+            } catch (error) {
+              console.error("[Attachment Upload Error] Failed to get download URL:", error);
+              reject(error);
+            }
+          },
+        );
+      });
+
+      // Create attachment record
+      const attachment: RecordAttachment = {
+        id: crypto.randomUUID(),
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        storagePath,
+        downloadUrl,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: username,
+      };
+
+      console.error("[Attachment Upload] Attachment record created:", attachment);
+
+      // Add attachment to record
+      const updatedRecord: RegistryRecord = {
+        ...editing,
+        attachments: [...(editing.attachments ?? []), attachment],
+      };
+
+      // Update the editing state
+      setEditing(updatedRecord);
+
+      // Save to Firestore
+      await addAttachment(bucket, editing.id, attachment);
+
+      console.error("[Attachment Upload] Attachment saved to Firestore successfully");
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setAttachmentError(`Upload failed: ${errorMsg}`);
+      console.error("[Attachment Upload Error]", error);
+    } finally {
+      setUploading(false);
+      setUploadPct(0);
+    }
+  };
+
+  const handleRemoveAttachment = (attachmentId: string) => {
+    if (!editing) return;
+    const updatedAttachments = (editing.attachments ?? []).filter((a) => a.id !== attachmentId);
+    setEditing({
+      ...editing,
+      attachments: updatedAttachments,
+    });
   };
 
   const save = async () => {
@@ -387,6 +503,81 @@ export function RecordTable({ bucket, title, description }: Props) {
               {/* WhatsApp Quick Actions */}
               <div className="sm:col-span-2 border-t pt-4 mt-2">
                 <WhatsAppQuickActions mobile={editing.mo} name={editing.name} />
+              </div>
+
+              {/* File Attachments Section */}
+              <div className="sm:col-span-2 border-t pt-4 mt-2">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">Attachments</h3>
+                
+                {/* Existing Attachments */}
+                <div className="space-y-2 mb-4">
+                  {(editing.attachments ?? []).length === 0 && (
+                    <p className="text-xs text-muted-foreground">No attachments yet.</p>
+                  )}
+                  {(editing.attachments ?? []).map((attachment) => (
+                    <div key={attachment.id} className="flex items-center justify-between bg-muted/30 p-2 rounded-md border border-muted-foreground/20">
+                      <a
+                        href={attachment.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 flex-1 text-blue-600 hover:underline text-sm"
+                      >
+                        <Paperclip className="size-4 flex-shrink-0" />
+                        <span className="truncate">{attachment.name}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">({(attachment.size / 1024).toFixed(1)} KB)</span>
+                      </a>
+                      <button
+                        onClick={() => handleRemoveAttachment(attachment.id)}
+                        className="text-destructive hover:text-destructive/80"
+                        title="Remove attachment"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Upload Progress */}
+                {uploading && (
+                  <div className="mb-3">
+                    <div className="flex justify-between items-center text-xs mb-1">
+                      <span>Uploading attachment…</span>
+                      <span className="font-semibold">{uploadPct}%</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-primary transition-all duration-300" style={{ width: `${uploadPct}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {attachmentError && (
+                  <div className="text-xs text-destructive bg-destructive/10 p-2 rounded-md mb-3">
+                    {attachmentError}
+                  </div>
+                )}
+
+                {/* File Input */}
+                <div>
+                  <label className="flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-muted-foreground/40 rounded-md bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors">
+                    <Paperclip className="size-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-xs text-muted-foreground">Attach file (max 10 MB)</span>
+                    <input
+                      type="file"
+                      onChange={(e) => {
+                        const file = e.currentTarget.files?.[0];
+                        if (file) {
+                          handleFileUpload(file);
+                        }
+                        // Reset input so same file can be selected again
+                        e.currentTarget.value = "";
+                      }}
+                      disabled={uploading}
+                      className="hidden"
+                      accept="*/*"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           )}

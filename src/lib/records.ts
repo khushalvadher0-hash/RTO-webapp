@@ -22,6 +22,17 @@ export type RecordStatus = "Pending" | "In Progress" | "Completed" | "On Hold";
 
 export type DeleteReason = "Duplicate Entry" | "Wrong Customer" | "Testing Data" | "Other";
 
+export interface RecordAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  storagePath: string; // Firebase Storage path
+  downloadUrl: string;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
 export type PaymentStatus = "Paid" | "Partially Paid" | "Unpaid";
 
 export type ServiceType = 
@@ -118,6 +129,7 @@ export interface RegistryRecord {
   lastUpdatedBy?: string;
   lastUpdatedAt?: string;
   activityLogs?: ActivityLog[];
+  attachments?: RecordAttachment[]; // Files attached to this client record
   isDeleted?: boolean;
   deletedAt?: string;
   deletedBy?: string;
@@ -393,6 +405,39 @@ export async function softDeleteRecord(
 /** Hard-delete a record (internal use only, not exposed to UI). */
 export async function deleteRecord(bucket: Bucket, id: string): Promise<void> {
   await deleteDoc(doc(db, colFor(bucket), id));
+}
+
+/** Add an attachment to a client record. */
+export async function addAttachment(
+  bucket: Bucket,
+  recordId: string,
+  attachment: RecordAttachment,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const entry = createActivity(
+    attachment.uploadedBy,
+    `Attached ${attachment.name}`,
+    "attachment",
+    "",
+    attachment.name,
+  );
+
+  const updates = {
+    attachments: arrayUnion(attachment),
+    lastUpdatedBy: attachment.uploadedBy,
+    lastUpdatedAt: now,
+    activityLogs: arrayUnion(entry),
+  };
+
+  console.error("[addAttachment] Uploading attachment:", {
+    bucket,
+    recordId,
+    attachmentName: attachment.name,
+    attachmentSize: attachment.size,
+    storagePath: attachment.storagePath,
+  });
+
+  await updateDoc(doc(db, colFor(bucket), recordId), updates);
 }
 
 // ─── Legacy stubs (kept so non-updated call-sites don't break at compile time) ─

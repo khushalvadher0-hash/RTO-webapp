@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import {
   Search,
-  FileText,
   Car,
   Plus,
   Trash2,
@@ -11,6 +10,7 @@ import {
   Upload,
   ExternalLink,
   Loader2,
+  Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,8 @@ import {
   subscribeToCustomers,
   type CustomerProfile,
   type VehicleRecord,
+  addAttachment,
+  type CustomerAttachment,
 } from "@/lib/customers";
 import {
   subscribeToDocsFor,
@@ -34,6 +36,8 @@ import {
   type CustomerDoc,
 } from "@/lib/customerDocs";
 import type { RecordStatus } from "@/lib/records";
+import { storage } from "@/lib/firebase";
+import { uploadBytesResumable, getDownloadURL, ref } from "firebase/storage";
 
 export const Route = createFileRoute("/dashboard/customers")({
   component: CustomersPage,
@@ -113,10 +117,342 @@ function InfoCell({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ─── Attachments Modal ────────────────────────────────────────────────────────
+
+const MAX_ATTACHMENT_MB = 10;
+
+function AttachmentsModal({ customer, onClose }: { customer: CustomerProfile; onClose: () => void }) {
+  const [attachments, setAttachments] = useState<CustomerAttachment[]>(customer.attachments ?? []);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [error, setError] = useState("");
+  const [currentUser, setCurrentUser] = useState("admin");
+
+  useEffect(() => {
+    // Get current user from localStorage (same pattern as other components)
+    const userEmail = localStorage.getItem("userEmail") ?? "admin";
+    setCurrentUser(userEmail);
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
+      setError(`File too large — max ${MAX_ATTACHMENT_MB} MB.`);
+      return;
+    }
+    setError("");
+    setFile(f);
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError("Please select a file");
+      return;
+    }
+
+    console.log("[AttachmentsModal] ========== UPLOAD FLOW START ==========");
+    console.log("[AttachmentsModal] FILE_SELECTED:", {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      customerId: customer.id,
+    });
+    setUploading(true);
+    setUploadPct(0);
+    setError("");
+
+    try {
+      const attachmentId = crypto.randomUUID();
+      const storagePath = `customers/${customer.id}/attachments/${attachmentId}_${file.name}`;
+      const storageRef = ref(storage, storagePath);
+
+      console.log("[AttachmentsModal] UPLOAD_STARTED:", {
+        storagePath,
+        storageRefPath: storageRef.fullPath,
+        bucket: storageRef.bucket,
+      });
+
+      // Use Promise wrapper for better control and timeout handling
+      const downloadUrl = await uploadFileWithTimeout(storageRef, file, (pct) => {
+        console.log("[AttachmentsModal] UPLOAD_PROGRESS:", {
+          percentage: pct,
+          fileName: file.name,
+        });
+        setUploadPct(pct);
+      });
+
+      console.log("[AttachmentsModal] UPLOAD_SUCCESS:", {
+        downloadUrl: downloadUrl.substring(0, 50) + "...",
+      });
+
+      const newAttachment: CustomerAttachment = {
+        id: attachmentId,
+        name: file.name,
+        type: file.type || "unknown",
+        size: file.size,
+        storagePath,
+        downloadUrl,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: currentUser,
+      };
+
+      console.log("[AttachmentsModal] FIRESTORE_SAVE_STARTED:", {
+        customerId: customer.id,
+        attachmentName: newAttachment.name,
+        attachmentSize: newAttachment.size,
+      });
+      await addAttachment(customer.id, newAttachment);
+      console.log("[AttachmentsModal] FIRESTORE_SAVE_SUCCESS:", {
+        attachmentId: newAttachment.id,
+      });
+
+      setAttachments([newAttachment, ...attachments]);
+      setFile(null);
+      setError("");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      console.error("[AttachmentsModal] UPLOAD_ERROR:", {
+        error: err,
+        errorMessage: errorMsg,
+        errorStack: err instanceof Error ? err.stack : "N/A",
+      });
+      setError(errorMsg);
+    } finally {
+      console.log("[AttachmentsModal] ========== UPLOAD FLOW END ==========");
+      setUploading(false);
+      setUploadPct(0);
+    }
+  };
+
+  // Upload helper with timeout and Promise wrapper
+  const uploadFileWithTimeout = async (
+    storageRef: any,
+    uploadFile: File,
+    onProgress: (pct: number) => void,
+  ): Promise<string> => {
+    console.log("[uploadFileWithTimeout] Starting upload:", {
+      refPath: storageRef.fullPath,
+      refBucket: storageRef.bucket,
+      fileName: uploadFile.name,
+      fileSize: uploadFile.size,
+      fileType: uploadFile.type,
+    });
+
+    return new Promise<string>((resolve, reject) => {
+      let uploadTimeout: NodeJS.Timeout | null = null;
+      let resolved = false;
+
+      // Set a timeout for the entire upload
+      uploadTimeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.error("[uploadFileWithTimeout] TIMEOUT_FIRED - Upload exceeded 120 seconds");
+          reject(new Error("Upload timeout — file took too long. Please try again or use a smaller file."));
+        }
+      }, 120000); // 2 minutes
+
+      const task = uploadBytesResumable(storageRef, uploadFile, {
+        contentType: uploadFile.type || "application/octet-stream",
+        customMetadata: {
+          uploadedAt: new Date().toISOString(),
+        },
+      });
+
+      console.log("[uploadFileWithTimeout] uploadBytesResumable task created:", {
+        taskState: task.state,
+      });
+
+      task.on(
+        "state_changed",
+        (snapshot) => {
+          if (!resolved) {
+            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            console.log("[uploadFileWithTimeout] PROGRESS_CALLBACK:", {
+              state: snapshot.state,
+              bytesTransferred: snapshot.bytesTransferred,
+              totalBytes: snapshot.totalBytes,
+              percentage: pct,
+            });
+            onProgress(pct);
+          } else {
+            console.warn("[uploadFileWithTimeout] Progress callback ignored - already resolved");
+          }
+        },
+        (error) => {
+          if (!resolved) {
+            resolved = true;
+            if (uploadTimeout) clearTimeout(uploadTimeout);
+            console.error("[uploadFileWithTimeout] ERROR_CALLBACK:", {
+              code: (error as any)?.code,
+              message: error.message,
+              fullError: error,
+            });
+            reject(error);
+          } else {
+            console.warn("[uploadFileWithTimeout] Error callback ignored - already resolved");
+          }
+        },
+        async () => {
+          if (!resolved) {
+            resolved = true;
+            if (uploadTimeout) clearTimeout(uploadTimeout);
+            try {
+              console.log("[uploadFileWithTimeout] SUCCESS_CALLBACK - Upload complete, state:", {
+                taskState: task.state,
+                snapshotState: task.snapshot.state,
+              });
+              console.log("[uploadFileWithTimeout] Getting download URL from:", {
+                refPath: task.snapshot.ref.fullPath,
+                refBucket: task.snapshot.ref.bucket,
+              });
+              const url = await getDownloadURL(task.snapshot.ref);
+              console.log("[uploadFileWithTimeout] DOWNLOAD_URL_OBTAINED:", {
+                urlPrefix: url.substring(0, 50) + "...",
+                urlLength: url.length,
+              });
+              resolve(url);
+            } catch (error) {
+              console.error("[uploadFileWithTimeout] getDownloadURL FAILED:", {
+                code: (error as any)?.code,
+                message: (error as any)?.message,
+                fullError: error,
+              });
+              reject(error);
+            }
+          } else {
+            console.warn("[uploadFileWithTimeout] Success callback ignored - already resolved");
+          }
+        },
+      );
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Paperclip className="size-5 text-primary" />
+            Attachments — {customer.name}
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Upload section */}
+        <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Add Attachment</p>
+
+          {/* File picker */}
+          <div className="space-y-1">
+            <Label className="text-xs">Select file (max {MAX_ATTACHMENT_MB} MB)</Label>
+            <label className="flex items-center gap-2 cursor-pointer rounded-md border border-dashed border-input bg-background px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
+              <Paperclip className="size-4 text-muted-foreground flex-shrink-0" />
+              <span className="text-muted-foreground truncate">
+                {file ? file.name : "Click to choose file…"}
+              </span>
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,image/*,.doc,.docx,.jpg,.jpeg,.png,.txt,.xlsx,.xls"
+                onChange={handleFileChange}
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Supported: PDF, Images (JPG, PNG), Documents (DOC, DOCX, XLS, XLSX, TXT) • Max: {MAX_ATTACHMENT_MB} MB
+            </p>
+          </div>
+
+          {/* Upload progress */}
+          {uploading && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-2">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span>Uploading attachment…</span>
+                <span className="font-semibold">{uploadPct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-blue-200 overflow-hidden">
+                <div className="h-full bg-primary transition-all duration-300" style={{ width: `${uploadPct}%` }} />
+              </div>
+            </div>
+          )}
+
+          {/* Error message */}
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-2">
+              <p className="text-xs text-red-800">{error}</p>
+            </div>
+          )}
+
+          {/* Upload button */}
+          <Button
+            onClick={handleUpload}
+            disabled={!file || uploading}
+            className="w-full"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="size-4 animate-spin mr-2" />
+                Uploading…
+              </>
+            ) : (
+              <>
+                <Upload className="size-4 mr-2" />
+                Upload Attachment
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Attachments list */}
+        {attachments.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            No attachments yet
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</p>
+            {attachments.map((att) => (
+              <div
+                key={att.id}
+                className="flex items-center justify-between rounded-lg border bg-muted/30 p-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Paperclip className="size-4 text-muted-foreground flex-shrink-0" />
+                  <div className="min-w-0">
+                    <a
+                      href={att.downloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium text-primary hover:underline truncate block"
+                    >
+                      {att.name}
+                    </a>
+                    <p className="text-xs text-muted-foreground">
+                      {(att.size / 1024 / 1024).toFixed(2)} MB • {new Date(att.uploadedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={att.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center size-8 rounded-md bg-muted hover:bg-primary/10 hover:text-primary text-muted-foreground transition-colors flex-shrink-0"
+                >
+                  <ExternalLink className="size-4" />
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Documents Modal ──────────────────────────────────────────────────────────
 
 const DOC_TYPES = ["RC Book", "Insurance", "Fitness Certificate", "Tax Receipt", "Permit", "PUC Certificate", "Other"];
-const MAX_FILE_MB = 10;
+const MAX_FILE_MB = 5; // Reduced from 10 to 5 for better upload reliability
 
 function DocsModal({ customer, onClose }: { customer: CustomerProfile; onClose: () => void }) {
   const [docs, setDocs] = useState<CustomerDoc[]>([]);
@@ -129,7 +465,11 @@ function DocsModal({ customer, onClose }: { customer: CustomerProfile; onClose: 
 
   // ── Live subscription ──────────────────────────────────────────────────────
   useEffect(() => {
-    const unsub = subscribeToDocsFor(customer.id, setDocs);
+    console.log("[DocsModal] Setting up subscription for customer:", customer.id);
+    const unsub = subscribeToDocsFor(customer.id, (newDocs) => {
+      console.log("[DocsModal] Documents updated:", newDocs.length, "docs");
+      setDocs(newDocs);
+    });
     return unsub;
   }, [customer.id]);
 
@@ -146,22 +486,38 @@ function DocsModal({ customer, onClose }: { customer: CustomerProfile; onClose: 
   };
 
   const handleAdd = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim()) {
+      setError("Please enter a document name");
+      return;
+    }
+    
+    console.log("[DocsModal] handleAdd called - name:", form.name, "type:", form.type, "hasFile:", !!file);
+    
     setUploading(true);
     setUploadPct(0);
     setError("");
+    
     try {
-      await addDoc(
+      console.log("[DocsModal] Calling addDoc...");
+      const result = await addDoc(
         customer.id,
         form.name.trim(),
         form.type,
         file ?? undefined,
-        setUploadPct,
+        (pct) => {
+          console.log("[DocsModal] Progress:", pct);
+          setUploadPct(pct);
+        },
       );
+      console.log("[DocsModal] Document added successfully:", result);
       setForm({ name: "", type: "RC Book" });
       setFile(null);
+      setError(""); // Clear any previous errors
     } catch (err) {
-      setError((err as Error).message);
+      const errorMsg = err instanceof Error ? err.message : "Unknown error occurred";
+      console.error("[DocsModal] Upload error:", err);
+      console.error("[DocsModal] Error details:", { message: errorMsg, fullError: err });
+      setError(errorMsg);
     } finally {
       setUploading(false);
       setUploadPct(0);
@@ -221,28 +577,57 @@ function DocsModal({ customer, onClose }: { customer: CustomerProfile; onClose: 
               <span className="text-muted-foreground truncate">
                 {file ? file.name : "Click to choose PDF, image…"}
               </span>
-              <input type="file" className="hidden" accept=".pdf,image/*,.doc,.docx" onChange={handleFileChange} />
+              <input type="file" className="hidden" accept=".pdf,image/*,.doc,.docx,.jpg,.jpeg,.png" onChange={handleFileChange} />
             </label>
+            <p className="text-xs text-muted-foreground">
+              Supported: PDF, Images (JPG, PNG), Word (DOC, DOCX) • Max size: {MAX_FILE_MB} MB
+            </p>
           </div>
 
           {/* Upload progress */}
           {uploading && (
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="size-3 animate-spin" />
-                Uploading… {uploadPct}%
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                <span>Uploading document…</span>
+                <span className="font-semibold">{uploadPct}%</span>
               </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-primary transition-all" style={{ width: `${uploadPct}%` }} />
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary transition-all duration-300" style={{ width: `${uploadPct}%` }} />
               </div>
             </div>
           )}
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-destructive">Error: {error}</p>
+                  <p className="text-xs text-destructive/80 mt-1">
+                    💡 Check your internet connection, try a smaller file, or contact support if the issue persists.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
-          <Button size="sm" onClick={handleAdd} className="w-full" disabled={uploading || !form.name.trim()}>
-            {uploading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Plus className="size-4 mr-1" />}
-            {uploading ? "Uploading…" : "Add Document"}
+          <Button 
+            size="sm" 
+            onClick={handleAdd} 
+            className="w-full" 
+            disabled={uploading || !form.name.trim()}
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Uploading…
+              </>
+            ) : (
+              <>
+                <Plus className="size-4 mr-1" />
+                {file ? "Upload & Add Document" : "Add Document"}
+              </>
+            )}
           </Button>
         </div>
 
@@ -301,6 +686,7 @@ function CustomersPage() {
   const [query, setQuery] = useState("");
   const [vehicleModal, setVehicleModal] = useState<CustomerProfile | null>(null);
   const [docsModal, setDocsModal] = useState<CustomerProfile | null>(null);
+  const [attachmentsModal, setAttachmentsModal] = useState<CustomerProfile | null>(null);
 
   useEffect(() => {
     const unsub = subscribeToCustomers(setCustomers);
@@ -344,7 +730,7 @@ function CustomersPage() {
           <div>Name</div>
           <div>Contact</div>
           <div>Vehicles</div>
-          <div className="text-center">Documents</div>
+          <div className="text-center">Attachments</div>
           <div className="text-center">Details</div>
         </div>
 
@@ -358,7 +744,7 @@ function CustomersPage() {
           return (
             <div
               key={c.id}
-              className="grid grid-cols-[2fr_2fr_2fr_auto_auto] gap-4 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/20 transition-colors"
+              className="grid grid-cols-[2fr_2fr_2fr_auto_auto_auto] gap-4 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/20 transition-colors"
             >
               {/* Name */}
               <div className="flex items-center gap-3 min-w-0">
@@ -391,14 +777,14 @@ function CustomersPage() {
                 )}
               </div>
 
-              {/* Documents icon */}
+              {/* Attachments icon */}
               <div className="flex justify-center">
                 <button
-                  onClick={() => setDocsModal(c)}
-                  title="View / add documents"
+                  onClick={() => setAttachmentsModal(c)}
+                  title="View / add attachments"
                   className="size-9 rounded-lg flex items-center justify-center bg-muted hover:bg-primary/10 hover:text-primary text-muted-foreground transition-colors"
                 >
-                  <FileText className="size-4" />
+                  <Paperclip className="size-4" />
                 </button>
               </div>
 
@@ -419,6 +805,7 @@ function CustomersPage() {
 
       {/* Modals */}
       {vehicleModal && <VehicleModal customer={vehicleModal} onClose={() => setVehicleModal(null)} />}
+      {attachmentsModal && <AttachmentsModal customer={attachmentsModal} onClose={() => setAttachmentsModal(null)} />}
       {docsModal && <DocsModal customer={docsModal} onClose={() => setDocsModal(null)} />}
     </div>
   );

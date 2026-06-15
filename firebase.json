@@ -1,0 +1,8 @@
+{
+  "storage": [
+    {
+      "target": "default",
+      "rules": "storage.rules"
+    }
+  ]
+}

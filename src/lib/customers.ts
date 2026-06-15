@@ -7,6 +7,8 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  updateDoc,
+  arrayUnion,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type { RecordStatus } from "./records";
@@ -23,6 +25,17 @@ export interface VehicleRecord {
   status: RecordStatus;
 }
 
+export interface CustomerAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  storagePath: string; // Firebase Storage path
+  downloadUrl: string;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
 export interface CustomerProfile {
   id: string;
   name: string;
@@ -30,6 +43,7 @@ export interface CustomerProfile {
   mobile: string;
   email: string;
   vehicles: VehicleRecord[];
+  attachments?: CustomerAttachment[];
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -53,6 +67,50 @@ export async function saveCustomerProfile(profile: CustomerProfile): Promise<voi
 /** Delete a customer profile. */
 export async function deleteCustomerProfile(id: string): Promise<void> {
   await deleteDoc(doc(db, COL, id));
+}
+
+/** Add an attachment to a customer profile. */
+export async function addAttachment(
+  customerId: string,
+  attachment: CustomerAttachment,
+): Promise<void> {
+  console.log("[addAttachment] FIRESTORE_UPDATE_STARTED:", {
+    customerId,
+    attachmentId: attachment.id,
+    attachmentName: attachment.name,
+    attachmentSize: attachment.size,
+    attachmentType: attachment.type,
+    storagePath: attachment.storagePath,
+    hasDownloadUrl: !!attachment.downloadUrl,
+    documentRef: `registry_customers/${customerId}`,
+  });
+
+  // Validate attachment object doesn't contain problematic values
+  if (attachment.downloadUrl && typeof attachment.downloadUrl !== "string") {
+    throw new Error(`[addAttachment] Invalid downloadUrl type: ${typeof attachment.downloadUrl}`);
+  }
+  if (typeof attachment.size !== "number") {
+    throw new Error(`[addAttachment] Invalid size type: ${typeof attachment.size}`);
+  }
+
+  try {
+    await updateDoc(doc(db, COL, customerId), {
+      attachments: arrayUnion(attachment),
+    });
+    console.log("[addAttachment] FIRESTORE_UPDATE_SUCCESS:", {
+      customerId,
+      attachmentId: attachment.id,
+    });
+  } catch (error) {
+    console.error("[addAttachment] FIRESTORE_UPDATE_FAILED:", {
+      customerId,
+      attachmentId: attachment.id,
+      errorCode: (error as any)?.code,
+      errorMessage: (error as any)?.message,
+      fullError: error,
+    });
+    throw error;
+  }
 }
 
 // ─── Legacy stubs ─────────────────────────────────────────────────────────────
