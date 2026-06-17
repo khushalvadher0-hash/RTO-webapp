@@ -51,11 +51,18 @@ export function ClientProfile({ record, open, onOpenChange }: Props) {
     const unsubDocs = subscribeToDocsFor(record.id, setDocs);
     const unsubTasks = subscribeToTasksForRecord(record.id, setTasks);
 
+    const fallbackActivities = (record.activityLogs ?? []).map((log) => ({
+      ...log,
+      timestamp: normalizeActivityTimestamp(log.timestamp),
+    }));
+    setActivities(fallbackActivities);
+
     // Subscribe to client_activity_logs collection
     const q = query(collection(db, "client_activity_logs"), where("clientId", "==", record.id), orderBy("timestamp", "desc"));
-    const unsubActs = onSnapshot(q, (snap) => {
-      setActivities(
-        snap.docs.map((d) => {
+    const unsubActs = onSnapshot(
+      q,
+      (snap) => {
+        const remoteActivities = snap.docs.map((d) => {
           const it = d.data() as any;
           return {
             id: d.id,
@@ -66,9 +73,21 @@ export function ClientProfile({ record, open, onOpenChange }: Props) {
             newValue: it.newValue,
             timestamp: normalizeActivityTimestamp(it.timestamp),
           };
-        }),
-      );
-    });
+        });
+
+        if (remoteActivities.length === 0 && fallbackActivities.length > 0) {
+          setActivities(fallbackActivities);
+        } else {
+          setActivities(remoteActivities);
+        }
+      },
+      (err) => {
+        console.error("[ClientProfile] Failed to load activity history:", err);
+        if (fallbackActivities.length > 0) {
+          setActivities(fallbackActivities);
+        }
+      },
+    );
 
     return () => {
       unsubDocs();

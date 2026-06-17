@@ -98,8 +98,9 @@ const COL = "registry_tasks";
  */
 export function removeUndefined<T>(obj: T): T {
   // Handle arrays: filter out undefined items and recurse
-  if (Array.isArray(obj)) {
-    return obj
+  if (Array.isArray(obj)) 
+  {
+      return obj
       .filter((item) => item !== undefined)
       .map((item) => removeUndefined(item)) as T;
   }
