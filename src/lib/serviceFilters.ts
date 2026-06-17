@@ -102,7 +102,11 @@ export function recordMatchesService(
   serviceType: ServiceType,
 ): boolean {
   // Prefer explicit service arrays / legacy serviceType
-  if (Array.isArray(record.services) && record.services.includes(serviceType)) return true;
+  if (Array.isArray(record.services)) {
+    if (record.services.some(s => typeof s === 'object' && s !== null ? s.serviceType === serviceType : (s as any) === serviceType)) {
+      return true;
+    }
+  }
   if (record.serviceType === serviceType) return true;
 
   // Match by work field (primary match)

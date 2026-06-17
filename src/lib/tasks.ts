@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { saveRecord, type Bucket, type RegistryRecord, type DeleteReason } from "./records";
-import { createActivity, type ActivityLog } from "./activity";
+import { createActivity, logClientActivity, type ActivityLog } from "./activity";
 
 // ─── Re-exports ──────────────────────────────────────────────────────────────
 export type { DeleteReason };
@@ -482,6 +482,9 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     
     await setDoc(doc(db, COL, id), cleanData);
     console.log("✅ Task created successfully:", id);
+    if (task.associationType === "client" && task.recordId) {
+      await logClientActivity(task.recordId, task.createdBy, task.createdBy, "Task Created", "task", "", task.title);
+    }
     return task;
   } catch (error) {
     console.error("❌ Failed to create task:", error);
@@ -550,6 +553,9 @@ export async function updateTask(
     console.log("📝 updateTask CLEAN:", cleanUpdates);
     await updateDoc(doc(db, COL, taskId), cleanUpdates);
     console.log("✅ Task updated successfully");
+    if (existing.associationType === "client" && existing.recordId) {
+      await logClientActivity(existing.recordId, actor, actor, note || "Task Updated", "task", "", patch.title || existing.title);
+    }
   } catch (error) {
     console.error("❌ Failed to update task:", error);
     throw error;
@@ -557,6 +563,10 @@ export async function updateTask(
 }
 
 export async function setTaskDone(taskId: string, done: boolean, actor = "system"): Promise<void> {
+  const { getDoc } = await import("firebase/firestore");
+  const taskDoc = await getDoc(doc(db, COL, taskId));
+  const taskData = taskDoc.exists() ? (taskDoc.data() as Task) : null;
+
   const entry = activityEntry(actor, done ? "Marked complete" : "Reopened");
   const actLog = createActivity(actor, done ? "Marked complete" : "Reopened", "status", done ? "Assigned" : "Completed", done ? "Completed" : "Assigned");
   const cleanLog = removeUndefined(actLog);
@@ -573,6 +583,18 @@ export async function setTaskDone(taskId: string, done: boolean, actor = "system
   console.log("✓ setTaskDone RAW:", { done, actLog });
   console.log("✓ setTaskDone CLEAN:", updates);
   await updateDoc(doc(db, COL, taskId), updates);
+
+  if (taskData && taskData.associationType === "client" && taskData.recordId) {
+    await logClientActivity(
+      taskData.recordId,
+      actor,
+      actor,
+      done ? "Task Completed" : "Task Reopened",
+      "task",
+      done ? "Assigned" : "Completed",
+      done ? "Completed" : "Assigned"
+    );
+  }
 }
 
 export async function addComment(taskId: string, author: string, text: string): Promise<void> {

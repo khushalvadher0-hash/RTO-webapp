@@ -15,7 +15,7 @@ import {
   addDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { createActivity, type ActivityLog } from "./activity";
+import { createActivity, logClientActivity, type ActivityLog } from "./activity";
 import { transformInput, getForceCapsSetting, CAPITALIZE_FIELDS } from "./capitalize-settings";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -49,7 +49,13 @@ export type ServiceType =
   | "HP Addition"
   | "HP Termination";
 
-export type ServiceStatus = "Pending" | "In Progress" | "Completed" | "On Hold" | "Renewal Due";
+export type ServiceStatus = "Pending" | "In Progress" | "Completed" | "On Hold" | "Renewal Due" | "Active";
+
+export interface ServiceDetail {
+  serviceType: ServiceType;
+  dueDate: string; // YYYY-MM-DD
+  status: string; // e.g. "Active", "Renewal Due", "Completed", etc.
+}
 
 export const SERVICE_TYPES: ServiceType[] = [
   "Insurance",
@@ -133,6 +139,9 @@ export interface RegistryRecord {
   deletedAt?: string;
   deletedBy?: string;
   deleteReason?: DeleteReason;
+  // Vehicle Details addition
+  chassisNo?: string;
+  engineNo?: string;
   // Accounting fields
   serviceAmount?: number; // Total service charge
   amountReceived?: number; // Amount paid
@@ -140,7 +149,8 @@ export interface RegistryRecord {
   paymentStatus?: PaymentStatus; // Calculated: Paid | Partially Paid | Unpaid
   // Service Management fields
   serviceType?: ServiceType; // Legacy single service field (kept for compatibility)
-  services?: ServiceType[]; // New multi-service support
+  services?: ServiceDetail[]; // New multi-service support with details
+  serviceTypes?: ServiceType[]; // Support Firestore array-contains queries
   serviceStatus?: ServiceStatus; // Service-specific status
   serviceDueDate?: string; // ISO date string for service renewal
 }
@@ -149,8 +159,38 @@ export interface RegistryRecord {
  * Get canonical services for a record, supporting legacy `serviceType`.
  */
 export function getRecordServices(record: RegistryRecord): ServiceType[] {
-  if (Array.isArray(record.services) && record.services.length > 0) return record.services;
+  if (Array.isArray(record.services) && record.services.length > 0) {
+    return record.services.map((s) => (typeof s === "object" && s !== null ? s.serviceType : (s as any)));
+  }
   if (record.serviceType) return [record.serviceType];
+  return [];
+}
+
+/**
+ * Get service details objects (serviceType, dueDate, status) for a record, supporting legacy formats.
+ */
+export function getRecordServiceDetails(record: RegistryRecord): ServiceDetail[] {
+  if (Array.isArray(record.services) && record.services.length > 0) {
+    return record.services.map((s) => {
+      if (typeof s === "object" && s !== null) {
+        return s;
+      }
+      return {
+        serviceType: s as any,
+        dueDate: record.serviceDueDate || "",
+        status: record.serviceStatus || "Active",
+      };
+    });
+  }
+  if (record.serviceType) {
+    return [
+      {
+        serviceType: record.serviceType,
+        dueDate: record.serviceDueDate || "",
+        status: record.serviceStatus || "Active",
+      },
+    ];
+  }
   return [];
 }
 
@@ -264,31 +304,37 @@ export async function saveRecord(
   record: RegistryRecord,
   actor?: string,
 ): Promise<void> {
+  const colName = colFor(bucket);
+  
   // Get existing record to track changes
-  const existingDoc = await getDoc(doc(db, colFor(bucket), record.id));
+  const existingDoc = await getDoc(doc(db, colName, record.id));
 
   const existing = existingDoc.exists()
     ? (existingDoc.data() as RegistryRecord)
     : null;
 
-  // Track field changes for important fields
-  const tracked = [
-    "status",
-    "assignee",
-    "priority",
-    "work",
-    "application",
-    "serviceAmount",
-    "amountReceived",
-    "paymentDate",
-    "paymentStatus",
-    "serviceType",
-    "serviceStatus",
-    "serviceDueDate",
-  ];
   const activities: ActivityLog[] = [];
 
+  // Define HSL/premium labels for fields
+  const fieldLabelMap: Record<string, string> = {
+    name: "Client Name",
+    mo: "Mobile Number",
+    co: "Address",
+    groupName: "Client Group",
+    mvNo: "Vehicle Number",
+    chassisNo: "Chassis Number",
+    engineNo: "Engine Number",
+    serviceAmount: "Total Service Amount",
+    amountReceived: "Amount Received",
+    paymentDate: "Payment Date",
+    paymentStatus: "Payment Status",
+    status: "Record Status",
+    assignee: "Assigned Employee",
+  };
+
+  // 1. Check client/vehicle/accounting changes
   if (existing && actor) {
+    const tracked = Object.keys(fieldLabelMap);
     for (const field of tracked) {
       const oldVal = (existing as any)[field];
       const newVal = (record as any)[field];
@@ -296,46 +342,165 @@ export async function saveRecord(
         activities.push(
           createActivity(
             actor,
-            `Updated ${field}`,
-            field,
+            `Changed ${fieldLabelMap[field] ?? field}`,
+            fieldLabelMap[field] ?? field,
             String(oldVal ?? "—"),
             String(newVal),
-          ),
+          )
         );
       }
     }
   }
 
-  // CRITICAL: Normalize serviceType / services before saving. Support both
-  // legacy `serviceType` and new `services[]` field. The DB will be updated
-  // with `services` for multi-service support while keeping `serviceType`
-  // for backward compatibility (set to first service if present).
-  const normalizedServices: ServiceType[] = [];
+  // 2. Normalize and check Service changes
+  const normalizedServices: ServiceDetail[] = [];
+  const serviceTypes: ServiceType[] = [];
 
-  if (Array.isArray(record.services) && record.services.length > 0) {
-    for (const s of record.services) {
-      const n = normalizeServiceType(s);
-      if (n) normalizedServices.push(n);
+  const rawServices = record.services;
+  if (Array.isArray(rawServices) && rawServices.length > 0) {
+    for (const s of rawServices) {
+      if (typeof s === "object" && s !== null) {
+        const nType = normalizeServiceType(s.serviceType);
+        if (nType) {
+          normalizedServices.push({
+            serviceType: nType,
+            dueDate: s.dueDate || "",
+            status: s.status || "Active",
+          });
+          if (!serviceTypes.includes(nType)) {
+            serviceTypes.push(nType);
+          }
+        }
+      } else {
+        const nType = normalizeServiceType(s);
+        if (nType) {
+          normalizedServices.push({
+            serviceType: nType,
+            dueDate: record.serviceDueDate || "",
+            status: record.serviceStatus || "Active",
+          });
+          if (!serviceTypes.includes(nType)) {
+            serviceTypes.push(nType);
+          }
+        }
+      }
+    }
+  } else if (record.serviceType) {
+    // Handle single legacy serviceType fallback
+    const nType = normalizeServiceType(record.serviceType);
+    if (nType) {
+      normalizedServices.push({
+        serviceType: nType,
+        dueDate: record.serviceDueDate || "",
+        status: record.serviceStatus || "Active",
+      });
+      serviceTypes.push(nType);
     }
   }
 
-  if (record.serviceType && normalizedServices.length === 0) {
-    const n = normalizeServiceType(record.serviceType);
-    if (n) normalizedServices.push(n);
-    else {
-      console.error(
-        "[saveRecord] ERROR: Invalid serviceType provided - normalization failed!",
-        { inputServiceType: record.serviceType, validServiceTypes: SERVICE_TYPES },
-      );
-      throw new Error(`Invalid serviceType: "${record.serviceType}". Valid types are: ${SERVICE_TYPES.join(", ")}`);
+  // Compare service changes
+  if (existing && actor) {
+    const oldServices = Array.isArray(existing.services) 
+      ? existing.services 
+      : (existing.serviceType 
+        ? [{ serviceType: existing.serviceType, dueDate: existing.serviceDueDate || "", status: existing.serviceStatus || "Active" } as ServiceDetail] 
+        : []);
+    
+    // Services added / modified
+    for (const newS of normalizedServices) {
+      const oldS = oldServices.find(os => os.serviceType === newS.serviceType);
+      if (!oldS) {
+        activities.push(
+          createActivity(
+            actor,
+            `Added Service: ${newS.serviceType}`,
+            "Service Added",
+            "",
+            newS.serviceType
+          )
+        );
+      } else {
+        if (oldS.dueDate !== newS.dueDate) {
+          activities.push(
+            createActivity(
+              actor,
+              `Changed ${newS.serviceType} Due Date`,
+              `${newS.serviceType} Due Date`,
+              oldS.dueDate || "—",
+              newS.dueDate || "—"
+            )
+          );
+        }
+        if (oldS.status !== newS.status) {
+          activities.push(
+            createActivity(
+              actor,
+              `Changed ${newS.serviceType} Status`,
+              `${newS.serviceType} Status`,
+              oldS.status || "—",
+              newS.status || "—"
+            )
+          );
+        }
+      }
+    }
+
+    // Services removed
+    for (const oldS of oldServices) {
+      const newS = normalizedServices.find(ns => ns.serviceType === oldS.serviceType);
+      if (!newS) {
+        activities.push(
+          createActivity(
+            actor,
+            `Removed Service: ${oldS.serviceType}`,
+            "Service Removed",
+            oldS.serviceType,
+            ""
+          )
+        );
+      }
+    }
+  }
+
+  // 3. Document attachment deletions tracking and cleanup
+  if (existing && actor) {
+    const oldAttachments = existing.attachments || [];
+    const newAttachments = record.attachments || [];
+    
+    // Find deleted attachments
+    for (const oldA of oldAttachments) {
+      const existsInNew = newAttachments.some(na => na.id === oldA.id);
+      if (!existsInNew) {
+        // Log delete activity
+        activities.push(
+          createActivity(
+            actor,
+            `Deleted document: ${oldA.name}`,
+            "document",
+            oldA.name,
+            ""
+          )
+        );
+        // Call backend deleteDoc from customerDocs
+        try {
+          const { deleteDoc: deleteCustomerDoc } = await import("./customerDocs");
+          await deleteCustomerDoc(oldA.id, oldA.storagePath);
+          console.log(`[saveRecord] Successfully cleaned up deleted attachment: ${oldA.name}`);
+        } catch (err) {
+          console.error(`[saveRecord] Error cleaning up deleted attachment: ${oldA.name}`, err);
+        }
+      }
     }
   }
 
   const normalized = {
     ...record,
     services: normalizedServices.length > 0 ? normalizedServices : undefined,
-    // Keep legacy serviceType set to first normalized service (if any) for compatibility
-    serviceType: normalizedServices.length > 0 ? normalizedServices[0] : undefined,
+    serviceTypes: serviceTypes.length > 0 ? serviceTypes : undefined,
+    // Keep legacy serviceType set to first normalized service for compatibility
+    serviceType: serviceTypes.length > 0 ? serviceTypes[0] : undefined,
+    serviceDueDate: normalizedServices.length > 0 ? normalizedServices[0].dueDate : record.serviceDueDate,
+    serviceStatus: normalizedServices.length > 0 ? normalizedServices[0].status as ServiceStatus : record.serviceStatus,
   };
 
   // Prepare data with updated metadata
@@ -349,46 +514,37 @@ export async function saveRecord(
       : activities,
   };
 
-  // Also write detailed per-field activity logs to a separate collection for audit
+  // Write detailed per-field activity logs to separate audit collection
   if (activities.length > 0 && record.id && actor) {
-    try {
-      const logsCol = collection(db, "client_activity_logs");
-      for (const act of activities) {
-        await addDoc(logsCol, {
-          clientId: record.id,
-          userId: actor,
-          userName: actor,
-          action: act.action,
-          field: act.field || null,
-          oldValue: act.oldValue || null,
-          newValue: act.newValue || null,
-          timestamp: act.timestamp,
-        });
-      }
-    } catch (err) {
-      console.error("[saveRecord] Failed to write client_activity_logs entries:", err);
+    for (const act of activities) {
+      await logClientActivity(
+        record.id,
+        actor,
+        actor,
+        act.action,
+        act.field || null,
+        act.oldValue || null,
+        act.newValue || null
+      );
     }
   }
 
   const { id, ...updateData } = data;
 
-  // Apply uppercase forcing if the setting is enabled. This affects only
-  // the current save operation (create/edit/import) and does not modify
-  // existing records unless they are being updated now.
+  // Apply uppercase forcing
   try {
     if (getForceCapsSetting()) {
-      for (const field of CAPITALIZE_FIELDS) {
+      for (const field of [...CAPITALIZE_FIELDS, "chassisNo", "engineNo"]) {
         if ((updateData as any)[field]) {
           (updateData as any)[field] = transformInput((updateData as any)[field], true);
         }
       }
     }
   } catch (err) {
-    // If settings aren't available (e.g., server-side), skip gracefully
     console.warn("[saveRecord] Could not apply force-caps setting:", err);
   }
 
-  await setDoc(doc(db, colFor(bucket), id), updateData, { merge: true });
+  await setDoc(doc(db, colName, id), updateData, { merge: true });
 }
 
 /** Check for possible duplicate entries (same mvNo and work). */
@@ -473,6 +629,17 @@ export async function addAttachment(
   });
 
   await updateDoc(doc(db, colFor(bucket), recordId), updates);
+
+  // Write to client_activity_logs
+  await logClientActivity(
+    recordId,
+    attachment.uploadedBy,
+    attachment.uploadedBy,
+    `Attached ${attachment.name}`,
+    "document",
+    "",
+    attachment.name
+  );
 }
 
 // ─── Legacy stubs (kept so non-updated call-sites don't break at compile time) ─

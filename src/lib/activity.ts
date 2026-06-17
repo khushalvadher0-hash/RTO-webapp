@@ -1,4 +1,6 @@
 // Activity — Shared activity log types and helpers for all records.
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "./firebase";
 
 export interface ActivityLog {
   id: string;
@@ -29,6 +31,36 @@ export function createActivity(
     newValue,
     timestamp: new Date().toISOString(),
   };
+}
+
+/**
+ * Log a detailed client activity to client_activity_logs collection in Firestore.
+ */
+export async function logClientActivity(
+  clientId: string,
+  userId: string,
+  userName: string,
+  action: string,
+  field?: string | null,
+  oldValue?: string | null,
+  newValue?: string | null,
+): Promise<void> {
+  if (!clientId) return;
+  try {
+    const logsCol = collection(db, "client_activity_logs");
+    await addDoc(logsCol, {
+      clientId,
+      userId,
+      userName,
+      action,
+      field: field || null,
+      oldValue: oldValue || null,
+      newValue: newValue || null,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("[logClientActivity] Failed to write client_activity_logs entry:", err);
+  }
 }
 
 /**

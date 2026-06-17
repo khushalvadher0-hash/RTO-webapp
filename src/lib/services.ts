@@ -5,6 +5,7 @@ import {
   getDocs,
   type QueryConstraint,
 } from "firebase/firestore";
+import { computeFollowUps } from "./followups";
 import { db } from "./firebase";
 import { normalizeServiceType, type Bucket, type RegistryRecord, type ServiceType, type RecordStatus } from "./records";
 
@@ -30,7 +31,20 @@ export async function getServiceClients(
 
     const resultsMap: Map<string, RegistryRecord> = new Map();
 
-    // Query for records that have the new `services` array
+    // Query for records that have the new `serviceTypes` array (multi-service objects)
+    try {
+      const q0 = query(collection(db, colName), where("serviceTypes", "array-contains", serviceType));
+      const snap0 = await getDocs(q0);
+      for (const d of snap0.docs) {
+        const data = d.data() as RegistryRecord;
+        const rec = { id: d.id, ...data } as RegistryRecord;
+        if (!rec.isDeleted) resultsMap.set(d.id, rec);
+      }
+    } catch (err) {
+      console.warn(`[getServiceClients] serviceTypes query failed for ${colName}:`, err);
+    }
+
+    // Query for records that have the legacy `services` array of strings
     try {
       const q1 = query(collection(db, colName), where("services", "array-contains", serviceType));
       const snap1 = await getDocs(q1);
@@ -40,7 +54,7 @@ export async function getServiceClients(
         if (!rec.isDeleted) resultsMap.set(d.id, rec);
       }
     } catch (err) {
-      console.warn(`[getServiceClients] services query failed for ${colName}:`, err);
+      console.warn(`[getServiceClients] services legacy query failed for ${colName}:`, err);
     }
 
     // Also query legacy `serviceType` field for compatibility
@@ -183,14 +197,20 @@ export async function getUpcomingRenewals(daysFromNow: number = 30): Promise<Reg
   );
 
   const flatRecords = allRecords.flat();
+  const followups = computeFollowUps(flatRecords);
   const now = new Date();
-  const futureDate = new Date(now.getTime() + daysFromNow * 24 * 60 * 60 * 1000);
 
-  return flatRecords.filter((r) => {
-    if (!r.serviceDueDate) return false;
-    const dueDate = new Date(r.serviceDueDate);
-    return dueDate >= now && dueDate <= futureDate;
-  });
+  const matched = followups.flat.filter((f) => typeof f.daysRemaining === "number" && f.daysRemaining >= 0 && f.daysRemaining <= daysFromNow);
+  const byId = new Map<string, RegistryRecord>();
+  for (const r of flatRecords) byId.set(r.id, r);
+
+  // Return unique full records
+  const out: RegistryRecord[] = [];
+  for (const m of matched) {
+    const rec = byId.get(m.clientId);
+    if (rec && !out.find((o) => o.id === rec.id)) out.push(rec);
+  }
+  return out;
 }
 
 /**

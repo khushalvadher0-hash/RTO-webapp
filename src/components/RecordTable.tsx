@@ -16,6 +16,8 @@ import {
   SERVICE_TYPES,
   serviceLabel,
   getRecordServices,
+  getRecordServiceDetails,
+  type ServiceDetail,
   type ServiceType,
   type Bucket,
   type RegistryRecord,
@@ -136,13 +138,13 @@ export function RecordTable({ bucket, title, description }: Props) {
 
   const openNew = () => {
     const nextSr = records.length ? Math.max(...records.map((r) => r.srNo)) + 1 : 1;
-    setEditing(emptyRecord(nextSr));
+    setEditing({ ...emptyRecord(nextSr), services: [] });
     setOpen(true);
   };
 
   const openEdit = (r: RegistryRecord) => {
-    // Initialize services[] for the editor (support legacy single `serviceType`)
-    const services = getRecordServices(r);
+    // Initialize services[] as objects for the editor
+    const services = getRecordServiceDetails(r);
     setEditing({ ...r, services });
     setOpen(true);
   };
@@ -351,6 +353,8 @@ export function RecordTable({ bucket, title, description }: Props) {
               <Field label="FITNESS"><Input value={editing.fitness} onChange={(e) => setEditing({ ...editing, fitness: e.target.value })} placeholder="Expiry / status" /></Field>
               <Field label="TAX"><Input value={editing.tax} onChange={(e) => setEditing({ ...editing, tax: e.target.value })} placeholder="Paid / Due" /></Field>
               <Field label="C/O"><Input value={editing.co} onChange={(e) => setEditing({ ...editing, co: transformInput(e.target.value, forceCaps) })} /></Field>
+              <Field label="CHASSIS NUMBER"><Input value={editing.chassisNo || ""} onChange={(e) => setEditing({ ...editing, chassisNo: transformInput(e.target.value, forceCaps) })} placeholder="Chassis No" /></Field>
+              <Field label="ENGINE NUMBER"><Input value={editing.engineNo || ""} onChange={(e) => setEditing({ ...editing, engineNo: transformInput(e.target.value, forceCaps) })} placeholder="Engine No" /></Field>
               
               {/* Accounting Fields */}
               <div className="sm:col-span-2 border-t pt-4 mt-2">
@@ -443,32 +447,120 @@ export function RecordTable({ bucket, title, description }: Props) {
               <div className="sm:col-span-2 border-t pt-4 mt-2">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3">Service Management</h3>
               </div>
-                  <Field label="Services" full>
-                    <div className="grid grid-cols-2 gap-2">
-                      {SERVICE_TYPES.map((s) => (
-                        <label key={s} className="inline-flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={(editing.services ?? []).includes(s as ServiceType)}
-                            onChange={(e) => {
-                              const cur = new Set(editing.services ?? []);
-                              if (e.target.checked) cur.add(s as ServiceType); else cur.delete(s as ServiceType);
-                              setEditing({ ...editing, services: Array.from(cur) });
-                            }}
-                          />
-                          <span>{serviceLabel(s as ServiceType)}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">Select one or more services for this record.</p>
-                  </Field>
-              <Field label="Service Due Date">
-                <Input
-                  type="date"
-                  value={editing.serviceDueDate || ""}
-                  onChange={(e) => setEditing({ ...editing, serviceDueDate: e.target.value })}
-                />
-              </Field>
+
+              <div className="sm:col-span-2 space-y-4">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">Selected Services & Due Dates</Label>
+                
+                {/* List of active services */}
+                <div className="space-y-3">
+                  {((editing.services as any) || []).map((service: any, index: number) => {
+                    const serviceObj = typeof service === "object" && service !== null 
+                      ? service 
+                      : { serviceType: service, dueDate: editing.serviceDueDate || "", status: "Active" };
+                    
+                    return (
+                      <div key={index} className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 border rounded-lg bg-muted/20 relative group hover:border-primary/30 transition-colors">
+                        <div className="font-semibold text-sm sm:w-1/4">
+                          {serviceLabel(serviceObj.serviceType)}
+                        </div>
+                        
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground uppercase font-bold w-16 sm:hidden">Due Date</span>
+                            <Input
+                              type="date"
+                              value={serviceObj.dueDate}
+                              onChange={(e) => {
+                                const newServices = [...(editing.services || [])];
+                                newServices[index] = { ...serviceObj, dueDate: e.target.value };
+                                setEditing({ ...editing, services: newServices });
+                              }}
+                              className="h-9 text-xs flex-1"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground uppercase font-bold w-16 sm:hidden">Status</span>
+                            <Select
+                              value={serviceObj.status || "Active"}
+                              onValueChange={(v) => {
+                                const newServices = [...(editing.services || [])];
+                                newServices[index] = { ...serviceObj, status: v };
+                                setEditing({ ...editing, services: newServices });
+                              }}
+                            >
+                              <SelectTrigger className="h-9 text-xs flex-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {["Active", "Renewal Due", "Completed", "Pending", "In Progress", "On Hold"].map((st) => (
+                                  <SelectItem key={st} value={st} className="text-xs">
+                                    {st}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            const newServices = (editing.services || []).filter((_, idx) => idx !== index);
+                            setEditing({ ...editing, services: newServices });
+                          }}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-9 w-9 self-end sm:self-auto"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  
+                  {(!editing.services || editing.services.length === 0) && (
+                    <p className="text-xs text-muted-foreground text-center py-4 bg-muted/10 border border-dashed rounded-lg">
+                      No services added to this client yet.
+                    </p>
+                  )}
+                </div>
+
+                {/* Add Service Selector */}
+                {SERVICE_TYPES.filter(
+                  (s) => !getRecordServices(editing).includes(s)
+                ).length > 0 && (
+                  <div className="flex items-center gap-2 max-w-sm">
+                    <Select
+                      value="__placeholder"
+                      onValueChange={(v) => {
+                        if (v === "__placeholder") return;
+                        const newServices = [...(editing.services || [])];
+                        newServices.push({
+                          serviceType: v as ServiceType,
+                          dueDate: "",
+                          status: "Active",
+                        });
+                        setEditing({ ...editing, services: newServices });
+                      }}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Add service..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__placeholder" disabled>Select service to add...</SelectItem>
+                        {SERVICE_TYPES.filter(
+                          (s) => !getRecordServices(editing).includes(s)
+                        ).map((s) => (
+                          <SelectItem key={s} value={s} className="text-xs">
+                            {serviceLabel(s)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
 
               {/* WhatsApp Quick Actions */}
               <div className="sm:col-span-2 border-t pt-4 mt-2">

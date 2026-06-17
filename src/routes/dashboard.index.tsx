@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { subscribeToRecords, SERVICE_TYPES, serviceLabel, serviceToUrlParam, type RegistryRecord } from "@/lib/records";
+import { computeFollowUps } from "@/lib/followups";
 import { getTotalRevenue, getActiveServicesCount, getRevenueByService, getUpcomingRenewals } from "@/lib/services";
 import { subscribeToTasks, type Task } from "@/lib/tasks";
 import { subscribeToTargets, calculateTargetMetrics, type TargetMetrics } from "@/lib/targets";
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/dashboard/")({
 function Overview() {
   const [clients, setClients] = useState<RegistryRecord[]>([]);
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
+  const [customers, setCustomers] = useState<RegistryRecord[]>([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [activeServices, setActiveServices] = useState(0);
   const [revenueByService, setRevenueByService] = useState<{ service: string; revenue: number }[]>([]);
@@ -21,16 +23,18 @@ function Overview() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [targets, setTargets] = useState<TargetMetrics[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<{ type: string } | null>(null);
 
   useEffect(() => {
     const u1 = subscribeToRecords("clients", setClients);
     const u2 = subscribeToRecords("leads", setLeads);
-    const u3 = subscribeToTasks((allTasks) => setTasks(allTasks));
-    const u4 = subscribeToTargets((allTargets) => {
+    const u3 = subscribeToRecords("customers", setCustomers);
+    const u4 = subscribeToTasks((allTasks) => setTasks(allTasks));
+    const u5 = subscribeToTargets((allTargets) => {
       const enriched = allTargets.map(t => calculateTargetMetrics(t));
       setTargets(enriched);
     });
-    return () => { u1(); u2(); u3(); u4(); };
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   useEffect(() => {
@@ -56,6 +60,13 @@ function Overview() {
 
     loadServiceData();
   }, []);
+
+    // Compute follow-ups in real-time from all registry buckets
+    const [followups, setFollowups] = useState<any>(null);
+    useEffect(() => {
+      const all = [...clients, ...leads, ...customers];
+      setFollowups(computeFollowUps(all));
+    }, [clients, leads, customers]);
 
   const completed = clients.filter((c) => c.status === "Completed").length;
   const inProgress = [...clients, ...leads].filter((c) => c.status === "In Progress").length;
@@ -132,6 +143,87 @@ function Overview() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Follow-Up Center */}
+        {followups && (
+          <div className="space-y-4 mt-4">
+            <h3 className="text-lg font-semibold">Follow-Up Center</h3>
+
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              <Card
+                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
+                onClick={() => setFilter({ type: 'today' })}
+              >
+                <CardHeader>
+                  <CardTitle className="text-sm group-hover:text-orange-600">Today's Follow-Ups</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold group-hover:text-orange-600">{followups.totals.today}</div>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
+                onClick={() => setFilter({ type: 'upcoming7' })}
+              >
+                <CardHeader>
+                  <CardTitle className="text-sm group-hover:text-orange-600">Upcoming 7 Days</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold group-hover:text-orange-600">{followups.totals.upcoming7}</div>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
+                onClick={() => setFilter({ type: 'upcoming15' })}
+              >
+                <CardHeader>
+                  <CardTitle className="text-sm group-hover:text-orange-600">Upcoming 15 Days</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold group-hover:text-orange-600">{followups.totals.upcoming15}</div>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
+                onClick={() => setFilter({ type: 'upcoming30' })}
+              >
+                <CardHeader>
+                  <CardTitle className="text-sm group-hover:text-orange-600">Upcoming 30 Days</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold group-hover:text-orange-600">{followups.totals.upcoming30}</div>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
+                onClick={() => setFilter({ type: 'overdue' })}
+              >
+                <CardHeader>
+                  <CardTitle className="text-sm group-hover:text-orange-600">Overdue Services</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600 group-hover:text-orange-600">{followups.totals.overdue}</div>
+                </CardContent>
+              </Card>
+
+              <Card className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors">
+                <CardHeader>
+                  <CardTitle className="text-sm group-hover:text-orange-600">Total Active Services</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold group-hover:text-orange-600">{followups.totals.totalActiveServices}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Quick lists - show filtered entries when a card is clicked */}
+            <FollowUpLists followups={followups} filter={filter} setFilter={setFilter} />
+          </div>
+        )}
 
         {/* Revenue by Service */}
         {revenueByService.length > 0 && (
@@ -299,6 +391,51 @@ function Overview() {
           <Link to="/dashboard/clients" className="px-3 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90">Open Clients</Link>
           <Link to="/dashboard/leads" className="px-3 py-2 text-sm rounded-md border hover:bg-muted">Open Leads</Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function FollowUpLists({ followups, filter, setFilter }: any) {
+  const type = filter?.type || "today";
+  const list =
+    type === "today" ? followups.today :
+    type === "upcoming7" ? followups.upcoming7 :
+    type === "upcoming15" ? followups.upcoming15 :
+    type === "upcoming30" ? followups.upcoming30 :
+    type === "overdue" ? followups.overdue : followups.flat;
+
+  return (
+    <div>
+      <div className="mt-3 grid gap-3">
+        {list.length === 0 ? (
+          <Card>
+            <CardContent className="py-6 text-center text-sm text-muted-foreground">No records found for this filter.</CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">{type === 'today' ? "Today's Follow-Ups" : type}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {list.map((e: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-2 border rounded text-sm">
+                    <div>
+                      <p className="font-medium">{e.clientName}</p>
+                      <p className="text-xs text-muted-foreground">{e.serviceType} • {e.mvNo || '—'}</p>
+                    </div>
+                    <div className="text-right text-xs">
+                      <div>{e.dueDate ? new Date(e.dueDate).toLocaleDateString('en-IN') : 'N/A'}</div>
+                      <div className="text-muted-foreground">{e.daysRemaining !== undefined ? `${e.daysRemaining} days` : ''}</div>
+                      <div className="text-xs">{e.assignee || 'Unassigned'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
