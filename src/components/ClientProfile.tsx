@@ -58,22 +58,24 @@ export function ClientProfile({ record, open, onOpenChange }: Props) {
     setActivities(fallbackActivities);
 
     // Subscribe to client_activity_logs collection
-    const q = query(collection(db, "client_activity_logs"), where("clientId", "==", record.id), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "client_activity_logs"), where("clientId", "==", record.id));
     const unsubActs = onSnapshot(
       q,
       (snap) => {
-        const remoteActivities = snap.docs.map((d) => {
-          const it = d.data() as any;
-          return {
-            id: d.id,
-            actor: it.userName ?? it.userId ?? "",
-            action: it.action ?? "",
-            field: it.field,
-            oldValue: it.oldValue,
-            newValue: it.newValue,
-            timestamp: normalizeActivityTimestamp(it.timestamp),
-          };
-        });
+        const remoteActivities = snap.docs
+          .map((d) => {
+            const it = d.data() as any;
+            return {
+              id: d.id,
+              actor: it.userName ?? it.userId ?? "",
+              action: it.action ?? "",
+              field: it.field,
+              oldValue: it.oldValue,
+              newValue: it.newValue,
+              timestamp: normalizeActivityTimestamp(it.timestamp),
+            };
+          })
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
         if (remoteActivities.length === 0 && fallbackActivities.length > 0) {
           setActivities(fallbackActivities);
