@@ -3,6 +3,8 @@ import { attachPdfToInvoice } from "./billing";
 import type { RegistryRecord } from "./records";
 import type { Task } from "./tasks";
 import { staffLabel } from "./records";
+import { formatCurrency, formatDate, formatTime } from "./formatting";
+import { renderInvoiceToCanvas } from "./pdfInvoiceRenderer";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -29,34 +31,7 @@ const COLORS = {
 /**
  * Format currency as Indian Rupees.
  */
-export function formatCurrency(amount?: number): string {
-  if (amount === undefined || amount === null) return "₹0";
-  return `₹${Number(amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
-
-/**
- * Format date to readable format.
- */
-export function formatDate(iso?: string): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-/**
- * Format time to readable format.
- */
-export function formatTime(iso?: string): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
+export { formatCurrency, formatDate, formatTime } from "./formatting";
 
 /**
  * Add header section to PDF.
@@ -172,6 +147,32 @@ function addTableRow(
   }
 
   return yPos + (Math.max(...columns.map((c) => doc.splitTextToSize(c, 20).length)) * lineHeight) + 1;
+}
+
+function addCanvasToPdf(doc: jsPDF, canvas: HTMLCanvasElement): void {
+  const imgData = canvas.toDataURL("image/png");
+  const pdfWidth = doc.internal.pageSize.getWidth();
+  const pdfHeight = doc.internal.pageSize.getHeight();
+  
+  // Calculate the height of the image when fitted to PDF width
+  const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+  
+  // Add the image across multiple pages if needed
+  let position = 0;
+  let pageNum = 0;
+  
+  while (position < imgHeight) {
+    if (pageNum > 0) {
+      doc.addPage();
+    }
+    
+    // Calculate the Y offset for this page
+    const yOffset = -position;
+    doc.addImage(imgData, "PNG", 0, yOffset, pdfWidth, imgHeight);
+    
+    position += pdfHeight;
+    pageNum += 1;
+  }
 }
 
 // ─── Client/Lead/Customer PDF ─────────────────────────────────────────────────
@@ -353,167 +354,38 @@ export function generateTaskPDF(task: Task): void {
  * Returns the uploaded URL when successful.
  */
 export async function generateInvoicePDF(invoice: Invoice): Promise<string | void> {
-  const doc = new jsPDF();
-  let yPos = MARGIN;
-
-  // ─── Header Section ───────────────────────────────────────────────────
-  doc.setFillColor(...COLORS.headerBg);
-  doc.rect(MARGIN - 2, yPos - 2, PAGE_WIDTH - 2 * MARGIN + 4, 30, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(...COLORS.headerText);
-  doc.text("INVOICE", MARGIN + 5, yPos + 10);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text(COMPANY_NAME, MARGIN + 5, yPos + 18);
-  doc.setFontSize(8);
-  doc.text(COMPANY_ADDRESS, MARGIN + 5, yPos + 23);
-
-  // Invoice number and date on right
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.accentColor);
-  doc.text(invoice.invoiceNumber, PAGE_WIDTH - MARGIN - 5, yPos + 6, { align: "right" });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLORS.labelText);
-  doc.text(`Invoice Date: ${formatDate(invoice.invoiceDate)}`, PAGE_WIDTH - MARGIN - 5, yPos + 12, { align: "right" });
-  doc.text(`Billing Period: ${formatDate(invoice.billingPeriodStart)} to ${formatDate(invoice.billingPeriodEnd)}`, PAGE_WIDTH - MARGIN - 5, yPos + 17, { align: "right" });
-
-  yPos += 35;
-
-  // Client and services sections (reuse existing logic from below)
-  yPos = addSectionTitle(doc, yPos, "BILL TO");
-  const clientFields = [
-    ["Client Name", invoice.clientName],
-    ["Mobile Number", invoice.clientMobile || "—"],
-    ["Address", invoice.clientAddress || "—"],
-    ["Vehicle Number", invoice.vehicleNumber || "—"],
-    ["Vehicle Type", invoice.vehicleType || "—"],
-    ["Client ID", invoice.clientId],
-  ];
-  for (const [label, value] of clientFields) {
-    yPos = addRow(doc, yPos, label, value);
-  }
-
-  yPos += 3;
-  yPos = addSectionTitle(doc, yPos, "SERVICES");
-
-  // Table header
-  const colWidths = [30, 35, 15, 20, 25, 20, 25];
-  const headers = ["Service", "Vehicle", "Qty", "Unit Price", "Amount", "Tax", "Total"];
-
-  doc.setDrawColor(...COLORS.borderColor);
-  doc.setFillColor(...COLORS.headerBg);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLORS.headerText);
-
-  let xPos = MARGIN;
-  for (let i = 0; i < headers.length; i++) {
-    doc.rect(xPos, yPos - 4, colWidths[i], 6, "F");
-    doc.text(headers[i], xPos + 1, yPos - 1);
-    xPos += colWidths[i];
-  }
-
-  yPos += 8;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  for (const service of invoice.services) {
-    const row = [
-      (service.serviceName || "").substring(0, 20),
-      (service.vehicleNumber || "").substring(0, 15),
-      String(service.quantity || 1),
-      formatCurrency(service.unitPrice).substring(0, 12),
-      formatCurrency(service.amount).substring(0, 12),
-      formatCurrency(service.tax).substring(0, 12),
-      formatCurrency(service.total).substring(0, 12),
-    ];
-
-    xPos = MARGIN;
-    for (let i = 0; i < row.length; i++) {
-      doc.setTextColor(...COLORS.valueText);
-      doc.text(row[i], xPos + 1, yPos);
-      xPos += colWidths[i];
-    }
-
-    yPos += 5;
-    if (yPos > PAGE_HEIGHT - MARGIN - 40) {
-      doc.addPage();
-      yPos = MARGIN;
-    }
-  }
-
-  // Summary
-  const summaryX = MARGIN + CONTENT_WIDTH - 60;
-  const summaryWidth = 55;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...COLORS.labelText);
-  doc.text("Subtotal:", summaryX, yPos);
-  doc.setTextColor(...COLORS.valueText);
-  doc.text(formatCurrency(invoice.subtotal), summaryX + summaryWidth - 2, yPos, { align: "right" });
-  yPos += 5;
-  doc.setTextColor(...COLORS.labelText);
-  doc.text("Tax (18%):", summaryX, yPos);
-  doc.setTextColor(...COLORS.valueText);
-  doc.text(formatCurrency(invoice.totalTax), summaryX + summaryWidth - 2, yPos, { align: "right" });
-  yPos += 5;
-  doc.setFillColor(...COLORS.accentColor);
-  doc.rect(summaryX - 2, yPos - 4, summaryWidth + 4, 6, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...COLORS.headerText);
-  doc.text("TOTAL:", summaryX, yPos);
-  doc.text(formatCurrency(invoice.totalAmount), summaryX + summaryWidth - 2, yPos, { align: "right" });
-  yPos += 12;
-
-  // Footer & signature
-  yPos = addSectionTitle(doc, yPos, "AUTHORIZED BY");
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLORS.valueText);
-  doc.line(MARGIN, yPos + 10, MARGIN + 40, yPos + 10);
-  doc.text("Authorized Signatory", MARGIN + 5, yPos + 12);
-  doc.line(MARGIN + CONTENT_WIDTH - 40, yPos + 10, MARGIN + CONTENT_WIDTH, yPos + 10);
-  doc.text("Date", MARGIN + CONTENT_WIDTH - 35, yPos + 12);
-
-  // Terms
-  let termsY = PAGE_HEIGHT - 25;
-  doc.setFontSize(7);
-  doc.setTextColor(100, 100, 100);
-  const terms = [
-    "• Payment terms: Due within 30 days of invoice date",
-    "• This invoice is valid only if signed by authorized personnel",
-    "• Please remit payment to the account mentioned in the invoice",
-    "• For any queries, please contact us",
-  ];
-  for (const term of terms) {
-    doc.text(term, MARGIN + 3, termsY);
-    termsY += 3;
-  }
-
-  // Save blob, upload, then trigger download (best-effort)
-  const blob = doc.output("blob");
   try {
-    const url = await attachPdfToInvoice(invoice.id, blob as Blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${invoice.invoiceNumber}.pdf`;
-    a.click();
-    return url;
-  } catch (e) {
-    const url = URL.createObjectURL(blob as Blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${invoice.invoiceNumber}.pdf`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    return url;
+    const canvas = await renderInvoiceToCanvas(invoice);
+    const doc = new jsPDF("p", "mm", "a4");
+    addCanvasToPdf(doc, canvas);
+
+    const blob = doc.output("blob") as Blob;
+    
+    // Always try to download first (blob URL)
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `${invoice.invoiceNumber}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Then upload to Firebase (non-blocking)
+    setTimeout(async () => {
+      try {
+        await attachPdfToInvoice(invoice.id, blob);
+      } catch (uploadError) {
+        console.warn("Failed to upload PDF to Firebase:", uploadError);
+      }
+    }, 100);
+    
+    // Clean up blob URL after a short delay
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+    
+    return blobUrl;
+  } catch (error) {
+    console.error("Invoice PDF generation failed:", error);
+    throw error;
   }
 }
 

@@ -90,26 +90,31 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
           amount: unitPrice,
         });
 
-        const validation = await validateBillingPeriodSequence(
-          selectedClient.id,
-          billingStartDate,
-          billingEndDate,
-        );
+        try {
+          const validation = await validateBillingPeriodSequence(
+            selectedClient.id,
+            billingStartDate,
+            billingEndDate,
+          );
 
-        console.log({
-          step: "VALIDATION_RESULT",
-          validation,
-          billingStartDate,
-          billingEndDate,
-          selectedServicesLength: selectedServices.length,
-          selectedServices,
-          amount: Number(unitPrice),
-        });
+          console.log({
+            step: "VALIDATION_RESULT",
+            validation,
+            billingStartDate,
+            billingEndDate,
+            selectedServicesLength: selectedServices.length,
+            selectedServices,
+            amount: Number(unitPrice),
+          });
 
-        if (!validation.valid) {
-          setValidationMsg(`❌ ${validation.reason}`);
-        } else {
-          setValidationMsg("✓ Valid billing period");
+          if (!validation.valid) {
+            setValidationMsg(`❌ ${validation.reason}`);
+          } else {
+            setValidationMsg("✓ Valid billing period");
+          }
+        } catch (err: any) {
+          console.error("VALIDATION_ERROR", err);
+          setValidationMsg(`❌ ${err?.message || "Billing validation failed."}`);
         }
       })();
     } else {

@@ -1,19 +1,18 @@
 ﻿import { db, storage } from "./firebase";
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
-  query,
-  where,
-  orderBy,
   limit,
   onSnapshot,
+  orderBy,
+  query,
   runTransaction,
-  addDoc,
-  serverTimestamp,
-  updateDoc,
   Timestamp,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { logClientActivity } from "./activity";
@@ -30,6 +29,8 @@ export type InvoiceServiceItem = {
   total: number;
 };
 
+export type InvoiceStatus = "Pending" | "Partially Paid" | "Paid" | "Cancelled";
+
 export type Invoice = {
   id: string;
   invoiceNumber: string;
@@ -44,13 +45,24 @@ export type Invoice = {
   subtotal: number;
   totalTax: number;
   totalAmount: number;
+  totalPaid: number;
   invoiceDate: string;
   createdBy: string;
   createdAt: string;
-  status: "Pending" | "Partially Paid" | "Paid" | "Cancelled";
+  status: InvoiceStatus;
   services: InvoiceServiceItem[];
-  totalPaid?: number;
-  pdfUrl?: string;
+  pdfUrl?: string | null;
+};
+
+export type InvoicePayment = {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  paymentMode: string;
+  receivedBy: string;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  createdAt: string;
 };
 
 export interface BillingMetrics {
@@ -70,25 +82,31 @@ export interface BillingPeriodInfo {
   periodEnd: string;
 }
 
-const INVOICES_COL = "invoices";
+const BILLING_INVOICES_COL = "billing_invoices";
+const BILLING_INVOICE_PAYMENTS_COL = "billing_invoice_payments";
 const COUNTERS_COL = "counters";
-const INVOICE_LOGS_COL = "invoiceLogs";
+const PDF_STORAGE_FOLDER = "billing_invoices";
+const INVOICE_NUMBER_PADDING = 4;
 
-function pad(num: number, size = 4) {
-  return num.toString().padStart(size, "0");
+function padNumber(value: number, size = INVOICE_NUMBER_PADDING) {
+  return value.toString().padStart(size, "0");
 }
 
-function formatDateToIso(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
+function dateToIsoString(value: Date): string {
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(value.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-function normalizeBillingDate(value: unknown): Date | null {
-  if (!value && value !== 0) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  if (value instanceof Timestamp) return value.toDate();
+function parseBillingDate(value: unknown): Date | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (value instanceof Timestamp) {
+    return value.toDate();
+  }
   if (typeof value === "object" && value !== null && "toDate" in value && typeof (value as any).toDate === "function") {
     const date = (value as any).toDate();
     return Number.isNaN(date.getTime()) ? null : date;
@@ -97,135 +115,105 @@ function normalizeBillingDate(value: unknown): Date | null {
   const raw = String(value).trim();
   if (!raw) return null;
 
-  // ONLY accept strict YYYY-MM-DD ISO format from date inputs
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    const [yearStr, monthStr, dayStr] = raw.split("-");
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    const day = Number(dayStr);
-    
-    // Validate ranges
-    if (month < 1 || month > 12 || day < 1 || day > 31) {
-      console.warn(`[normalizeBillingDate] Invalid date components: ${raw}`);
-      return null;
-    }
-    
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    if (Number.isNaN(parsed.getTime())) {
-      return null;
-    }
-    return parsed;
+  const isoRegex = /^(\d{4})-(\d{2})-(\d{2})$/;
+  const dmyRegex = /^(\d{2})-(\d{2})-(\d{4})$/;
+  const dmySlashRegex = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+
+  let match = isoRegex.exec(raw);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  // Fallback: try DD-MM-YYYY from manual input (but prefer ISO format)
-  const dmy = /^([0-3]?\d)[-\/]([0-1]?\d)[-\/](\d{4})$/.exec(raw);
-  if (dmy) {
-    const day = Number(dmy[1]);
-    const month = Number(dmy[2]);
-    const year = Number(dmy[3]);
-    
-    if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1990 || year > 2099) {
-      console.warn(`[normalizeBillingDate] Invalid DD-MM-YYYY date: ${raw}`);
-      return null;
-    }
-    
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  match = dmyRegex.exec(raw) || dmySlashRegex.exec(raw);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  console.warn(`[normalizeBillingDate] Unable to parse: ${raw}`);
-  return null;
-}
-
-function addDays(value: Date, days: number): Date {
-  const next = new Date(Date.UTC(
-    value.getUTCFullYear(),
-    value.getUTCMonth(),
-    value.getUTCDate() + days
-  ));
-  return next;
-}
-
-export async function getNextBillingStartDate(clientId: string): Promise<string> {
-  try {
-    const latest = await getLatestBillingPeriod(clientId);
-    if (!latest) {
-      // No previous invoice - suggest today
-      const today = new Date();
-      const isoDate = formatDateToIso(today);
-      console.log({ step: "NEXT_BILLING_START_NO_PREV", clientId, suggestedDate: isoDate });
-      return isoDate;
-    }
-    
-    const lastEndDate = normalizeBillingDate(latest.periodEnd);
-    if (!lastEndDate) {
-      console.warn({ step: "NEXT_BILLING_START_PARSE_FAILED", clientId, rawEnd: latest.periodEnd });
-      const today = new Date();
-      return formatDateToIso(today);
-    }
-    
-    const nextDate = addDays(lastEndDate, 1);
-    const isoDate = formatDateToIso(nextDate);
-    console.log({ step: "NEXT_BILLING_START_COMPUTED", clientId, lastEnd: formatDateToIso(lastEndDate), nextStart: isoDate });
-    return isoDate;
-  } catch (err) {
-    console.error({ step: "NEXT_BILLING_START_ERROR", clientId, err });
-    const today = new Date();
-    return formatDateToIso(today);
-  }
+  const fallback = new Date(raw);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 }
 
 function formatBillingDate(value: unknown): string {
-  const date = normalizeBillingDate(value);
-  return date ? formatDateToIso(date) : "";
+  const date = parseBillingDate(value);
+  return date ? dateToIsoString(date) : "";
 }
 
-function parseTimestamp(value: unknown): string {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value instanceof Timestamp) return value.toDate().toISOString();
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === "object" && value !== null && "toDate" in value && typeof (value as any).toDate === "function") {
-    return (value as any).toDate().toISOString();
-  }
-  return String(value);
+function addDaysUtc(date: Date, days: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
+}
+
+function normalizeIsoDate(value: unknown): Date | null {
+  return parseBillingDate(value);
 }
 
 async function getNextInvoiceNumber(year: number) {
-  const counterRef = doc(db, COUNTERS_COL, `invoices-${year}`);
+  const counterRef = doc(db, COUNTERS_COL, `billing_invoices-${year}`);
   const nextCount = await runTransaction(db, async (tx) => {
     const snap = await tx.get(counterRef as any);
     let current = 0;
     if (snap.exists()) {
-      const data = snap.data() as any;
-      current = data.last || 0;
+      const data = snap.data() as { last?: number };
+      current = typeof data.last === "number" ? data.last : 0;
     }
+
     const next = current + 1;
     tx.set(counterRef as any, { last: next }, { merge: true });
     return next;
   });
-  return `INV-${year}-${pad(nextCount, 4)}`;
+
+  return `INV-${year}-${padNumber(nextCount)}`;
 }
 
 export async function getLatestBillingPeriod(clientId: string): Promise<BillingPeriodInfo | null> {
-  const q = query(
-    collection(db, INVOICES_COL),
-    where("clientId", "==", clientId),
-    orderBy("billingPeriodEnd", "desc"),
-    limit(1),
-  );
-
+  const q = query(collection(db, BILLING_INVOICES_COL), where("clientId", "==", clientId));
   const snap = await getDocs(q);
   if (snap.empty) return null;
-  const docSnap = snap.docs[0];
-  const data = docSnap.data() as Invoice;
+
+  const invoices = snap.docs
+    .map((docSnap) => docSnap.data() as Invoice)
+    .filter((invoice) => !!invoice.billingPeriodEnd)
+    .sort((a, b) => {
+      const dateA = normalizeIsoDate(a.billingPeriodEnd)?.getTime() ?? 0;
+      const dateB = normalizeIsoDate(b.billingPeriodEnd)?.getTime() ?? 0;
+      return dateB - dateA;
+    });
+
+  const latest = invoices[0];
+  if (!latest) return null;
 
   return {
-    invoiceId: docSnap.id,
-    invoiceNumber: data.invoiceNumber,
-    periodStart: data.billingPeriodStart,
-    periodEnd: data.billingPeriodEnd,
+    invoiceId: snap.docs.find((docSnap) => {
+      const invoice = docSnap.data() as Invoice;
+      return invoice.invoiceNumber === latest.invoiceNumber && invoice.billingPeriodEnd === latest.billingPeriodEnd;
+    })?.id || "",
+    invoiceNumber: latest.invoiceNumber,
+    periodStart: latest.billingPeriodStart,
+    periodEnd: latest.billingPeriodEnd,
   };
+}
+
+export async function getNextBillingStartDate(clientId: string): Promise<string> {
+  const latest = await getLatestBillingPeriod(clientId);
+  if (!latest) {
+    return dateToIsoString(new Date());
+  }
+
+  const lastEnd = normalizeIsoDate(latest.periodEnd);
+  if (!lastEnd) {
+    return dateToIsoString(new Date());
+  }
+
+  return dateToIsoString(addDaysUtc(lastEnd, 1));
 }
 
 export async function validateBillingPeriodSequence(
@@ -233,89 +221,64 @@ export async function validateBillingPeriodSequence(
   billingPeriodStart: string,
   billingPeriodEnd: string,
 ): Promise<{ valid: boolean; reason?: string }> {
-  const startDate = normalizeBillingDate(billingPeriodStart);
-  const endDate = normalizeBillingDate(billingPeriodEnd);
-  const start = startDate ? formatDateToIso(startDate) : "";
-  const end = endDate ? formatDateToIso(endDate) : "";
+  console.log("Raw Start Date:", billingPeriodStart);
+  console.log("Raw End Date:", billingPeriodEnd);
 
-  console.log({
-    step: "VALIDATE_PERIOD_START",
-    clientId,
-    inputStart: billingPeriodStart,
-    inputEnd: billingPeriodEnd,
-    parsedStart: start,
-    parsedEnd: end,
-  });
+  const startDate = parseBillingDate(billingPeriodStart);
+  const endDate = parseBillingDate(billingPeriodEnd);
+
+  console.log("Parsed Start:", startDate);
+  console.log("Parsed End:", endDate);
+  console.log("Start Timestamp:", startDate?.getTime());
+  console.log("End Timestamp:", endDate?.getTime());
+  console.log("Comparison Result:", startDate && endDate ? startDate.getTime() < endDate.getTime() : null);
 
   if (!startDate || !endDate) {
-    console.error({
-      step: "VALIDATE_PERIOD_FAILED_PARSE",
-      clientId,
-      inputStart: billingPeriodStart,
-      inputEnd: billingPeriodEnd,
-      reason: "Failed to parse one or both dates",
-    });
-    return { valid: false, reason: "Invalid billing dates provided." };
+    return { valid: false, reason: "Please provide valid billing start and end dates." };
   }
 
-  if (startDate >= endDate) {
-    console.error({
-      step: "VALIDATE_PERIOD_FAILED_ORDER",
-      clientId,
-      parsedStart: start,
-      parsedEnd: end,
-      startTime: startDate.getTime(),
-      endTime: endDate.getTime(),
-      reason: "Start date must be before end date",
-    });
-    return { valid: false, reason: "Billing start date must be before end date." };
+  if (startDate.getTime() >= endDate.getTime()) {
+    return { valid: false, reason: "Billing start date must be before the end date." };
   }
 
-  const q = query(
-    collection(db, INVOICES_COL),
-    where("clientId", "==", clientId),
-    orderBy("billingPeriodStart", "asc"),
-  );
+  const q = query(collection(db, BILLING_INVOICES_COL), where("clientId", "==", clientId));
   const snap = await getDocs(q);
-  const invoices = snap.docs.map((d) => d.data() as Invoice);
+  const invoices = snap.docs
+    .map((d) => d.data() as Invoice)
+    .filter((invoice) => !!invoice.billingPeriodStart)
+    .sort((a, b) => {
+      const dateA = normalizeIsoDate(a.billingPeriodStart)?.getTime() ?? 0;
+      const dateB = normalizeIsoDate(b.billingPeriodStart)?.getTime() ?? 0;
+      return dateA - dateB;
+    });
 
-  for (const inv of invoices) {
-    const invStartDate = normalizeBillingDate(inv.billingPeriodStart);
-    const invEndDate = normalizeBillingDate(inv.billingPeriodEnd);
-    if (!invStartDate || !invEndDate) {
-      continue;
-    }
+  for (const invoice of invoices) {
+    const existingStart = normalizeIsoDate(invoice.billingPeriodStart);
+    const existingEnd = normalizeIsoDate(invoice.billingPeriodEnd);
+    if (!existingStart || !existingEnd) continue;
 
-    if (!(endDate < invStartDate || startDate > invEndDate)) {
-      return { valid: false, reason: "Billing period overlaps with existing invoice." };
+    if (startDate.getTime() <= existingEnd.getTime() && endDate.getTime() >= existingStart.getTime()) {
+      return { valid: false, reason: "Billing period overlaps an existing invoice." };
     }
   }
 
   if (invoices.length > 0) {
-    const endDates = invoices
-      .map((inv) => normalizeBillingDate(inv.billingPeriodEnd))
-      .filter((date): date is Date => date !== null);
-    const lastEndDate = endDates.reduce((latest, date) => (latest && latest > date ? latest : date), endDates[0]);
-    console.debug({
-      step: "LAST_INVOICE_END_COMPUTED",
-      clientId,
-      lastEndDate: lastEndDate ? formatDateToIso(lastEndDate) : null,
-      invoicesCount: invoices.length,
-    });
-    if (!lastEndDate) {
-      return { valid: true };
-    }
+    const lastInvoice = invoices[invoices.length - 1];
+    const lastEndDate = parseBillingDate(lastInvoice.billingPeriodEnd);
+    console.log("lastInvoice:", lastInvoice);
+    console.log("lastBillingStart:", lastInvoice.billingPeriodStart);
+    console.log("lastBillingEnd:", lastInvoice.billingPeriodEnd);
+    console.log("lastEndDate:", lastEndDate);
 
-    const expectedNextStart = addDays(lastEndDate, 1);
-    if (startDate <= lastEndDate) {
-      return { valid: false, reason: `Billing period must start after last invoice end (${formatDateToIso(lastEndDate)}).` };
-    }
-
-    if (startDate.getTime() > expectedNextStart.getTime()) {
-      return {
-        valid: false,
-        reason: `Billing period should begin immediately after the last invoice end date (${formatDateToIso(expectedNextStart)}).`,
-      };
+    if (lastEndDate) {
+      const expectedNextStart = addDaysUtc(lastEndDate, 1);
+      console.log("nextExpectedDate:", expectedNextStart);
+      if (startDate.getTime() !== expectedNextStart.getTime()) {
+        return {
+          valid: false,
+          reason: `Billing periods must continue without gaps. Next invoice should start on ${dateToIsoString(expectedNextStart)}.`,
+        };
+      }
     }
   }
 
@@ -331,14 +294,21 @@ export async function createInvoice(
 ): Promise<Invoice> {
   const validation = await validateBillingPeriodSequence(client.id, billingPeriodStart, billingPeriodEnd);
   if (!validation.valid) {
-    throw new Error(validation.reason || "Invalid billing period");
+    throw new Error(validation.reason || "Invalid billing period sequence.");
   }
 
-  const subtotal = services.reduce((sum, item) => sum + (item.amount || 0), 0);
-  const totalTax = services.reduce((sum, item) => sum + (item.tax || 0), 0);
+  if (services.length === 0) {
+    throw new Error("Invoice must include at least one service.");
+  }
+
+  const subtotal = services.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+  const totalTax = services.reduce((sum, item) => sum + (item.tax ?? 0), 0);
   const totalAmount = subtotal + totalTax;
-  const invoiceNumber = await getNextInvoiceNumber(new Date().getFullYear());
+  const invoiceNumber = await getNextInvoiceNumber(new Date().getUTCFullYear());
   const invoiceDate = new Date().toISOString();
+  const createdAt = invoiceDate;
+  const formattedStart = formatBillingDate(billingPeriodStart);
+  const formattedEnd = formatBillingDate(billingPeriodEnd);
 
   const invoicePayload = {
     invoiceNumber,
@@ -348,32 +318,21 @@ export async function createInvoice(
     clientAddress: client.application || null,
     vehicleNumber: client.mvNo || null,
     vehicleType: (client as any).vehicleType || client.work || null,
-    billingPeriodStart: formatBillingDate(billingPeriodStart),
-    billingPeriodEnd: formatBillingDate(billingPeriodEnd),
+    billingPeriodStart: formattedStart,
+    billingPeriodEnd: formattedEnd,
     subtotal,
     totalTax,
     totalAmount,
+    totalPaid: 0,
     invoiceDate,
     createdBy,
-    createdAt: serverTimestamp(),
-    status: "Pending",
+    createdAt,
+    status: "Pending" as InvoiceStatus,
     services,
-    totalPaid: 0,
-  } as any;
+    pdfUrl: null,
+  } as const;
 
-  console.log({
-    source: "createInvoice payload",
-    clientId: client.id,
-    billingPeriodStart: invoicePayload.billingPeriodStart,
-    billingPeriodEnd: invoicePayload.billingPeriodEnd,
-    services,
-    subtotal,
-    totalTax,
-    totalAmount,
-    invoiceNumber,
-  });
-
-  const docRef = await addDoc(collection(db, INVOICES_COL), invoicePayload);
+  const docRef = await addDoc(collection(db, BILLING_INVOICES_COL), invoicePayload as any);
 
   try {
     await logClientActivity(
@@ -391,52 +350,50 @@ export async function createInvoice(
 
   return {
     id: docRef.id,
-    invoiceNumber,
-    clientId: client.id,
-    clientName: client.name,
-    clientMobile: client.mo || undefined,
-    clientAddress: client.application || undefined,
-    vehicleNumber: client.mvNo || undefined,
-    vehicleType: (client as any).vehicleType || client.work || undefined,
-    billingPeriodStart: formatBillingDate(billingPeriodStart),
-    billingPeriodEnd: formatBillingDate(billingPeriodEnd),
-    subtotal,
-    totalTax,
-    totalAmount,
-    invoiceDate,
-    createdBy,
-    createdAt: invoiceDate,
-    status: "Pending",
-    services,
-    totalPaid: 0,
+    ...invoicePayload,
   };
 }
 
 export function subscribeToClientInvoices(clientId: string, callback: (invoices: Invoice[]) => void) {
-  const q = query(collection(db, INVOICES_COL), where("clientId", "==", clientId), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice)));
-  }, (error) => {
-    console.error("[subscribeToClientInvoices]", error);
-    callback([]);
-  });
+  const q = query(collection(db, BILLING_INVOICES_COL), where("clientId", "==", clientId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const invoices = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Invoice) } as Invoice))
+        .sort((a, b) => {
+          const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
+          const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
+          return dateB - dateA;
+        });
+      callback(invoices);
+    },
+    (error) => {
+      console.error("[subscribeToClientInvoices]", error);
+      callback([]);
+    },
+  );
 }
 
 export function subscribeToAllInvoices(callback: (invoices: Invoice[]) => void) {
-  const q = query(collection(db, INVOICES_COL), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice)));
-  }, (error) => {
-    console.error("[subscribeToAllInvoices]", error);
-    callback([]);
-  });
+  const q = query(collection(db, BILLING_INVOICES_COL), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Invoice) } as Invoice)));
+    },
+    (error) => {
+      console.error("[subscribeToAllInvoices]", error);
+      callback([]);
+    },
+  );
 }
 
 export async function getInvoiceById(invoiceId: string): Promise<Invoice | null> {
-  const invoiceDoc = doc(db, INVOICES_COL, invoiceId);
+  const invoiceDoc = doc(db, BILLING_INVOICES_COL, invoiceId);
   const snap = await getDoc(invoiceDoc);
   if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as Invoice;
+  return { id: snap.id, ...(snap.data() as Invoice) };
 }
 
 export async function updateInvoiceStatus(
@@ -445,16 +402,16 @@ export async function updateInvoiceStatus(
   totalAmount: number,
   updatedBy: string,
 ): Promise<void> {
-  const invoiceDocRef = doc(db, INVOICES_COL, invoiceId);
+  const invoiceDoc = doc(db, BILLING_INVOICES_COL, invoiceId);
 
-  let newStatus: Invoice["status"] = "Pending";
+  let newStatus: InvoiceStatus = "Pending";
   if (amountPaid >= totalAmount) {
     newStatus = "Paid";
   } else if (amountPaid > 0) {
     newStatus = "Partially Paid";
   }
 
-  await updateDoc(invoiceDocRef, { status: newStatus });
+  await updateDoc(invoiceDoc, { status: newStatus });
 
   try {
     await logClientActivity(
@@ -471,13 +428,98 @@ export async function updateInvoiceStatus(
   }
 }
 
+export async function recordInvoicePayment(
+  invoiceId: string,
+  amount: number,
+  paymentMode: string,
+  receivedBy: string,
+  referenceNumber?: string,
+  notes?: string,
+): Promise<InvoicePayment> {
+  if (amount <= 0) {
+    throw new Error("Payment amount must be greater than zero.");
+  }
+
+  const invoice = await getInvoiceById(invoiceId);
+  if (!invoice) {
+    throw new Error("Invoice not found.");
+  }
+
+  const paymentPayload = {
+    invoiceId,
+    amount,
+    paymentMode,
+    receivedBy,
+    referenceNumber: referenceNumber || null,
+    notes: notes || null,
+    createdAt: new Date().toISOString(),
+  };
+
+  const paymentRef = await addDoc(collection(db, BILLING_INVOICE_PAYMENTS_COL), paymentPayload as any);
+  const updatedTotalPaid = invoice.totalPaid + amount;
+  const updatedStatus: InvoiceStatus = updatedTotalPaid >= invoice.totalAmount ? "Paid" : "Partially Paid";
+
+  await updateDoc(doc(db, BILLING_INVOICES_COL, invoiceId), {
+    totalPaid: updatedTotalPaid,
+    status: updatedStatus,
+  });
+
+  try {
+    await logClientActivity(
+      invoice.clientId,
+      receivedBy,
+      receivedBy,
+      `Payment recorded for invoice ${invoice.invoiceNumber}: ₹${amount}`,
+      "payment",
+      null,
+      `₹${amount} via ${paymentMode}`,
+    );
+  } catch (err) {
+    console.warn("[recordInvoicePayment] logClientActivity failed:", err);
+  }
+
+  return {
+    id: paymentRef.id,
+    ...paymentPayload,
+  } as InvoicePayment;
+}
+
+export function subscribeToInvoicePayments(invoiceId: string, callback: (payments: InvoicePayment[]) => void) {
+  const q = query(
+    collection(db, BILLING_INVOICE_PAYMENTS_COL),
+    where("invoiceId", "==", invoiceId),
+    orderBy("createdAt", "desc"),
+  );
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...(d.data() as InvoicePayment) } as InvoicePayment)));
+    },
+    (error) => {
+      console.error("[subscribeToInvoicePayments]", error);
+      callback([]);
+    },
+  );
+}
+
+export async function getInvoicePayments(invoiceId: string): Promise<InvoicePayment[]> {
+  const q = query(
+    collection(db, BILLING_INVOICE_PAYMENTS_COL),
+    where("invoiceId", "==", invoiceId),
+    orderBy("createdAt", "desc"),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as InvoicePayment) } as InvoicePayment));
+}
+
 export async function calculateBillingMetrics(): Promise<BillingMetrics> {
-  const snap = await getDocs(collection(db, INVOICES_COL));
+  const snap = await getDocs(collection(db, BILLING_INVOICES_COL));
   const invoices = snap.docs.map((d) => d.data() as Invoice);
 
   const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  const currentMonth = now.getUTCMonth();
+  const currentYear = now.getUTCFullYear();
 
   let totalInvoiced = 0;
   let totalCollected = 0;
@@ -489,22 +531,21 @@ export async function calculateBillingMetrics(): Promise<BillingMetrics> {
     totalInvoiced += invoice.totalAmount || 0;
     totalCollected += invoice.totalPaid || 0;
 
-    const createdAt = parseTimestamp(invoice.createdAt);
-    const createdDate = new Date(createdAt);
-    if (!Number.isNaN(createdDate.getTime()) && createdDate.getMonth() === currentMonth && createdDate.getFullYear() === currentYear) {
+    const invoiceDate = normalizeIsoDate(invoice.invoiceDate);
+    if (invoiceDate && invoiceDate.getUTCMonth() === currentMonth && invoiceDate.getUTCFullYear() === currentYear) {
       invoicesThisMonth += 1;
     }
 
     if (invoice.status === "Pending" || invoice.status === "Partially Paid") {
       pendingCount += 1;
-      const endDate = new Date(invoice.billingPeriodEnd);
-      if (!Number.isNaN(endDate.getTime()) && endDate < now) {
+      const endDate = normalizeIsoDate(invoice.billingPeriodEnd);
+      if (endDate && endDate.getTime() < now.getTime()) {
         overdueCount += 1;
       }
     }
   }
 
-  const outstandingAmount = totalInvoiced - totalCollected;
+  const outstandingAmount = Math.max(0, totalInvoiced - totalCollected);
   const collectionRate = totalInvoiced > 0 ? (totalCollected / totalInvoiced) * 100 : 0;
 
   return {
@@ -519,33 +560,27 @@ export async function calculateBillingMetrics(): Promise<BillingMetrics> {
 }
 
 export async function attachPdfToInvoice(invoiceId: string, blob: Blob): Promise<string> {
-  const ref = storageRef(storage, `invoices/${invoiceId}.pdf`);
+  const ref = storageRef(storage, `${PDF_STORAGE_FOLDER}/${invoiceId}.pdf`);
   await uploadBytes(ref, blob);
   const url = await getDownloadURL(ref);
-  await updateDoc(doc(db, INVOICES_COL, invoiceId), { pdfUrl: url });
-
-  try {
-    await addDoc(collection(db, INVOICE_LOGS_COL), {
-      invoiceId,
-      action: "PDF Generated",
-      user: "system",
-      timestamp: serverTimestamp(),
-    } as any);
-  } catch (err) {
-    console.warn("[attachPdfToInvoice] Failed to write invoice log:", err);
-  }
-
+  await updateDoc(doc(db, BILLING_INVOICES_COL, invoiceId), { pdfUrl: url });
   return url;
 }
 
 export async function getClientBillingSummary(clientId: string) {
-  const q = query(collection(db, INVOICES_COL), where("clientId", "==", clientId), orderBy("createdAt", "desc"));
+  const q = query(collection(db, BILLING_INVOICES_COL), where("clientId", "==", clientId));
   const snap = await getDocs(q);
-  const invoices = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
+  const invoices = snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Invoice) } as Invoice))
+    .sort((a, b) => {
+      const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
+      const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
+      return dateB - dateA;
+    });
 
   const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-  const totalPaid = invoices.filter((inv) => inv.status === "Paid").reduce((sum, inv) => sum + inv.totalAmount, 0);
-  const outstandingAmount = totalInvoiced - totalPaid;
+  const totalPaid = invoices.reduce((sum, inv) => sum + inv.totalPaid, 0);
+  const outstandingAmount = Math.max(0, totalInvoiced - totalPaid);
 
   return {
     totalInvoices: invoices.length,
