@@ -248,6 +248,32 @@ export function ClientDetailWorkspace({
     return tasks;
   }, [details]);
 
+  const serviceWiseAccounting = useMemo(() => {
+    if (!details?.vehicles) return [];
+    const servicesByType: { [type: string]: { totalAmount: number; amountReceived: number; pendingAmount: number } } = {};
+    
+    details.vehicles.forEach((v: any) => {
+      v.services.forEach((s: any) => {
+        const type = s.serviceType;
+        if (!servicesByType[type]) {
+          servicesByType[type] = {
+            totalAmount: 0,
+            amountReceived: 0,
+            pendingAmount: 0,
+          };
+        }
+        servicesByType[type].totalAmount += s.serviceAmount ?? 0;
+        servicesByType[type].amountReceived += s.amountReceived ?? 0;
+        servicesByType[type].pendingAmount += s.pendingAmount ?? 0;
+      });
+    });
+    
+    return Object.entries(servicesByType).map(([type, accounting]) => ({
+      serviceType: type,
+      ...accounting,
+    }));
+  }, [details]);
+
   if (!open) return null;
 
   return (
@@ -338,19 +364,48 @@ export function ClientDetailWorkspace({
                     Accounting Aggregates
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-3 gap-4 pt-2">
-                  <div className="p-3 border rounded-xl bg-background shadow-sm">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold">Total Bill</span>
-                    <p className="text-xl font-bold mt-1 text-foreground">₹{details.accounting.totalAmount.toLocaleString("en-IN")}</p>
+                <CardContent className="space-y-4 pt-2">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="p-3 border rounded-xl bg-background shadow-sm">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Total Bill</span>
+                      <p className="text-xl font-bold mt-1 text-foreground">₹{details.accounting.totalAmount.toLocaleString("en-IN")}</p>
+                    </div>
+                    <div className="p-3 border rounded-xl bg-background shadow-sm">
+                      <span className="text-[10px] text-green-700 uppercase font-bold">Received</span>
+                      <p className="text-xl font-bold mt-1 text-green-600">₹{details.accounting.amountReceived.toLocaleString("en-IN")}</p>
+                    </div>
+                    <div className="p-3 border rounded-xl bg-background shadow-sm">
+                      <span className="text-[10px] text-red-700 uppercase font-bold">Pending</span>
+                      <p className="text-xl font-bold mt-1 text-red-600">₹{details.accounting.pendingAmount.toLocaleString("en-IN")}</p>
+                    </div>
                   </div>
-                  <div className="p-3 border rounded-xl bg-background shadow-sm">
-                    <span className="text-[10px] text-green-700 uppercase font-bold">Received</span>
-                    <p className="text-xl font-bold mt-1 text-green-600">₹{details.accounting.amountReceived.toLocaleString("en-IN")}</p>
-                  </div>
-                  <div className="p-3 border rounded-xl bg-background shadow-sm">
-                    <span className="text-[10px] text-red-700 uppercase font-bold">Pending</span>
-                    <p className="text-xl font-bold mt-1 text-red-600">₹{details.accounting.pendingAmount.toLocaleString("en-IN")}</p>
-                  </div>
+
+                  {serviceWiseAccounting.length > 0 && (
+                    <div className="border-t pt-3 space-y-2">
+                      <p className="text-[10px] uppercase font-bold tracking-wide text-muted-foreground">Accounting Summary by Service</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {serviceWiseAccounting.map((item) => (
+                          <div key={item.serviceType} className="p-2.5 border rounded-lg bg-background text-xs flex flex-col justify-between">
+                            <span className="font-semibold text-foreground mb-1.5">{serviceLabel(item.serviceType as any)}</span>
+                            <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
+                              <div>
+                                <span className="text-muted-foreground block">Total</span>
+                                <span className="font-bold">₹{item.totalAmount.toLocaleString("en-IN")}</span>
+                              </div>
+                              <div>
+                                <span className="text-green-700 block">Rec</span>
+                                <span className="font-bold text-green-600">₹{item.amountReceived.toLocaleString("en-IN")}</span>
+                              </div>
+                              <div>
+                                <span className="text-red-700 block">Pend</span>
+                                <span className="font-bold text-red-600">₹{item.pendingAmount.toLocaleString("en-IN")}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

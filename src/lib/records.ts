@@ -235,6 +235,11 @@ export function getRecordServiceDetails(record: RegistryRecord): ServiceDetail[]
             price,
             amountReceived,
             ...(s.assignee ? { assignee: s.assignee } : {}),
+            vehicleId: s.vehicleId,
+            vehicleNumber: s.vehicleNumber,
+            vehicleType: s.vehicleType,
+            serviceId: s.serviceId,
+            notes: s.notes,
           };
         }
 

@@ -77,12 +77,17 @@ export async function getServiceClientsAll(
         type: client.type || "client",
         services: [
           {
+            serviceId: service.id,
             serviceType: service.serviceType,
             dueDate: service.dueDate || "",
             status: service.taskStatus || "Pending",
             price: service.serviceAmount ?? 0,
             amountReceived: service.amountReceived ?? 0,
             assignee: service.assignedStaff || "",
+            vehicleId: service.vehicleId,
+            vehicleNumber: vehicle.vehicleNumber,
+            vehicleType: vehicle.vehicleType,
+            notes: service.notes || "",
           }
         ]
       };
