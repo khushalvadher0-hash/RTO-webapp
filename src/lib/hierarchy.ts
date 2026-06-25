@@ -28,6 +28,16 @@ export interface Client {
   updatedAt?: string;
 }
 
+export interface VehicleDocument {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  storagePath: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  fileType: string;
+}
+
 export interface Vehicle {
   id: string;
   clientId: string;
@@ -39,6 +49,7 @@ export interface Vehicle {
   status: "Pending" | "In Progress" | "Completed" | "On Hold";
   createdAt?: string;
   updatedAt?: string;
+  documents?: VehicleDocument[];
 }
 
 export type ServiceTaskStatus =
@@ -430,3 +441,25 @@ export function subscribeToClientDetails(
     Object.values(serviceSubscribers).forEach((unsub) => unsub());
   };
 }
+
+/** Add a document metadata object to a vehicle's documents array. */
+export async function addVehicleDocument(vehicleId: string, docData: VehicleDocument): Promise<void> {
+  const docRef = doc(db, VEHICLES_COL, vehicleId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) throw new Error("Vehicle not found");
+  const vehicle = snap.data() as Vehicle;
+  const documents = vehicle.documents || [];
+  documents.push(docData);
+  await setDoc(docRef, { documents }, { merge: true });
+}
+
+/** Delete a document metadata object from a vehicle's documents array by document id. */
+export async function deleteVehicleDocument(vehicleId: string, documentId: string): Promise<void> {
+  const docRef = doc(db, VEHICLES_COL, vehicleId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) throw new Error("Vehicle not found");
+  const vehicle = snap.data() as Vehicle;
+  const documents = (vehicle.documents || []).filter((d) => d.id !== documentId);
+  await setDoc(docRef, { documents }, { merge: true });
+}
+

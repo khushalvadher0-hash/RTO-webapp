@@ -36,6 +36,8 @@ import {
   Calendar,
   AlertCircle,
   FileText,
+  Eye,
+  Download,
 } from "lucide-react";
 import {
   type Client,
@@ -49,10 +51,15 @@ import {
   deleteService,
   subscribeToClientDetails,
   getProgressFromStatus,
+  addVehicleDocument,
+  deleteVehicleDocument,
+  type VehicleDocument,
 } from "@/lib/hierarchy";
 import { SERVICE_TYPES, serviceLabel, STAFF_USERS } from "@/lib/records";
 import { toast } from "sonner";
 import { WhatsAppQuickActions } from "./WhatsAppQuickActions";
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { storage, auth } from "@/lib/firebase";
 
 interface ClientDetailWorkspaceProps {
   clientId: string;
@@ -88,6 +95,8 @@ export function ClientDetailWorkspace({
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
   const [serviceForm, setServiceForm] = useState<Partial<Service>>({});
+
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; type: string; name: string } | null>(null);
 
   // Load real-time client details (includes nested vehicles & services)
   useEffect(() => {
@@ -224,6 +233,113 @@ export function ClientDetailWorkspace({
     } catch (error) {
       console.error(error);
       toast.error("Failed to update status.");
+    }
+  };
+
+  const handleUploadDocument = (vehicleId: string) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf,image/png,image/jpeg,image/jpg";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      // Check size (10 MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File size must be under 10 MB");
+        return;
+      }
+
+      // Check type
+      const allowedTypes = ["application/pdf", "image/png", "image/jpeg", "image/jpg"];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error("Allowed formats: PDF, JPG, JPEG, PNG");
+        return;
+      }
+
+      const docId = crypto.randomUUID();
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const storagePath = `vehicle_documents/${clientId}/${vehicleId}/${docId}_${cleanFileName}`;
+      const storageRef = ref(storage, storagePath);
+
+      console.log("[Storage Upload]", storagePath);
+      console.log("[Storage User]", auth.currentUser);
+
+      toast.loading("Uploading document...", { id: "upload-doc" });
+      try {
+        const uploadTask = uploadBytesResumable(storageRef, file, { contentType: file.type });
+
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on("state_changed",
+            null,
+            (error) => reject(error),
+            () => resolve()
+          );
+        });
+
+        const fileUrl = await getDownloadURL(storageRef);
+        const userEmail = localStorage.getItem("userEmail") ?? "admin";
+
+        const newDoc: VehicleDocument = {
+          id: docId,
+          fileName: file.name,
+          fileUrl,
+          storagePath,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: userEmail,
+          fileType: file.type.includes("pdf") ? "pdf" : "image"
+        };
+
+        await addVehicleDocument(vehicleId, newDoc);
+        toast.success("Document uploaded successfully!", { id: "upload-doc" });
+      } catch (err: any) {
+        console.error(err);
+        toast.error(`Upload failed: ${err.message || err}`, { id: "upload-doc" });
+      }
+    };
+    input.click();
+  };
+
+  const handleDownloadDocument = async (url: string, fileName: string) => {
+    toast.loading("Downloading file...", { id: "download-doc" });
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("Download started!", { id: "download-doc" });
+    } catch (err: any) {
+      console.error("Download failed:", err);
+      // Fallback: open in new tab
+      window.open(url, "_blank");
+      toast.dismiss("download-doc");
+    }
+  };
+
+  const handleDeleteDocument = async (vehicleId: string, docId: string, storagePath: string) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+    toast.loading("Deleting document...", { id: "delete-doc" });
+    try {
+      // Delete from storage
+      const storageRef = ref(storage, storagePath);
+      try {
+        await deleteObject(storageRef);
+      } catch (storageErr) {
+        console.warn("Storage deletion error:", storageErr);
+      }
+
+      // Delete metadata from Firestore
+      await deleteVehicleDocument(vehicleId, docId);
+      toast.success("Document deleted successfully!", { id: "delete-doc" });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Deletion failed: ${err.message || err}`, { id: "delete-doc" });
     }
   };
 
@@ -601,6 +717,88 @@ export function ClientDetailWorkspace({
                             ))
                           )}
                         </div>
+
+                        {/* Vehicle Documents Section */}
+                        <div className="border-t p-5 bg-muted/5 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                              <FileText className="size-4 text-primary" />
+                              Vehicle Documents
+                            </h4>
+                            <Button
+                              onClick={() => handleUploadDocument(v.id)}
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs font-semibold gap-1.5"
+                            >
+                              <Plus className="size-3.5" />
+                              Upload Document
+                            </Button>
+                          </div>
+
+                          {(!v.documents || !Array.isArray(v.documents) || v.documents.filter((doc: any) => doc && (doc.fileUrl || doc.url)).length === 0) ? (
+                            <div className="text-center py-6 border border-dashed rounded-lg bg-background/50">
+                              <p className="text-xs text-muted-foreground">No documents uploaded for this vehicle.</p>
+                            </div>
+                          ) : (
+                            <div className="grid gap-2">
+                              {v.documents
+                                .filter((doc: any) => doc && (doc.fileUrl || doc.url))
+                                .map((doc: any, index: number) => {
+                                  const docUrl = doc.fileUrl || doc.url;
+                                  const docName = doc.fileName || doc.name || "Document";
+                                  const docId = doc.id || `doc-${index}-${docName}`;
+                                  const docType = doc.fileType || (docUrl.toLowerCase().includes(".pdf") ? "pdf" : "image");
+                                  const storagePath = doc.storagePath || "";
+
+                                  return (
+                                    <div key={docId} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:shadow-sm transition-all gap-4">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <FileText className="size-4 text-muted-foreground shrink-0" />
+                                        <span className="text-xs font-medium truncate text-foreground" title={docName}>
+                                          {docName}
+                                        </span>
+                                        {doc.uploadedAt && (
+                                          <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">
+                                            • {new Date(doc.uploadedAt).toLocaleDateString("en-IN")}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-8 w-8 hover:bg-muted"
+                                          onClick={() => setPreviewDoc({ url: docUrl, type: docType, name: docName })}
+                                          title="View Document"
+                                        >
+                                          <Eye className="size-3.5" />
+                                        </Button>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-8 w-8 hover:bg-muted"
+                                          onClick={() => handleDownloadDocument(docUrl, docName)}
+                                          title="Download Document"
+                                        >
+                                          <Download className="size-3.5" />
+                                        </Button>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                          onClick={() => handleDeleteDocument(v.id, docId, storagePath)}
+                                          title="Delete Document"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -614,6 +812,36 @@ export function ClientDetailWorkspace({
           <Button onClick={() => onOpenChange(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Document Preview Modal */}
+      <Dialog open={!!previewDoc} onOpenChange={() => setPreviewDoc(null)}>
+        <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-4">
+          <DialogHeader className="pb-2 border-b">
+            <DialogTitle className="truncate">{previewDoc?.name || "Document Preview"}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto flex items-center justify-center bg-muted/20 rounded-lg mt-2 relative">
+            {previewDoc && (
+              previewDoc.type === "pdf" ? (
+                <iframe
+                  src={previewDoc.url}
+                  className="w-full h-full border-0 rounded-lg"
+                  title={previewDoc.name}
+                />
+              ) : (
+                <img
+                  src={previewDoc.url}
+                  alt={previewDoc.name}
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-md"
+                />
+              )
+            )}
+          </div>
+          <DialogFooter className="pt-2 border-t mt-2 flex justify-between items-center sm:justify-between">
+            <span className="text-xs text-muted-foreground">Type: {previewDoc?.type?.toUpperCase() || ""}</span>
+            <Button onClick={() => setPreviewDoc(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Client Profile Modal */}
       <Dialog open={editClientOpen} onOpenChange={setEditClientOpen}>
