@@ -85,9 +85,11 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
     };
   }, []);
 
-  const canCreate = isAdmin || (rolePermissions?.createClients ?? false);
-  const canEdit = isAdmin || (rolePermissions?.editClients ?? false);
-  const canDelete = isAdmin || (rolePermissions?.deleteClients ?? false);
+  const isManager = session?.role === "manager";
+  const isEmployee = session?.role === "employee";
+  const canCreate = isAdmin || isManager || (rolePermissions?.createClients ?? false);
+  const canEdit = isAdmin || isManager || (rolePermissions?.editClients ?? false);
+  const canDelete = (isAdmin || isManager) && !isEmployee;
 
   useEffect(() => {
     setLoading(true);
@@ -96,7 +98,12 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
       console.log("Clients Query Result", data);
       console.log("Collection Path", collectionPath);
       console.log("Documents Count", data.length);
-      setClients(data);
+      
+      const filtered = isEmployee
+        ? data.filter((c) => c.assignee === session?.username)
+        : data;
+
+      setClients(filtered);
       setLoading(false);
     });
     return unsub;

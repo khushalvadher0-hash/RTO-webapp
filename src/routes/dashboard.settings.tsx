@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+// src/routes/dashboard.settings.tsx
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,6 @@ import { getForceCapsSetting, setForceCapsSetting } from "@/lib/capitalize-setti
 import { getMigrationStatus } from "@/lib/migration";
 import { ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
 import { getSession } from "@/lib/auth";
-import { seedDefaultUsers } from "@/lib/userService";
 import {
   type RolePermissions,
   saveStaffPermissions,
@@ -51,6 +51,9 @@ function SettingsPage() {
   const [permsSaved, setPermsSaved] = useState(false);
 
   const session = getSession();
+  if (session?.role === "employee") {
+    return <Navigate to="/dashboard" replace />;
+  }
   const isAdmin = session?.role === "admin";
 
   useEffect(() => {
@@ -155,18 +158,9 @@ function SettingsPage() {
 
       {isAdmin && (
         <div className="mt-4 space-y-2">
-          <Link to="/dashboard/settings/users">
-            <Button variant="outline">User Management</Button>
+          <Link to="/dashboard/employees">
+            <Button variant="outline">Employee Management</Button>
           </Link>
-          <Button variant="secondary" onClick={async () => {
-            try {
-              await seedDefaultUsers();
-              alert('Default users created successfully.');
-            } catch (e) {
-              console.error(e);
-              alert('Failed to create default users.');
-            }
-          }}>Create Default Users</Button>
         </div>
       )}
         <div className="rounded-xl border bg-card p-6 space-y-4">

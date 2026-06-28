@@ -446,8 +446,8 @@ export async function deleteInvoiceSecured(
   userId: string,
   userRole: string,
 ) {
-  if (userRole !== "admin") {
-    throw new Error("Permission Denied: Only Admin users can delete invoices.");
+  if (userRole !== "admin" && userRole !== "manager") {
+    throw new Error("Permission Denied: Only Admin or Manager users can delete invoices.");
   }
 
   const ok = await verifyAdminPin(pin);

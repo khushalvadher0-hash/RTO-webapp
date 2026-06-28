@@ -90,7 +90,7 @@ function AccountingDashboardPage() {
   const session = getSession();
   const userRole = session?.role || "employee";
   const username = session?.name || session?.username || "unknown";
-  const isAdmin = userRole === "admin";
+  const isAdmin = userRole === "admin" || userRole === "manager";
   const isStaff = userRole === "employee" || userRole === "viewer";
 
   // Subscriptions

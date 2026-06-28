@@ -188,7 +188,7 @@ function TasksPage() {
     };
   }, []);
 
-  const isAdmin = session?.role === "admin";
+  const isAdmin = session?.role === "admin" || session?.role === "manager";
   const canSeeAllTasks = isAdmin;
   const detailsTask = tasks.find((t) => t.id === detailsId) ?? null;
 

@@ -32,6 +32,12 @@ import {
 import { getSession, logout, isAuthReady, type StaffUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { KeyRound } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { changeOwnPassword } from "@/lib/userService";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
@@ -112,7 +118,10 @@ const GROUPS: NavGroup[] = [
   },
   {
     heading: "System",
-    items: [{ to: "/dashboard/settings", label: "Settings", icon: SettingsIcon }],
+    items: [
+      { to: "/dashboard/employees", label: "Employee Management", icon: Users2 },
+      { to: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
+    ],
   },
 ];
 
@@ -124,6 +133,29 @@ function DashboardLayout() {
   const [user, setUser] = useState<StaffUser | null>(null);
   const [open, setOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [changing, setChanging] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword.trim() || newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters long.");
+      return;
+    }
+    setChanging(true);
+    try {
+      await changeOwnPassword(newPassword);
+      toast.success("Password changed successfully!");
+      setShowChangePassword(false);
+      setNewPassword("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to change password.");
+    } finally {
+      setChanging(false);
+    }
+  };
 
   useEffect(() => {
     setUser(getSession());
@@ -200,37 +232,58 @@ function DashboardLayout() {
           onScroll={handleSidebarScroll}
           className="flex-1 overflow-y-auto p-3 space-y-5"
         >
-          {GROUPS.map((group) => (
-            <div key={group.heading}>
-              <div className="px-3 mb-1 text-[11px] font-semibold tracking-wider text-sidebar-foreground/50 uppercase">
-                {group.heading}
+          {GROUPS.map((group) => {
+            const isEmployee = user?.role === "employee";
+            const isAdmin = user?.role === "admin";
+            
+            if (isEmployee && group.heading === "Financial") return null;
+            
+            let filteredItems = group.items.filter(
+              (item) => item.to !== "/dashboard/employees" || isAdmin
+            );
+            
+            if (isEmployee) {
+              filteredItems = filteredItems.filter(
+                (item) =>
+                  item.to !== "/dashboard/reports" &&
+                  item.to !== "/dashboard/settings"
+              );
+            }
+
+            if (filteredItems.length === 0) return null;
+
+            return (
+              <div key={group.heading}>
+                <div className="px-3 mb-1 text-[11px] font-semibold tracking-wider text-sidebar-foreground/50 uppercase">
+                  {group.heading}
+                </div>
+                <div className="space-y-1">
+                  {filteredItems.map((item) => {
+                    const active = item.exact
+                      ? pathname === item.to
+                      : pathname === item.to || pathname.startsWith(item.to + "/");
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                          active
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-border/40 hover:text-sidebar-foreground",
+                        )}
+                      >
+                        <Icon className="size-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-1">
-                {group.items.map((item) => {
-                  const active = item.exact
-                    ? pathname === item.to
-                    : pathname === item.to || pathname.startsWith(item.to + "/");
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      onClick={() => setOpen(false)}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                        active
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-sidebar-foreground/80 hover:bg-sidebar-border/40 hover:text-sidebar-foreground",
-                      )}
-                    >
-                      <Icon className="size-4" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         <div className="border-t border-sidebar-border p-3 space-y-2">
@@ -240,20 +293,55 @@ function DashboardLayout() {
           >
             <Globe className="size-4" /> View public site
           </a>
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="size-9 rounded-full bg-muted grid place-items-center text-xs font-bold">
+          <div className="flex items-center gap-1.5 px-2 py-2">
+            <div className="size-9 rounded-full bg-muted grid place-items-center text-xs font-bold shrink-0">
               {initials}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{user?.name ?? "—"}</div>
               <div className="text-xs text-sidebar-foreground/60 capitalize">{user?.role}</div>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign out">
+            <Button variant="ghost" size="icon" onClick={() => setShowChangePassword(true)} title="Change Password" className="size-8">
+              <KeyRound className="size-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign out" className="size-8">
               <LogOut className="size-4" />
             </Button>
           </div>
         </div>
       </aside>
+
+      <Dialog open={showChangePassword} onOpenChange={setShowChangePassword}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Enter a new secure password for your account. Min 6 characters.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-pass">New Password</Label>
+              <Input
+                id="new-pass"
+                type="password"
+                placeholder="******"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowChangePassword(false)} disabled={changing}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={changing}>
+                {changing ? "Changing..." : "Change Password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {open && (
         <button

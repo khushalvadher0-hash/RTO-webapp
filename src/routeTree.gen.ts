@@ -18,6 +18,7 @@ import { Route as DashboardTargetsRouteImport } from './routes/dashboard.targets
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard.reports'
 import { Route as DashboardLeadsRouteImport } from './routes/dashboard.leads'
+import { Route as DashboardEmployeesRouteImport } from './routes/dashboard.employees'
 import { Route as DashboardDocumentsRouteImport } from './routes/dashboard.documents'
 import { Route as DashboardCustomersRouteImport } from './routes/dashboard.customers'
 import { Route as DashboardClientsRouteImport } from './routes/dashboard.clients'
@@ -25,7 +26,6 @@ import { Route as DashboardClientAnalyticsRouteImport } from './routes/dashboard
 import { Route as DashboardBillingRouteImport } from './routes/dashboard.billing'
 import { Route as DashboardAllClientsRouteImport } from './routes/dashboard.all-clients'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
-import { Route as DashboardSettingsUsersRouteImport } from './routes/dashboard.settings.users'
 import { Route as DashboardSettingsMigrationRouteImport } from './routes/dashboard.settings.migration'
 import { Route as DashboardServiceServiceTypeRouteImport } from './routes/dashboard.service.$serviceType'
 import { Route as DashboardSettingsMigrationAccountingRouteImport } from './routes/dashboard.settings.migration.accounting'
@@ -75,6 +75,11 @@ const DashboardLeadsRoute = DashboardLeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardEmployeesRoute = DashboardEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardDocumentsRoute = DashboardDocumentsRouteImport.update({
   id: '/documents',
   path: '/documents',
@@ -111,11 +116,6 @@ const DashboardAccountingRoute = DashboardAccountingRouteImport.update({
   path: '/accounting',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardSettingsUsersRoute = DashboardSettingsUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => DashboardSettingsRoute,
-} as any)
 const DashboardSettingsMigrationRoute =
   DashboardSettingsMigrationRouteImport.update({
     id: '/migration',
@@ -145,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/clients': typeof DashboardClientsRoute
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/documents': typeof DashboardDocumentsRoute
+  '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRouteWithChildren
@@ -154,7 +155,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof DashboardIndexRoute
   '/dashboard/service/$serviceType': typeof DashboardServiceServiceTypeRoute
   '/dashboard/settings/migration': typeof DashboardSettingsMigrationRouteWithChildren
-  '/dashboard/settings/users': typeof DashboardSettingsUsersRoute
   '/dashboard/settings/migration/accounting': typeof DashboardSettingsMigrationAccountingRoute
 }
 export interface FileRoutesByTo {
@@ -166,6 +166,7 @@ export interface FileRoutesByTo {
   '/dashboard/clients': typeof DashboardClientsRoute
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/documents': typeof DashboardDocumentsRoute
+  '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRouteWithChildren
@@ -175,7 +176,6 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardIndexRoute
   '/dashboard/service/$serviceType': typeof DashboardServiceServiceTypeRoute
   '/dashboard/settings/migration': typeof DashboardSettingsMigrationRouteWithChildren
-  '/dashboard/settings/users': typeof DashboardSettingsUsersRoute
   '/dashboard/settings/migration/accounting': typeof DashboardSettingsMigrationAccountingRoute
 }
 export interface FileRoutesById {
@@ -189,6 +189,7 @@ export interface FileRoutesById {
   '/dashboard/clients': typeof DashboardClientsRoute
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/documents': typeof DashboardDocumentsRoute
+  '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRouteWithChildren
@@ -198,7 +199,6 @@ export interface FileRoutesById {
   '/dashboard/': typeof DashboardIndexRoute
   '/dashboard/service/$serviceType': typeof DashboardServiceServiceTypeRoute
   '/dashboard/settings/migration': typeof DashboardSettingsMigrationRouteWithChildren
-  '/dashboard/settings/users': typeof DashboardSettingsUsersRoute
   '/dashboard/settings/migration/accounting': typeof DashboardSettingsMigrationAccountingRoute
 }
 export interface FileRouteTypes {
@@ -213,6 +213,7 @@ export interface FileRouteTypes {
     | '/dashboard/clients'
     | '/dashboard/customers'
     | '/dashboard/documents'
+    | '/dashboard/employees'
     | '/dashboard/leads'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -222,7 +223,6 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/dashboard/service/$serviceType'
     | '/dashboard/settings/migration'
-    | '/dashboard/settings/users'
     | '/dashboard/settings/migration/accounting'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -234,6 +234,7 @@ export interface FileRouteTypes {
     | '/dashboard/clients'
     | '/dashboard/customers'
     | '/dashboard/documents'
+    | '/dashboard/employees'
     | '/dashboard/leads'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -243,7 +244,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dashboard/service/$serviceType'
     | '/dashboard/settings/migration'
-    | '/dashboard/settings/users'
     | '/dashboard/settings/migration/accounting'
   id:
     | '__root__'
@@ -256,6 +256,7 @@ export interface FileRouteTypes {
     | '/dashboard/clients'
     | '/dashboard/customers'
     | '/dashboard/documents'
+    | '/dashboard/employees'
     | '/dashboard/leads'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -265,7 +266,6 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/dashboard/service/$serviceType'
     | '/dashboard/settings/migration'
-    | '/dashboard/settings/users'
     | '/dashboard/settings/migration/accounting'
   fileRoutesById: FileRoutesById
 }
@@ -339,6 +339,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardLeadsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/employees': {
+      id: '/dashboard/employees'
+      path: '/employees'
+      fullPath: '/dashboard/employees'
+      preLoaderRoute: typeof DashboardEmployeesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/documents': {
       id: '/dashboard/documents'
       path: '/documents'
@@ -388,13 +395,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAccountingRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/settings/users': {
-      id: '/dashboard/settings/users'
-      path: '/users'
-      fullPath: '/dashboard/settings/users'
-      preLoaderRoute: typeof DashboardSettingsUsersRouteImport
-      parentRoute: typeof DashboardSettingsRoute
-    }
     '/dashboard/settings/migration': {
       id: '/dashboard/settings/migration'
       path: '/migration'
@@ -436,12 +436,10 @@ const DashboardSettingsMigrationRouteWithChildren =
 
 interface DashboardSettingsRouteChildren {
   DashboardSettingsMigrationRoute: typeof DashboardSettingsMigrationRouteWithChildren
-  DashboardSettingsUsersRoute: typeof DashboardSettingsUsersRoute
 }
 
 const DashboardSettingsRouteChildren: DashboardSettingsRouteChildren = {
   DashboardSettingsMigrationRoute: DashboardSettingsMigrationRouteWithChildren,
-  DashboardSettingsUsersRoute: DashboardSettingsUsersRoute,
 }
 
 const DashboardSettingsRouteWithChildren =
@@ -455,6 +453,7 @@ interface DashboardRouteChildren {
   DashboardClientsRoute: typeof DashboardClientsRoute
   DashboardCustomersRoute: typeof DashboardCustomersRoute
   DashboardDocumentsRoute: typeof DashboardDocumentsRoute
+  DashboardEmployeesRoute: typeof DashboardEmployeesRoute
   DashboardLeadsRoute: typeof DashboardLeadsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRouteWithChildren
@@ -473,6 +472,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardClientsRoute: DashboardClientsRoute,
   DashboardCustomersRoute: DashboardCustomersRoute,
   DashboardDocumentsRoute: DashboardDocumentsRoute,
+  DashboardEmployeesRoute: DashboardEmployeesRoute,
   DashboardLeadsRoute: DashboardLeadsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
   DashboardSettingsRoute: DashboardSettingsRouteWithChildren,

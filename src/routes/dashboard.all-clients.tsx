@@ -63,7 +63,11 @@ function AllClientsPage() {
   useEffect(() => {
     setIsLoading(true);
     const unsub = subscribeToAllClients((data) => {
-      setClients(data);
+      const session = getSession();
+      const filtered = session?.role === "employee"
+        ? data.filter((c) => c.assignee === session.username)
+        : data;
+      setClients(filtered);
       setIsLoading(false);
     });
     return unsub;

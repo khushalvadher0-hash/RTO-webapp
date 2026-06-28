@@ -16,8 +16,10 @@ export type StaffUser = {
   uid: string;
   username: string;
   name: string;
-  role: "admin" | "staff";
+  role: "admin" | "manager" | "employee" | "viewer";
   isActive?: boolean;
+  employeeId?: string;
+  status?: string;
 };
 
 // ─── In-memory session cache ──────────────────────────────────────────────────
@@ -32,19 +34,26 @@ export const toEmail = (username: string) => `${username.trim().toLowerCase()}@$
 
 // ─── Staff account definitions ────────────────────────────────────────────────
 
-export const PRIVILEGED_ADMINS = ["admin", "priya", "rahul", "staff"];
+export const PRIVILEGED_ADMINS = ["admin", "priya", "rahul", "manager", "staff"];
 const ALL_ACCOUNTS = [
   // Core admin accounts (always active)
-  { username: "admin", password: "admin123", name: "Office Admin", role: "admin" as const },
-  { username: "priya", password: "priya123", name: "Priya", role: "admin" as const },
-  { username: "rahul", password: "rahul123", name: "Rahul", role: "manager" as const },
-  { username: "staff", password: "staff123", name: "Staff", role: "employee" as const },
+  { username: "admin", password: "admin123", name: "Office Admin", role: "admin" as const, employeeId: "EMP000" },
+  { username: "priya", password: "priya123", name: "Priya", role: "admin" as const, employeeId: "EMP000A" },
+  { username: "manager", password: "manager123", name: "Manager", role: "manager" as const, employeeId: "EMP001" },
+  { username: "employee1", password: "employee1", name: "Employee 1", role: "employee" as const, employeeId: "EMP002" },
+  { username: "employee2", password: "employee2", name: "Employee 2", role: "employee" as const, employeeId: "EMP003" },
+  { username: "employee3", password: "employee3", name: "Employee 3", role: "employee" as const, employeeId: "EMP004" },
+  { username: "employee4", password: "employee4", name: "Employee 4", role: "employee" as const, employeeId: "EMP005" },
+  { username: "employee5", password: "employee5", name: "Employee 5", role: "employee" as const, employeeId: "EMP006" },
+  { username: "employee6", password: "employee6", name: "Employee 6", role: "employee" as const, employeeId: "EMP007" },
+  { username: "employee7", password: "employee7", name: "Employee 7", role: "employee" as const, employeeId: "EMP008" },
   // Staff users defined in records.ts
-  ...STAFF_USERS.map((s) => ({
+  ...STAFF_USERS.map((s, idx) => ({
     username: s.username,
     password: `${s.username}123`,
     name: s.name,
-    role: "staff" as const,
+    role: "employee" as const,
+    employeeId: `EMP0${9 + idx}`,
   })),
 ];
 
@@ -60,7 +69,10 @@ async function provisionUsers(): Promise<void> {
   // Check whether we've already provisioned
   const metaRef = doc(db, "_meta", "provisioned");
   const metaSnap = await getDoc(metaRef);
-  if (metaSnap.exists()) return;
+  if (metaSnap.exists()) {
+    // If already provisioned, we still want to make sure the manager and employee1-7 exist.
+    // Let's run provision sequence for all default accounts anyway to be safe.
+  }
 
   // Create Firebase Auth accounts and Firestore profiles
   for (const acct of ALL_ACCOUNTS) {
@@ -74,46 +86,15 @@ async function provisionUsers(): Promise<void> {
         username: acct.username,
         name: acct.name,
         role: acct.role,
-        status: PRIVILEGED_ADMINS.includes(acct.username) ? "active" : "inactive",
-        isActive: PRIVILEGED_ADMINS.includes(acct.username),
+        status: "active",
+        isActive: true,
         fullName: acct.name,
+        employeeId: acct.employeeId,
         createdAt: new Date().toISOString(),
         createdBy: "system",
       });
     } catch {
       // auth/email-already-in-use → already provisioned, skip
-    }
-  }
-
-  // Add 7 default users
-  const defaultUsers = [
-    { username: "person1", password: "person1", fullName: "Person One" },
-    { username: "person2", password: "person2", fullName: "Person Two" },
-    { username: "person3", password: "person3", fullName: "Person Three" },
-    { username: "person4", password: "person4", fullName: "Person Four" },
-    { username: "person5", password: "person5", fullName: "Person Five" },
-    { username: "person6", password: "person6", fullName: "Person Six" },
-    { username: "person7", password: "person7", fullName: "Person Seven" },
-  ];
-  for (const du of defaultUsers) {
-    try {
-      const cred = await createUserWithEmailAndPassword(
-        auth,
-        toEmail(du.username),
-        du.password,
-      );
-      await setDoc(doc(db, "users", cred.user.uid), {
-        username: du.username,
-        name: du.fullName,
-        fullName: du.fullName,
-        role: "employee",
-        status: "active",
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        createdBy: "system",
-      });
-    } catch {
-      // skip if already exists
     }
   }
 

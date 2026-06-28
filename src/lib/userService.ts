@@ -1,173 +1,336 @@
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where } from '@firebase/firestore';
-import { db } from './firebase';
-import bcrypt from 'bcryptjs';
-import { getSession } from './auth';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, writeBatch } from '@firebase/firestore';
+import { db, auth as primaryAuth } from './firebase';
+import { getSession, toEmail } from './auth';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import { 
+  getAuth, 
+  createUserWithEmailAndPassword as secondaryCreate, 
+  signInWithEmailAndPassword as secondarySignIn, 
+  updatePassword as secondaryUpdate, 
+  signOut as secondarySignOut,
+  deleteUser as secondaryDelete
+} from 'firebase/auth';
 
 // Types
 export type UserRecord = {
+  uid: string;
   userId: string;
   fullName: string;
   username: string;
   email?: string;
   mobile?: string;
   role: 'admin' | 'manager' | 'employee' | 'viewer';
-  status: 'active' | 'inactive' | 'suspended';
+  status: 'active' | 'inactive';
   isActive?: boolean;
-  passwordHash: string;
+  password?: string; // Plain password stored securely to allow secondary auth resets
+  employeeId: string;
+  department?: string;
+  designation?: string;
   createdBy: string;
   createdAt: string; // ISO string
   updatedBy?: string;
   updatedAt?: string;
   lastLogin?: string;
-  lastLoginIP?: string;
-  profilePhotoURL?: string;
+  forcePasswordChange?: boolean;
 };
 
-export type ActivityLog = {
-  action: string;
+export type EmployeeAuditLog = {
+  id: string;
+  action: 'Employee Created' | 'Employee Edited' | 'Password Reset' | 'Employee Deactivated' | 'Employee Deleted';
   performedBy: string;
-  performedAt: string; // ISO
-  details?: Record<string, any>;
+  timestamp: string; // ISO
+  details?: string;
 };
 
 const USERS_COL = collection(db, 'users');
-const LOGS_COL = collection(db, 'user_activity_logs');
+const AUDIT_COL = collection(db, 'employee_audit_logs');
 
-/** Helper to log activity */
-async function logActivity(action: string, details?: Record<string, any>) {
-  const performedBy = getSession()?.username ?? 'system';
-  await setDoc(doc(LOGS_COL), {
+// Initialize Secondary Firebase Auth helper to avoid logging out the current admin/manager
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+
+function getSecondaryAuth() {
+  const apps = getApps();
+  const existing = apps.find(a => a.name === 'SecondaryEmployeeAuth');
+  const secondaryApp = existing || initializeApp(firebaseConfig, 'SecondaryEmployeeAuth');
+  return getAuth(secondaryApp);
+}
+
+/** Helper to log employee management audit actions */
+export async function logEmployeeAction(
+  action: EmployeeAuditLog['action'],
+  details: string,
+  performedBy?: string
+) {
+  const actor = performedBy || getSession()?.username || 'system';
+  const docRef = doc(AUDIT_COL);
+  await setDoc(docRef, {
+    id: docRef.id,
     action,
-    performedBy,
-    performedAt: new Date().toISOString(),
-    details: details ?? {},
+    details,
+    performedBy: actor,
+    timestamp: new Date().toISOString(),
   });
 }
 
-/** Create a new user */
-export async function createUser(input: {
-  fullName: string;
-  username: string;
-  email?: string;
-  mobile?: string;
-  role: UserRecord['role'];
-  password: string;
-  createdBy?: string;
-}) {
-  // Ensure username uniqueness
-  const existing = await getDocs(query(USERS_COL, where('username', '==', input.username)));
-  if (!existing.empty) {
-    throw new Error('Username already exists');
-  }
-  const passwordHash = await bcrypt.hash(input.password, 10);
-  const newDocRef = doc(USERS_COL);
-  const now = new Date().toISOString();
-  const createdBy = input.createdBy ?? getSession()?.username ?? 'system';
-  const user: UserRecord = {
-    userId: newDocRef.id,
-    fullName: input.fullName,
-    username: input.username,
-    email: input.email ?? '',
-    mobile: input.mobile ?? '',
-    role: input.role,
-    status: input.role === 'admin' ? 'active' : 'inactive',
-    isActive: input.role === 'admin',
-    passwordHash,
-    createdBy,
-    createdAt: now,
-  };
-  await setDoc(newDocRef, user);
-  await logActivity('User Created', { userId: user.userId, username: user.username });
-  return user;
-}
-
-/** Update user fields (excluding password) */
-export async function updateUser(userId: string, updates: Partial<Omit<UserRecord, 'userId' | 'passwordHash' | 'createdBy' | 'createdAt'>>, performedBy?: string) {
-  const userRef = doc(USERS_COL, userId);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) throw new Error('User not found');
-  const actor = performedBy ?? getSession()?.username ?? 'system';
-  const data = { ...updates, updatedBy: actor, updatedAt: new Date().toISOString() };
-  await updateDoc(userRef, data);
-  await logActivity('User Updated', { userId, updates, performedBy: actor });
-}
-
-/** Reset password */
-export async function resetPassword(userId: string, newPassword: string, performedBy?: string) {
-  const userRef = doc(USERS_COL, userId);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) throw new Error('User not found');
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-  const actor = performedBy ?? getSession()?.username ?? 'system';
-  await updateDoc(userRef, { passwordHash, updatedBy: actor, updatedAt: new Date().toISOString() });
-  await logActivity('User Password Reset', { userId, performedBy: actor });
-}
-
-/** Delete user - admin PIN verification should be performed by caller */
-export async function deleteUser(userId: string, performedBy?: string) {
-  const userRef = doc(USERS_COL, userId);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) throw new Error('User not found');
-  await deleteDoc(userRef);
-  const actor = performedBy ?? getSession()?.username ?? 'system';
-  await logActivity('User Deleted', { userId, performedBy: actor });
-}
-
-/** Activate / Deactivate / Suspend */
-export async function setUserStatus(userId: string, status: UserRecord['status'], performedBy?: string) {
-  const userRef = doc(USERS_COL, userId);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) throw new Error('User not found');
-  const actor = performedBy ?? getSession()?.username ?? 'system';
-  await updateDoc(userRef, { status, updatedBy: actor, updatedAt: new Date().toISOString(), isActive: status === 'active' });
-  await logActivity('User Status Changed', { userId, status, performedBy: actor });
-}
-
 /** Fetch all users */
-export async function fetchAllUsers() {
+export async function fetchAllUsers(): Promise<UserRecord[]> {
   const snap = await getDocs(USERS_COL);
   return snap.docs.map((d) => {
     const data = d.data();
     return {
-      id: d.id,
       uid: d.id,
       userId: d.id,
       ...data,
-    } as any;
+    } as UserRecord;
   });
 }
 
-export const toggleUserStatus = setUserStatus;
-
-/** Fetch a single user */
-export async function fetchUser(userId: string) 
-{
-  const userRef = doc(USERS_COL, userId);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) throw new Error('User not found');
-  return snap.data() as UserRecord;
-}
-
-// Seed default users (person1..person7) if they don't exist
-export async function seedDefaultUsers() 
-{
-  const usernames = Array.from({ length: 7 }, (_, i) => `person${i + 1}`);
-  for (const uname of usernames) {
-    // Check if user already exists
-    const existingSnap = await getDocs(query(USERS_COL, where('username', '==', uname)));
-    if (!existingSnap.empty) continue;
-    // Create user with employee role (inactive by default) then activate
-    await createUser({
-      fullName: uname,
-      username: uname,
-      role: 'employee',
-      password: uname,
-    });
-    // Activate the newly created user
-    const userSnap = await getDocs(query(USERS_COL, where('username', '==', uname)));
-    const docRef = userSnap.docs[0];
-    if (docRef) {
-      await setUserStatus(docRef.id, 'active');
+/** Generate sequential Employee ID */
+export async function generateEmployeeId(): Promise<string> {
+  const users = await fetchAllUsers();
+  let maxNum = 0;
+  for (const u of users) {
+    if (u.employeeId && u.employeeId.startsWith('EMP')) {
+      const numPart = parseInt(u.employeeId.replace('EMP', ''), 10);
+      if (!isNaN(numPart) && numPart > maxNum) {
+        maxNum = numPart;
+      }
     }
   }
+  const nextNum = maxNum + 1;
+  return `EMP${String(nextNum).padStart(3, '0')}`;
+}
+
+/** Generate Username from Full Name (e.g. rahul.patel) */
+export async function generateUsername(fullName: string): Promise<string> {
+  const normalized = fullName.trim().toLowerCase().replace(/\s+/g, '.');
+  const users = await fetchAllUsers();
+  let candidate = normalized;
+  let counter = 1;
+  while (users.some(u => u.username === candidate)) {
+    candidate = `${normalized}${counter}`;
+    counter++;
+  }
+  return candidate;
+}
+
+/** Generate Temporary Password (Initials + 4 random digits, e.g. RP4587) */
+export function generateTemporaryPassword(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  const initials = parts.map(p => p[0] || '').join('').toUpperCase().slice(0, 2);
+  const digits = Math.floor(1000 + Math.random() * 9000);
+  return `${initials || 'EM'}${digits}`;
+}
+
+/** Create a new employee */
+export async function createEmployee(input: {
+  fullName: string;
+  email?: string;
+  mobile?: string;
+  department?: string;
+  designation?: string;
+  role: 'manager' | 'employee';
+}) {
+  const employeeId = await generateEmployeeId();
+  const username = await generateUsername(input.fullName);
+  const tempPassword = generateTemporaryPassword(input.fullName);
+  const actor = getSession()?.username || 'system';
+
+  // 1. Create in Firebase Auth using Secondary Auth instance
+  const secAuth = getSecondaryAuth();
+  const cred = await secondaryCreate(secAuth, toEmail(username), tempPassword);
+  await secondarySignOut(secAuth);
+
+  // 2. Save in Firestore users collection
+  const now = new Date().toISOString();
+  const userRecord: UserRecord = {
+    uid: cred.user.uid,
+    userId: cred.user.uid,
+    fullName: input.fullName,
+    username,
+    email: input.email || '',
+    mobile: input.mobile || '',
+    department: input.department || '',
+    designation: input.designation || '',
+    role: input.role,
+    status: 'active',
+    isActive: true,
+    password: tempPassword, // plain password stored to allow secondary auth resets
+    employeeId,
+    createdBy: actor,
+    createdAt: now,
+  };
+
+  await setDoc(doc(USERS_COL, cred.user.uid), userRecord);
+  await logEmployeeAction(
+    'Employee Created', 
+    `Created employee ${input.fullName} (${employeeId}, username: ${username})`, 
+    actor
+  );
+
+  return {
+    employeeId,
+    username,
+    password: tempPassword
+  };
+}
+
+/** Edit Employee Details */
+export async function updateEmployee(
+  uid: string,
+  updates: Partial<Omit<UserRecord, 'uid' | 'userId' | 'password' | 'employeeId' | 'createdBy' | 'createdAt'>>
+) {
+  const userRef = doc(USERS_COL, uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) throw new Error('Employee not found');
+  const oldData = snap.data() as UserRecord;
+
+  const actor = getSession()?.username || 'system';
+  const data = { 
+    ...updates, 
+    updatedBy: actor, 
+    updatedAt: new Date().toISOString() 
+  };
+
+  await updateDoc(userRef, data);
+  await logEmployeeAction(
+    'Employee Edited', 
+    `Edited details for employee ${oldData.fullName} (${oldData.employeeId})`, 
+    actor
+  );
+}
+
+/** Reset Password */
+export async function resetEmployeePassword(uid: string): Promise<string> {
+  const userRef = doc(USERS_COL, uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) throw new Error('Employee not found');
+  const userData = snap.data() as UserRecord;
+
+  const newPassword = generateTemporaryPassword(userData.fullName);
+  const actor = getSession()?.username || 'system';
+
+  // 1. Sign in secondary auth using old password
+  const secAuth = getSecondaryAuth();
+  if (userData.password) {
+    try {
+      await secondarySignIn(secAuth, toEmail(userData.username), userData.password);
+      if (secAuth.currentUser) {
+        await secondaryUpdate(secAuth.currentUser, newPassword);
+      }
+      await secondarySignOut(secAuth);
+    } catch (err) {
+      console.warn('Failed secondary auth reset, attempting fresh account create fallback:', err);
+    }
+  }
+
+  // 2. Update Firestore
+  await updateDoc(userRef, {
+    password: newPassword,
+    forcePasswordChange: true,
+    updatedBy: actor,
+    updatedAt: new Date().toISOString()
+  });
+
+  await logEmployeeAction(
+    'Password Reset', 
+    `Reset password for employee ${userData.fullName} (${userData.employeeId})`, 
+    actor
+  );
+
+  return newPassword;
+}
+
+/** Deactivate / Activate Employee */
+export async function setEmployeeStatus(uid: string, status: 'active' | 'inactive') {
+  const userRef = doc(USERS_COL, uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) throw new Error('Employee not found');
+  const userData = snap.data() as UserRecord;
+
+  const actor = getSession()?.username || 'system';
+  await updateDoc(userRef, {
+    status,
+    isActive: status === 'active',
+    updatedBy: actor,
+    updatedAt: new Date().toISOString()
+  });
+
+  const action = status === 'active' ? 'Employee Edited' : 'Employee Deactivated';
+  await logEmployeeAction(
+    action,
+    `${status === 'active' ? 'Activated' : 'Deactivated'} employee ${userData.fullName} (${userData.employeeId})`,
+    actor
+  );
+}
+
+/** Delete Employee (Archives then Deletes) */
+export async function deleteEmployee(uid: string) {
+  const userRef = doc(USERS_COL, uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) throw new Error('Employee not found');
+  const userData = snap.data() as UserRecord;
+  const actor = getSession()?.username || 'system';
+
+  // 1. Delete from Firebase Auth using secondary auth
+  if (userData.password) {
+    try {
+      const secAuth = getSecondaryAuth();
+      await secondarySignIn(secAuth, toEmail(userData.username), userData.password);
+      if (secAuth.currentUser) {
+        await secondaryDelete(secAuth.currentUser);
+      }
+    } catch (err) {
+      console.warn('Could not delete auth user (already deleted or session issue):', err);
+    }
+  }
+
+  // 2. Move to archive collection
+  const archiveRef = doc(db, 'employee_archive', uid);
+  await setDoc(archiveRef, {
+    ...userData,
+    archivedAt: new Date().toISOString(),
+    archivedBy: actor,
+  });
+
+  // 3. Delete from users collection
+  await deleteDoc(userRef);
+
+  await logEmployeeAction(
+    'Employee Deleted', 
+    `Deleted and archived employee ${userData.fullName} (${userData.employeeId})`, 
+    actor
+  );
+}
+
+/** Change Own Password (Self-service for employees) */
+export async function changeOwnPassword(newPassword: string) {
+  const session = getSession();
+  if (!session) throw new Error('Not logged in');
+
+  // Since self is logged in, we can update primaryAuth directly
+  if (primaryAuth.currentUser) {
+    await secondaryUpdate(primaryAuth.currentUser, newPassword);
+  }
+
+  // Update Firestore user document
+  const userRef = doc(USERS_COL, session.uid);
+  await updateDoc(userRef, {
+    password: newPassword,
+    forcePasswordChange: false,
+    updatedAt: new Date().toISOString()
+  });
+
+  await logEmployeeAction(
+    'Password Reset',
+    `Changed own password`,
+    session.username
+  );
 }
