@@ -10,6 +10,7 @@ import {
   updateDoc,
   deleteDoc,
   addDoc,
+  getDocs,
   arrayUnion,
   Timestamp,
 } from "firebase/firestore";
@@ -846,20 +847,167 @@ export const TASK_STATUS_OPTIONS: TaskStatus[] = [
 export interface TaskTemplate {
   id: string;
   templateName: string;
-  description: string;
+  serviceType: string;
   subtasks: string[];
+  isDefault: boolean;
   createdBy: string;
   createdAt: string;
   updatedBy?: string;
   updatedAt?: string;
 }
 
-const TEMPLATES_COL = "registry_task_templates";
+const TEMPLATES_COL = "task_templates";
+
+const DEFAULT_TEMPLATES_SPEC = [
+  {
+    templateName: "Insurance",
+    serviceType: "Insurance",
+    subtasks: [
+      "Call Client",
+      "Collect RC",
+      "Collect Insurance Copy",
+      "Receive Payment",
+      "Submit Application",
+      "Deliver Documents"
+    ],
+  },
+  {
+    templateName: "Fitness",
+    serviceType: "Fitness",
+    subtasks: [
+      "Call Client",
+      "Collect RC",
+      "Schedule Inspection",
+      "Receive Payment",
+      "Update Fitness",
+      "Deliver Documents"
+    ],
+  },
+  {
+    templateName: "Tax",
+    serviceType: "Tax",
+    subtasks: [
+      "Call Client",
+      "Verify Tax Amount",
+      "Collect Payment",
+      "Submit Tax",
+      "Update Record"
+    ],
+  },
+  {
+    templateName: "PUC",
+    serviceType: "PUC",
+    subtasks: [
+      "Call Client",
+      "Vehicle Inspection",
+      "Generate PUC",
+      "Deliver Certificate"
+    ],
+  },
+  {
+    templateName: "National Permit",
+    serviceType: "National Permit",
+    subtasks: [
+      "Collect Documents",
+      "Verify Permit Status",
+      "Collect Payment",
+      "Submit Application",
+      "Receive Permit",
+      "Deliver Documents"
+    ],
+  },
+  {
+    templateName: "Gujarat Permit",
+    serviceType: "Gujarat Permit",
+    subtasks: [
+      "Collect Documents",
+      "Verify Permit",
+      "Collect Payment",
+      "Submit Application",
+      "Receive Permit",
+      "Deliver Documents"
+    ],
+  },
+  {
+    templateName: "License Renewal",
+    serviceType: "License Renewal",
+    subtasks: [
+      "Call Client",
+      "Collect License",
+      "Collect Documents",
+      "Receive Payment",
+      "Submit Renewal",
+      "Deliver License"
+    ],
+  },
+  {
+    templateName: "RC Transfer",
+    serviceType: "RC Transfer",
+    subtasks: [
+      "Collect RC",
+      "Collect Documents",
+      "Receive Payment",
+      "Submit Transfer",
+      "Track Status",
+      "Deliver RC"
+    ],
+  },
+  {
+    templateName: "HP Termination",
+    serviceType: "HP Termination",
+    subtasks: [
+      "Collect NOC",
+      "Collect Documents",
+      "Receive Payment",
+      "Submit Request",
+      "Verify Closure"
+    ],
+  }
+];
+
+export async function provisionDefaultTemplates(): Promise<void> {
+  try {
+    const colRef = collection(db, TEMPLATES_COL);
+    const snap = await getDocs(colRef);
+    const existingNames = snap.docs.map(d => (d.data() as any).templateName);
+
+    for (const spec of DEFAULT_TEMPLATES_SPEC) {
+      if (!existingNames.includes(spec.templateName)) {
+        await addDoc(colRef, {
+          templateName: spec.templateName,
+          serviceType: spec.serviceType,
+          subtasks: spec.subtasks,
+          isDefault: true,
+          createdBy: "system",
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[provisionDefaultTemplates] Error seeding defaults:", err);
+  }
+}
 
 export function subscribeToTemplates(cb: (templates: TaskTemplate[]) => void): () => void {
+  // Try provisioning defaults on load
+  provisionDefaultTemplates().catch(console.error);
+
   return onSnapshot(
     collection(db, TEMPLATES_COL),
     (snap) => {
+      // If snap is empty (possibly during provisioning delay), fallback to spec
+      if (snap.empty) {
+        cb(DEFAULT_TEMPLATES_SPEC.map((s, i) => ({
+          id: `temp-spec-${i}`,
+          templateName: s.templateName,
+          serviceType: s.serviceType,
+          subtasks: s.subtasks,
+          isDefault: true,
+          createdBy: "system",
+          createdAt: new Date().toISOString()
+        })));
+        return;
+      }
       cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TaskTemplate));
     },
     (err) => {
@@ -871,14 +1019,15 @@ export function subscribeToTemplates(cb: (templates: TaskTemplate[]) => void): (
 
 export async function createTemplate(
   templateName: string,
-  description: string,
+  serviceType: string,
   subtasks: string[],
   createdBy: string,
 ): Promise<TaskTemplate> {
   const payload = {
     templateName,
-    description,
+    serviceType,
     subtasks,
+    isDefault: false,
     createdBy,
     createdAt: new Date().toISOString(),
   };
@@ -892,7 +1041,7 @@ export async function createTemplate(
       `Task Template created: ${templateName}`,
       "template",
       null,
-      `Description: ${description}`,
+      `Service Type: ${serviceType}`,
     );
   } catch (err) {
     console.warn("Template Created log activity failed:", err);

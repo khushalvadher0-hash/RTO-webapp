@@ -1,3 +1,4 @@
+// src/routes/dashboard.task-templates.tsx
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import {
@@ -11,6 +12,8 @@ import {
   CheckCircle,
   AlertCircle,
   ShieldAlert,
+  Copy,
+  Eye,
 } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -24,22 +27,38 @@ import {
   deleteTemplate,
   type TaskTemplate,
 } from "@/lib/tasks";
+import { verifyAdminPin } from "@/lib/adminSecurity";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/pdfGenerator";
 
 export const Route = createFileRoute("/dashboard/task-templates")({
   component: TaskTemplatesPage,
 });
+
+const SERVICE_OPTIONS = [
+  "Insurance",
+  "Fitness",
+  "Tax",
+  "PUC",
+  "National Permit",
+  "Gujarat Permit",
+  "License Renewal",
+  "RC Transfer",
+  "HP Termination",
+  "Custom Service",
+];
 
 function TaskTemplatesPage() {
   const [session] = useState(() => getSession());
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form states
+  // Form / Dialog states
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [templateName, setTemplateName] = useState("");
-  const [description, setDescription] = useState("");
+  const [serviceType, setServiceType] = useState("Insurance");
   const [subtasks, setSubtasks] = useState<string[]>([]);
   const [newSubtask, setNewSubtask] = useState("");
 
@@ -58,8 +77,9 @@ function TaskTemplatesPage() {
   const handleOpenCreate = () => {
     if (!isAdmin) return toast.error("Only admins can manage templates.");
     setEditingTemplate(null);
+    setViewOnly(false);
     setTemplateName("");
-    setDescription("");
+    setServiceType("Insurance");
     setSubtasks([]);
     setNewSubtask("");
     setDialogOpen(true);
@@ -68,11 +88,33 @@ function TaskTemplatesPage() {
   const handleOpenEdit = (tpl: TaskTemplate) => {
     if (!isAdmin) return toast.error("Only admins can manage templates.");
     setEditingTemplate(tpl);
+    setViewOnly(false);
     setTemplateName(tpl.templateName);
-    setDescription(tpl.description || "");
+    setServiceType(tpl.serviceType || "Insurance");
     setSubtasks(tpl.subtasks || []);
     setNewSubtask("");
     setDialogOpen(true);
+  };
+
+  const handleOpenView = (tpl: TaskTemplate) => {
+    setEditingTemplate(tpl);
+    setViewOnly(true);
+    setTemplateName(tpl.templateName);
+    setServiceType(tpl.serviceType || "Insurance");
+    setSubtasks(tpl.subtasks || []);
+    setNewSubtask("");
+    setDialogOpen(true);
+  };
+
+  const handleDuplicate = async (tpl: TaskTemplate) => {
+    if (!isAdmin) return toast.error("Only admins can duplicate templates.");
+    try {
+      const name = `Copy of ${tpl.templateName}`;
+      await createTemplate(name, tpl.serviceType || "Custom Service", tpl.subtasks || [], actor);
+      toast.success("Template duplicated successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to duplicate template");
+    }
   };
 
   const handleAddSubtask = () => {
@@ -87,6 +129,7 @@ function TaskTemplatesPage() {
 
   // HTML5 Drag and Drop Handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
+    if (viewOnly) return;
     e.dataTransfer.setData("text/plain", index.toString());
   };
 
@@ -95,6 +138,7 @@ function TaskTemplatesPage() {
   };
 
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    if (viewOnly) return;
     e.preventDefault();
     const sourceIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
     if (isNaN(sourceIndex) || sourceIndex === targetIndex) return;
@@ -107,6 +151,7 @@ function TaskTemplatesPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (viewOnly) return;
     if (!templateName.trim()) return toast.error("Template name is required");
 
     try {
@@ -115,14 +160,14 @@ function TaskTemplatesPage() {
           editingTemplate.id,
           {
             templateName: templateName.trim(),
-            description: description.trim(),
+            serviceType: serviceType,
             subtasks,
           },
           actor,
         );
         toast.success("Template updated successfully!");
       } else {
-        await createTemplate(templateName.trim(), description.trim(), subtasks, actor);
+        await createTemplate(templateName.trim(), serviceType, subtasks, actor);
         toast.success("Template created successfully!");
       }
       setDialogOpen(false);
@@ -133,7 +178,13 @@ function TaskTemplatesPage() {
 
   const handleDelete = async (tpl: TaskTemplate) => {
     if (!isAdmin) return toast.error("Only admins can delete templates.");
-    if (!confirm(`Are you sure you want to delete template "${tpl.templateName}"?`)) return;
+    if (tpl.isDefault) return toast.error("Default templates cannot be deleted.");
+
+    const pin = prompt(`Enter Admin PIN to delete template "${tpl.templateName}":`);
+    if (!pin) return;
+
+    const ok = await verifyAdminPin(pin);
+    if (!ok) return toast.error("Invalid Admin PIN");
 
     try {
       await deleteTemplate(tpl.id, actor);
@@ -144,15 +195,15 @@ function TaskTemplatesPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-5">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-800 flex items-center gap-2">
-            <FileText className="size-6 text-primary" /> Task Templates
+            <FileText className="size-6 text-primary" /> Centralized Task Templates
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure reusable checklists and process subtasks for operational workflows.
+            Configure default and custom subtask checklists.
           </p>
         </div>
 
@@ -168,87 +219,88 @@ function TaskTemplatesPage() {
         <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-center gap-2">
           <ShieldAlert className="size-4 shrink-0" />
           <span>
-            <strong>Read-Only Mode:</strong> Staff users can view task templates, but only
-            administrators can configure or delete them.
+            <strong>Read-Only Mode:</strong> Staff users can view templates, but only Admin users can add, edit, or delete them.
           </span>
         </div>
       )}
 
-      {/* Grid List */}
-      {loading ? (
-        <div className="text-center py-20 text-muted-foreground">Loading templates...</div>
-      ) : templates.length === 0 ? (
-        <div className="text-center py-20 border border-dashed rounded-2xl bg-muted/5">
-          <FileText className="size-10 text-muted-foreground/30 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No task templates configured yet.</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {templates.map((tpl) => (
-            <Card
-              key={tpl.id}
-              className="border shadow-sm flex flex-col justify-between hover:shadow-md transition"
-            >
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-bold text-gray-800">
-                  {tpl.templateName}
-                </CardTitle>
-                {tpl.description && (
-                  <CardDescription className="text-xs line-clamp-2 mt-1">
-                    {tpl.description}
-                  </CardDescription>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">
-                    Checklist Items ({tpl.subtasks?.length || 0})
-                  </span>
-                  <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                    {tpl.subtasks?.map((st, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-1.5 text-xs text-gray-600 bg-slate-50 p-1.5 rounded border"
-                      >
-                        <CheckCircle className="size-3.5 text-emerald-500 shrink-0" />
-                        <span className="truncate">{st}</span>
-                      </div>
-                    ))}
-                    {(!tpl.subtasks || tpl.subtasks.length === 0) && (
-                      <span className="text-xs text-muted-foreground italic">
-                        No checklist items configured
-                      </span>
-                    )}
-                  </div>
-                </div>
+      {/* Table view */}
+      <Card className="shadow-sm border border-slate-100">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="text-center py-20 text-muted-foreground">Loading templates...</div>
+          ) : templates.length === 0 ? (
+            <div className="text-center py-20 border border-dashed rounded-2xl bg-muted/5">
+              <FileText className="size-10 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No task templates configured yet.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
+                    <th className="p-3.5">Template Name</th>
+                    <th className="p-3.5">Service Type</th>
+                    <th className="p-3.5 text-center">Subtasks Count</th>
+                    <th className="p-3.5">Created By</th>
+                    <th className="p-3.5">Created Date</th>
+                    <th className="p-3.5">Last Updated</th>
+                    <th className="p-3.5 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-gray-700">
+                  {templates.map((tpl) => (
+                    <tr key={tpl.id} className="hover:bg-slate-50 transition">
+                      <td className="p-3.5 font-bold text-gray-900 flex items-center gap-1.5">
+                        {tpl.templateName}
+                        {tpl.isDefault && (
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-100 text-blue-800">
+                            Default
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 font-semibold text-slate-700">{tpl.serviceType || "—"}</td>
+                      <td className="p-3.5 text-center font-mono font-bold text-gray-800">{tpl.subtasks?.length || 0}</td>
+                      <td className="p-3.5 font-medium text-slate-600">{tpl.createdBy}</td>
+                      <td className="p-3.5 font-mono text-slate-500">{formatDate(tpl.createdAt)}</td>
+                      <td className="p-3.5 font-mono text-slate-500">{tpl.updatedAt ? formatDate(tpl.updatedAt) : "—"}</td>
+                      <td className="p-3.5 text-center">
+                        <div className="flex gap-1.5 justify-center">
+                          <Button onClick={() => handleOpenView(tpl)} variant="ghost" size="icon" className="size-7 hover:bg-slate-100" title="View">
+                            <Eye className="size-3.5 text-slate-600" />
+                          </Button>
+                          {isAdmin && (
+                            <>
+                              <Button onClick={() => handleOpenEdit(tpl)} variant="ghost" size="icon" className="size-7 hover:bg-slate-100" title="Edit">
+                                <Edit className="size-3.5 text-indigo-600" />
+                              </Button>
+                              <Button onClick={() => handleDuplicate(tpl)} variant="ghost" size="icon" className="size-7 hover:bg-slate-100" title="Duplicate">
+                                <Copy className="size-3.5 text-emerald-600" />
+                              </Button>
+                              <Button
+                                onClick={() => handleDelete(tpl)}
+                                disabled={tpl.isDefault}
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 hover:bg-rose-50 text-rose-600 disabled:opacity-30"
+                                title="Delete"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-                {isAdmin && (
-                  <div className="flex gap-2 border-t pt-3 justify-end">
-                    <Button
-                      onClick={() => handleOpenEdit(tpl)}
-                      variant="outline"
-                      size="xs"
-                      className="h-8 gap-1"
-                    >
-                      <Edit className="size-3.5" /> Edit
-                    </Button>
-                    <Button
-                      onClick={() => handleDelete(tpl)}
-                      variant="outline"
-                      size="xs"
-                      className="h-8 text-destructive hover:bg-destructive/10 border-destructive/20 gap-1"
-                    >
-                      <Trash2 className="size-3.5" /> Delete
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Create / Edit Dialog */}
+      {/* Create / Edit / View Dialog */}
       {dialogOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <form
@@ -257,7 +309,7 @@ function TaskTemplatesPage() {
           >
             <div className="p-5 border-b flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-lg text-gray-800">
-                {editingTemplate ? "Edit Template" : "Create Task Template"}
+                {viewOnly ? "View Template" : editingTemplate ? "Edit Template" : "Create Task Template"}
               </h3>
               <button
                 type="button"
@@ -276,22 +328,30 @@ function TaskTemplatesPage() {
                 <Input
                   id="tplName"
                   required
-                  placeholder="e.g. Insurance Renewal"
+                  disabled={viewOnly}
+                  placeholder="e.g. Corporate Insurance"
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
                 />
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="tplDesc" className="text-xs font-bold uppercase text-gray-500">
-                  Description
+                <Label htmlFor="srvType" className="text-xs font-bold uppercase text-gray-500">
+                  Service Type *
                 </Label>
-                <Input
-                  id="tplDesc"
-                  placeholder="Operational subtask workflow description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
+                <select
+                  id="srvType"
+                  disabled={viewOnly}
+                  value={serviceType}
+                  onChange={(e) => setServiceType(e.target.value)}
+                  className="w-full text-xs border rounded-md p-2 bg-white text-gray-700 font-semibold"
+                >
+                  {SERVICE_OPTIONS.map((srv) => (
+                    <option key={srv} value={srv}>
+                      {srv}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Subtasks Configurator */}
@@ -299,52 +359,57 @@ function TaskTemplatesPage() {
                 <Label className="text-xs font-bold uppercase text-gray-500 block">
                   Configure Subtask Checklist
                 </Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Enter checklist item (e.g. Call Client)"
-                    value={newSubtask}
-                    onChange={(e) => setNewSubtask(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddSubtask();
-                      }
-                    }}
-                  />
-                  <Button type="button" onClick={handleAddSubtask}>
-                    Add
-                  </Button>
-                </div>
+                {!viewOnly && (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter checklist item (e.g. Call Client)"
+                      value={newSubtask}
+                      onChange={(e) => setNewSubtask(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddSubtask();
+                        }
+                      }}
+                    />
+                    <Button type="button" onClick={handleAddSubtask}>
+                      Add
+                    </Button>
+                  </div>
+                )}
 
                 <div className="space-y-1.5 mt-3 max-h-60 overflow-y-auto bg-slate-50 p-2.5 border rounded-lg">
                   {subtasks.map((st, index) => (
                     <div
                       key={index}
-                      draggable
+                      draggable={!viewOnly}
                       onDragStart={(e) => handleDragStart(e, index)}
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleDrop(e, index)}
-                      className="flex items-center justify-between gap-2 bg-white p-2 rounded border shadow-sm cursor-move hover:border-primary/40 active:opacity-60 transition"
+                      className={`flex items-center justify-between gap-2 bg-white p-2 rounded border shadow-sm ${
+                        viewOnly ? "" : "cursor-move hover:border-primary/40"
+                      } active:opacity-60 transition`}
                     >
                       <div className="flex items-center gap-2 text-xs text-gray-700 truncate">
-                        <GripVertical className="size-3.5 text-muted-foreground shrink-0" />
+                        {!viewOnly && <GripVertical className="size-3.5 text-muted-foreground shrink-0" />}
                         <span className="truncate">
                           {index + 1}. {st}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSubtask(index)}
-                        className="text-red-500 hover:text-red-800 p-0.5 rounded"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      {!viewOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSubtask(index)}
+                          className="text-red-500 hover:text-red-800 p-0.5 rounded"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))}
                   {subtasks.length === 0 && (
                     <div className="text-center py-6 text-xs text-muted-foreground italic flex items-center justify-center gap-1.5">
-                      <AlertCircle className="size-4 text-muted-foreground" /> Configure subtasks to
-                      populate automatically.
+                      <AlertCircle className="size-4 text-muted-foreground" /> Configure subtasks to populate automatically.
                     </div>
                   )}
                 </div>
@@ -353,11 +418,13 @@ function TaskTemplatesPage() {
 
             <div className="p-4 border-t bg-slate-50 flex gap-2 justify-end">
               <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
-                Cancel
+                {viewOnly ? "Close" : "Cancel"}
               </Button>
-              <Button type="submit" className="gap-1">
-                <Save className="size-4" /> Save Template
-              </Button>
+              {!viewOnly && (
+                <Button type="submit" className="gap-1">
+                  <Save className="size-4" /> Save Template
+                </Button>
+              )}
             </div>
           </form>
         </div>

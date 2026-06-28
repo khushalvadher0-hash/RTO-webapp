@@ -160,6 +160,13 @@ function Overview() {
   }, []);
 
   useEffect(() => {
+    if (clients.length > 0) {
+      console.log("clients.length:", clients.length);
+      console.log("unique client ids count:", new Set(clients.map((c) => c.id)).size);
+    }
+  }, [clients]);
+
+  useEffect(() => {
     const loadServiceData = async () => {
       try {
         const [revenue, active, byService, renewals, billing] = await Promise.all([
@@ -173,7 +180,10 @@ function Overview() {
         setTotalRevenue(revenue);
         setActiveServices(active);
         setRevenueByService(byService);
-        setUpcomingRenewals(renewals);
+        const uniqueRenewals = Array.from(
+          new Map(renewals.map((item) => [item.id, item])).values()
+        );
+        setUpcomingRenewals(uniqueRenewals);
         setBillingMetrics(billing);
       } catch (error) {
         console.error("Error loading service data:", error);

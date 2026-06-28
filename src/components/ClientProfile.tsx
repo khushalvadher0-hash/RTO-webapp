@@ -146,6 +146,34 @@ export function ClientProfile({
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("activity");
+  const [clientFinanceRecords, setClientFinanceRecords] = useState<any[]>([]);
+  const [clientPayments, setClientPayments] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!record) return;
+    const q = query(collection(db, "finance_records"), where("clientId", "==", record.id));
+    const unsubFinance = onSnapshot(q, (snap) => {
+      setClientFinanceRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsubFinance();
+  }, [record?.id]);
+
+  useEffect(() => {
+    if (!record || clientFinanceRecords.length === 0) {
+      setClientPayments([]);
+      return;
+    }
+    const invoiceIds = clientFinanceRecords.map((r) => r.invoiceId);
+    const q = query(collection(db, "payment_history"));
+    const unsubPay = onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as any))
+        .filter((p) => invoiceIds.includes(p.invoiceId))
+        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+      setClientPayments(list);
+    });
+    return () => unsubPay();
+  }, [record?.id, clientFinanceRecords]);
   const session = getSession();
   const actor = session?.username || "system";
   const actorName = session?.name || session?.username || "System";
@@ -698,9 +726,10 @@ export function ClientProfile({
 
           <section className="md:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value)}>
-              <TabsList className="grid w-full max-w-xs grid-cols-2">
+              <TabsList className="grid w-full max-w-md grid-cols-3">
                 <TabsTrigger value="activity">Activity</TabsTrigger>
                 <TabsTrigger value="notes">Notes</TabsTrigger>
+                <TabsTrigger value="finance">Finance</TabsTrigger>
               </TabsList>
 
               <TabsContent value="activity" className="space-y-4">
@@ -811,6 +840,129 @@ export function ClientProfile({
                       </div>
                     );
                   })}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="finance" className="space-y-4">
+                <h4 className="text-sm font-semibold border-b pb-2 mb-3">Client Finance Profile</h4>
+                
+                {/* Financial KPI Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 border rounded-xl bg-slate-50/50">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Total Invoiced</span>
+                    <p className="text-sm font-bold text-gray-800 mt-1">
+                      ₹{clientFinanceRecords.reduce((sum, r) => sum + (r.invoiceAmount || 0), 0).toLocaleString("en-IN")}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-xl bg-slate-50/50">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Total Collected</span>
+                    <p className="text-sm font-bold text-emerald-600 mt-1">
+                      ₹{clientFinanceRecords.reduce((sum, r) => sum + (r.receivedAmount || 0), 0).toLocaleString("en-IN")}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-xl bg-slate-50/50">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Outstanding Balance</span>
+                    <p className="text-sm font-bold text-rose-600 mt-1">
+                      ₹{clientFinanceRecords.reduce((sum, r) => sum + (r.balanceAmount || 0), 0).toLocaleString("en-IN")}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-xl bg-slate-50/50">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Collection Date</span>
+                    <p className="text-sm font-bold text-gray-800 mt-1">
+                      {(() => {
+                        const unpaid = clientFinanceRecords.filter((r) => r.balanceAmount > 0);
+                        if (unpaid.length === 0) return "Fully Settled";
+                        const dates = unpaid.map((r) => r.collectionDate).filter(Boolean).sort();
+                        return dates[0] ? formatDate(dates[0]) : "Not Scheduled";
+                      })()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* All Invoices */}
+                <div className="space-y-2 mt-4">
+                  <h5 className="font-bold text-xs text-gray-600 uppercase">Invoices</h5>
+                  {clientFinanceRecords.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2">No invoices found for this client.</p>
+                  ) : (
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
+                            <th className="p-2.5">Invoice No</th>
+                            <th className="p-2.5">Total Amount</th>
+                            <th className="p-2.5">Collected</th>
+                            <th className="p-2.5">Outstanding</th>
+                            <th className="p-2.5">Due Date</th>
+                            <th className="p-2.5">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y text-gray-700">
+                          {clientFinanceRecords.map((r) => (
+                            <tr key={r.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-mono font-semibold">{r.invoiceNumber}</td>
+                              <td className="p-2.5 font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-2.5 font-mono text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-2.5 font-mono text-rose-600 font-bold">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-2.5 font-mono">{formatDate(r.collectionDate)}</td>
+                              <td className="p-2.5">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                  r.paymentStatus === "Paid"
+                                    ? "bg-green-100 text-green-800"
+                                    : r.paymentStatus === "Partially Paid"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-orange-100 text-orange-800"
+                                }`}>
+                                  {r.paymentStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payments History */}
+                <div className="space-y-2 mt-4">
+                  <h5 className="font-bold text-xs text-gray-600 uppercase">Payments History</h5>
+                  {clientPayments.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2">No payments received yet.</p>
+                  ) : (
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b bg-slate-50/70 uppercase text-[9px] font-bold text-muted-foreground">
+                            <th className="p-2.5">Receipt ID</th>
+                            <th className="p-2.5">Amount Paid</th>
+                            <th className="p-2.5">Method</th>
+                            <th className="p-2.5">Received By</th>
+                            <th className="p-2.5">Deposited In</th>
+                            <th className="p-2.5">Payment Date</th>
+                            <th className="p-2.5">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y text-gray-700">
+                          {clientPayments.map((p) => (
+                            <tr key={p.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-mono font-semibold">#{p.id?.slice(-6).toUpperCase()}</td>
+                              <td className="p-2.5 font-mono text-emerald-600 font-bold">₹{p.amount.toLocaleString("en-IN")}</td>
+                              <td className="p-2.5">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-bold">
+                                  {p.method}
+                                </span>
+                              </td>
+                              <td className="p-2.5">{p.receivedBy}</td>
+                              <td className="p-2.5 font-semibold text-slate-700">{p.accountName}</td>
+                              <td className="p-2.5 font-mono">{formatDate(p.receivedAt)}</td>
+                              <td className="p-2.5 text-muted-foreground italic truncate max-w-[120px]" title={p.remarks}>{p.remarks || "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>

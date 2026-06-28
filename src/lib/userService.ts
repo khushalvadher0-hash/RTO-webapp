@@ -132,14 +132,17 @@ export async function fetchAllUsers() {
 export const toggleUserStatus = setUserStatus;
 
 /** Fetch a single user */
-export async function fetchUser(userId: string) {
+export async function fetchUser(userId: string) 
+{
   const userRef = doc(USERS_COL, userId);
   const snap = await getDoc(userRef);
   if (!snap.exists()) throw new Error('User not found');
   return snap.data() as UserRecord;
 }
+
 // Seed default users (person1..person7) if they don't exist
-export async function seedDefaultUsers() {
+export async function seedDefaultUsers() 
+{
   const usernames = Array.from({ length: 7 }, (_, i) => `person${i + 1}`);
   for (const uname of usernames) {
     // Check if user already exists

@@ -26,6 +26,7 @@ import {
   deleteInvoiceById,
   subscribeToInvoicePayments,
 } from "@/lib/billing";
+import { deleteInvoiceSecured } from "@/lib/financeService";
 import { toast } from "sonner";
 
 interface InvoiceViewerProps {
@@ -147,8 +148,8 @@ export function InvoiceViewer({ invoice: initialInvoice, onClose }: InvoiceViewe
 
   // Handle Invoice Deletion
   const handleDeleteInvoice = async () => {
-    if (adminPin !== "1234") {
-      return toast.error("Invalid Admin PIN");
+    if (!session || session.role !== "admin") {
+      return toast.error("Permission Denied: Only Admin users can delete invoices.");
     }
     if (!deleteReason.trim()) {
       return toast.error("Please provide a reason for deletion");
@@ -156,7 +157,7 @@ export function InvoiceViewer({ invoice: initialInvoice, onClose }: InvoiceViewe
 
     setDeleting(true);
     try {
-      await deleteInvoiceById(invoice.id, actorName, deleteReason);
+      await deleteInvoiceSecured(invoice.id, adminPin, deleteReason, actorName, session.role);
       toast.success("Invoice deleted successfully!");
       onClose();
     } catch (err: any) {
@@ -411,13 +412,17 @@ export function InvoiceViewer({ invoice: initialInvoice, onClose }: InvoiceViewe
 
         {/* Sticky Footer Actions */}
         <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex gap-2 justify-between items-center z-10">
-          <Button
-            variant="outline"
-            onClick={() => setShowDeleteConfirm(true)}
-            className="text-destructive hover:bg-destructive/10 border-destructive/20 gap-1.5"
-          >
-            <Trash2 className="size-4" /> Delete Invoice
-          </Button>
+          {session?.role === "admin" ? (
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-destructive hover:bg-destructive/10 border-destructive/20 gap-1.5"
+            >
+              <Trash2 className="size-4" /> Delete Invoice
+            </Button>
+          ) : (
+            <div />
+          )}
 
           <div className="flex gap-2">
             <Button variant="outline" onClick={printWindow}>

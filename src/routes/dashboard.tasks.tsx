@@ -100,74 +100,7 @@ type SortMode = "latest" | "oldest" | "priority" | "due";
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
 
-const SERVICE_TEMPLATES: Record<string, string[]> = {
-  Insurance: [
-    "Call Client",
-    "Collect RC",
-    "Collect Insurance Copy",
-    "Receive Payment",
-    "Submit Application",
-    "Deliver Documents",
-  ],
-  Fitness: [
-    "Inspect Vehicle",
-    "Collect Fees",
-    "Submit Application",
-    "Fitness Test Booking",
-    "Obtain Certificate",
-  ],
-  Tax: [
-    "Calculate Tax Due",
-    "Collect Documents",
-    "Process Payment",
-    "Submit Challan",
-    "Provide Receipt",
-  ],
-  PUC: ["Check Emissions", "Collect Payment", "Generate PUC Certificate", "Deliver Copy"],
-  "National Permit": [
-    "Check Eligibility",
-    "Collect Authorization Details",
-    "Receive Payment",
-    "Apply Online",
-    "Print Permit",
-  ],
-  "Gujarat Permit": [
-    "Check State Authorization",
-    "Collect Fees",
-    "Apply to RTO",
-    "Issue Gujarat Permit Document",
-  ],
-  "License Renewal": [
-    "Collect Existing License",
-    "Medical Certificate Verification",
-    "Submit Renewal Application",
-    "Deliver License",
-  ],
-  "RC Transfer": [
-    "Obtain Form 29 & 30",
-    "Collect Buyer/Seller IDs",
-    "Submit Transfer Application",
-    "Deliver Transferred RC",
-  ],
-  "HP Termination": [
-    "Obtain Bank NOC",
-    "Collect Form 35",
-    "Apply for HP Deletion",
-    "Deliver Updated RC",
-  ],
-};
-
-const PREDEFINED_SERVICES = [
-  "Insurance",
-  "Fitness",
-  "Tax",
-  "PUC",
-  "National Permit",
-  "Gujarat Permit",
-  "License Renewal",
-  "RC Transfer",
-  "HP Termination",
-];
+// Predefined templates are now loaded from Firestore database collection
 
 const priorityBadgeClass = (p: TaskPriority) =>
   ({
@@ -1097,6 +1030,15 @@ function TaskFormDialog({
   // Subtasks and Templates
   const [checklist, setChecklist] = useState<TaskSubtask[]>([]);
   const [newSubtaskInput, setNewSubtaskInput] = useState("");
+  const [dbTemplates, setDbTemplates] = useState<TaskTemplate[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    const unsub = subscribeToTemplates((data) => {
+      setDbTemplates(data);
+    });
+    return unsub;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1144,9 +1086,9 @@ function TaskFormDialog({
     if (!title.trim()) {
       setTitle(`${val} Processing`);
     }
-    const subtaskTitles = SERVICE_TEMPLATES[val];
-    if (subtaskTitles) {
-      const generated: TaskSubtask[] = subtaskTitles.map((sub) => ({
+    const selectedTpl = dbTemplates.find((t) => t.templateName === val);
+    if (selectedTpl && selectedTpl.subtasks) {
+      const generated: TaskSubtask[] = selectedTpl.subtasks.map((sub) => ({
         id: crypto.randomUUID(),
         title: sub,
         completed: false,
@@ -1274,9 +1216,9 @@ function TaskFormDialog({
                 <SelectValue placeholder="Choose service type..." />
               </SelectTrigger>
               <SelectContent>
-                {PREDEFINED_SERVICES.map((srv) => (
-                  <SelectItem key={srv} value={srv}>
-                    {srv}
+                {dbTemplates.map((tpl) => (
+                  <SelectItem key={tpl.id} value={tpl.templateName}>
+                    {tpl.templateName}
                   </SelectItem>
                 ))}
               </SelectContent>
