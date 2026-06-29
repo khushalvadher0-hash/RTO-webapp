@@ -62,6 +62,9 @@ export interface PaymentHistoryItem {
   receivedAt: string;
   accountName: "Cash Account" | "ICICI Bank" | "HDFC Bank" | "Axis Bank" | "SBI" | "Other";
   remarks: string;
+  clientId?: string;
+  clientName?: string;
+  paymentDate?: string;
 }
 
 export interface LedgerEntry {
@@ -314,7 +317,7 @@ export async function recordPaymentEntry(
   const newStatus: FinanceRecord["paymentStatus"] =
     newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
 
-  const timestamp = new Date().toISOString();
+  const timestamp = payment.paymentDate ? new Date(payment.paymentDate).toISOString() : new Date().toISOString();
 
   // Create payment history doc
   const payCol = collection(db, PAYMENTS_COL);
@@ -366,6 +369,131 @@ export async function recordPaymentEntry(
     payment.receivedBy,
     recordId,
     `Added payment of ₹${payment.amount} via ${payment.method} into ${payment.accountName}`,
+  );
+}
+
+/** Record payment allocated across multiple invoices */
+export async function recordMultiInvoicePayment(
+  clientId: string,
+  clientName: string,
+  allocations: { invoiceId: string; amount: number }[],
+  payment: Omit<PaymentHistoryItem, "financeRecordId" | "invoiceId" | "receivedAt"> & { paymentDate: string },
+) {
+  const batch = writeBatch(db);
+  const timestamp = new Date(payment.paymentDate).toISOString();
+
+  for (const alloc of allocations) {
+    if (alloc.amount <= 0) continue;
+
+    const financeRef = doc(db, FINANCE_COL, alloc.invoiceId);
+    const invoiceRef = doc(db, INVOICES_COL, alloc.invoiceId);
+
+    const fSnap = await getDoc(financeRef);
+    if (!fSnap.exists()) continue;
+    const fData = fSnap.data() as FinanceRecord;
+
+    const newReceived = fData.receivedAmount + alloc.amount;
+    const newBalance = fData.invoiceAmount - newReceived;
+    const newStatus: FinanceRecord["paymentStatus"] =
+      newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
+
+    // Create payment history doc
+    const payCol = collection(db, PAYMENTS_COL);
+    const payDocRef = doc(payCol);
+    batch.set(payDocRef, {
+      financeRecordId: alloc.invoiceId,
+      invoiceId: alloc.invoiceId,
+      amount: alloc.amount,
+      method: payment.method,
+      receivedBy: payment.receivedBy,
+      receivedAt: timestamp,
+      accountName: payment.accountName,
+      remarks: (payment.remarks || "") + ` (Allocated to ${fData.invoiceNumber})`,
+    });
+
+    // Update finance record
+    batch.update(financeRef, {
+      receivedAmount: newReceived,
+      balanceAmount: newBalance,
+      paymentStatus: newStatus,
+      receivedBy: payment.receivedBy,
+      paymentMethod: payment.method,
+      accountName: payment.accountName,
+      remarks: payment.remarks,
+      updatedAt: timestamp,
+    });
+
+    // Keep parent invoice in sync
+    batch.update(invoiceRef, {
+      status: newStatus,
+      totalPaid: newReceived,
+    });
+
+    // Add ledger entry
+    const ledgerCol = collection(db, LEDGER_COL);
+    const ledgerDocRef = doc(ledgerCol);
+    
+    // Calculate running balance logic inside batch isn't easily done synchronously,
+    // so we write the entry and let ledger queries sum them up.
+    batch.set(ledgerDocRef, {
+      timestamp,
+      type: "Debit",
+      amount: alloc.amount,
+      account: payment.accountName,
+      referenceId: payDocRef.id,
+      remarks: `Payment for Invoice ${fData.invoiceNumber}. Recv by ${payment.receivedBy}`,
+    });
+  }
+
+  await batch.commit();
+
+  await logFinanceAction(
+    "Payment Added",
+    payment.receivedBy,
+    clientId,
+    `Multi-invoice payment allocated. Total: ₹${allocations.reduce((sum, a) => sum + a.amount, 0)}`,
+  );
+}
+
+/** Record direct payment with no invoice linked */
+export async function recordDirectPayment(
+  clientId: string,
+  clientName: string,
+  payment: Omit<PaymentHistoryItem, "financeRecordId" | "invoiceId" | "receivedAt"> & { paymentDate: string },
+) {
+  const timestamp = new Date(payment.paymentDate).toISOString();
+  
+  const payCol = collection(db, PAYMENTS_COL);
+  const payDocRef = doc(payCol);
+  
+  await setDoc(payDocRef, {
+    clientId,
+    clientName,
+    financeRecordId: "non-invoiced",
+    invoiceId: "non-invoiced",
+    amount: payment.amount,
+    method: payment.method,
+    receivedBy: payment.receivedBy,
+    receivedAt: timestamp,
+    accountName: payment.accountName,
+    remarks: payment.remarks || "Direct Non-Invoiced Payment",
+  });
+
+  // Create accounts ledger entry
+  await recordLedgerEntry({
+    timestamp,
+    type: "Debit",
+    amount: payment.amount,
+    account: payment.accountName,
+    referenceId: payDocRef.id,
+    remarks: `Direct Payment from ${clientName}. Recv by ${payment.receivedBy}`,
+  });
+
+  await logFinanceAction(
+    "Payment Added",
+    payment.receivedBy,
+    "non-invoiced",
+    `Added direct payment of ₹${payment.amount} from ${clientName} via ${payment.method}`,
   );
 }
 

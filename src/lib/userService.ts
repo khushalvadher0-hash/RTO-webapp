@@ -139,9 +139,14 @@ export async function createEmployee(input: {
   role: 'manager' | 'employee';
 }) {
   const employeeId = await generateEmployeeId();
-  const username = await generateUsername(input.fullName);
-  const tempPassword = generateTemporaryPassword(input.fullName);
+  const username = employeeId;
+  const tempPassword = `${employeeId}123`;
   const actor = getSession()?.username || 'system';
+
+  // Validate password length is 6+ characters before sending to Firebase
+  if (tempPassword.length < 6) {
+    throw new Error('Generated password is less than 6 characters.');
+  }
 
   // 1. Create in Firebase Auth using Secondary Auth instance
   const secAuth = getSecondaryAuth();
@@ -150,10 +155,11 @@ export async function createEmployee(input: {
 
   // 2. Save in Firestore users collection
   const now = new Date().toISOString();
-  const userRecord: UserRecord = {
+  const userRecord: UserRecord & { name: string; createdDate: string } = {
     uid: cred.user.uid,
     userId: cred.user.uid,
     fullName: input.fullName,
+    name: input.fullName,
     username,
     email: input.email || '',
     mobile: input.mobile || '',
@@ -166,6 +172,7 @@ export async function createEmployee(input: {
     employeeId,
     createdBy: actor,
     createdAt: now,
+    createdDate: now,
   };
 
   await setDoc(doc(USERS_COL, cred.user.uid), userRecord);
@@ -214,7 +221,14 @@ export async function resetEmployeePassword(uid: string): Promise<string> {
   if (!snap.exists()) throw new Error('Employee not found');
   const userData = snap.data() as UserRecord;
 
-  const newPassword = generateTemporaryPassword(userData.fullName);
+  // Generate new password from employeeId + a random 3-digit number to ensure unique reset password
+  const suffix = Math.floor(100 + Math.random() * 900);
+  const newPassword = `${userData.employeeId || 'EMP000'}${suffix}`;
+  
+  if (newPassword.length < 6) {
+    throw new Error('Generated password is less than 6 characters.');
+  }
+  
   const actor = getSession()?.username || 'system';
 
   // 1. Sign in secondary auth using old password

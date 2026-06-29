@@ -52,6 +52,9 @@ import {
   Activity,
   UserCheck2,
   Lock,
+  Copy,
+  Printer,
+  EyeOff,
 } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/employees")({
@@ -79,6 +82,7 @@ function EmployeesPage() {
   // Modals
   const [showAdd, setShowAdd] = useState(false);
   const [viewEmployee, setViewEmployee] = useState<UserRecord | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [editEmployee, setEditEmployee] = useState<UserRecord | null>(null);
   const [showSuccessCredentials, setShowSuccessCredentials] = useState<{
     show: boolean;
@@ -86,6 +90,12 @@ function EmployeesPage() {
     username: string;
     password:  string;
   } | null>(null);
+
+  useEffect(() => {
+    if (!viewEmployee) {
+      setShowPassword(false);
+    }
+  }, [viewEmployee]);
   
   // Delete PIN verification
   const [pinModalOpen, setPinModalOpen] = useState(false);
@@ -442,7 +452,7 @@ function EmployeesPage() {
                         : "—"}
                     </td>
                     <td className="p-3">
-                      <Badge variant={e.status === "active" ? "success" : "destructive"}>
+                      <Badge variant={e.status === "active" ? "outline" : "destructive"} className={e.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800" : ""}>
                         {e.status === "active" ? "Active" : "Inactive"}
                       </Badge>
                     </td>
@@ -729,13 +739,29 @@ function EmployeesPage() {
                   <span className="text-muted-foreground">Username</span>
                   <span className="font-mono font-medium">{viewEmployee.username}</span>
                 </div>
+                <div className="flex justify-between border-b py-1 items-center">
+                  <span className="text-muted-foreground">Password</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-mono font-medium">
+                      {showPassword ? viewEmployee.password || "—" : "••••••••"}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 h-7 w-7"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </Button>
+                  </div>
+                </div>
                 <div className="flex justify-between border-b py-1">
                   <span className="text-muted-foreground">Role</span>
                   <span className="capitalize font-medium">{viewEmployee.role}</span>
                 </div>
                 <div className="flex justify-between border-b py-1">
                   <span className="text-muted-foreground">Status</span>
-                  <Badge variant={viewEmployee.status === "active" ? "success" : "destructive"}>
+                  <Badge variant={viewEmployee.status === "active" ? "outline" : "destructive"} className={viewEmployee.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800" : ""}>
                     {viewEmployee.status === "active" ? "Active" : "Inactive"}
                   </Badge>
                 </div>
@@ -796,27 +822,85 @@ function EmployeesPage() {
           </DialogHeader>
 
           {showSuccessCredentials && (
-            <div className="p-4 rounded-xl border border-emerald-800 bg-emerald-900/40 space-y-3 font-mono text-sm">
-              <div className="flex justify-between border-b border-emerald-800 py-1">
-                <span>Employee ID:</span>
-                <span className="font-bold text-white">{showSuccessCredentials.employeeId}</span>
+            <>
+              <div className="p-4 rounded-xl border border-emerald-800 bg-emerald-900/40 space-y-3 font-mono text-sm">
+                <div className="flex justify-between border-b border-emerald-800 py-1">
+                  <span>Employee ID:</span>
+                  <span className="font-bold text-white">{showSuccessCredentials.employeeId}</span>
+                </div>
+                <div className="flex justify-between border-b border-emerald-800 py-1">
+                  <span>Username:</span>
+                  <span className="font-bold text-white">{showSuccessCredentials.username}</span>
+                </div>
+                <div className="flex justify-between border-b border-emerald-800 py-1">
+                  <span>Password:</span>
+                  <span className="font-bold text-amber-300 select-all tracking-wider">
+                    {showSuccessCredentials.password}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between border-b border-emerald-800 py-1">
-                <span>Username:</span>
-                <span className="font-bold text-white">{showSuccessCredentials.username}</span>
+              
+              <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 bg-emerald-900/30 border-emerald-700 hover:bg-emerald-900/65 text-emerald-100 font-semibold flex items-center justify-center gap-2"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      `Username: ${showSuccessCredentials.username}\nPassword: ${showSuccessCredentials.password}`
+                    );
+                    toast.success("Credentials copied to clipboard");
+                  }}
+                >
+                  <Copy className="size-4" /> Copy Credentials
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 bg-emerald-900/30 border-emerald-700 hover:bg-emerald-900/65 text-emerald-100 font-semibold flex items-center justify-center gap-2"
+                  onClick={() => {
+                    const printWindow = window.open("", "_blank");
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Employee Credentials - ${showSuccessCredentials.employeeId}</title>
+                            <style>
+                              body { font-family: monospace; padding: 40px; text-align: center; }
+                              .card { border: 2px solid #10b981; border-radius: 12px; padding: 25px; display: inline-block; text-align: left; background: #f0fdf4; }
+                              h2 { margin-top: 0; color: #047857; }
+                              p { margin: 8px 0; font-size: 16px; }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="card">
+                              <h2>Employee Credentials</h2>
+                              <p><strong>Employee ID:</strong> ${showSuccessCredentials.employeeId}</p>
+                              <p><strong>Username:</strong> ${showSuccessCredentials.username}</p>
+                              <p><strong>Password:</strong> ${showSuccessCredentials.password}</p>
+                            </div>
+                            <script>
+                              window.onload = function() {
+                                window.print();
+                                window.close();
+                              }
+                            </script>
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                    }
+                  }}
+                >
+                  <Printer className="size-4" /> Print Credentials
+                </Button>
               </div>
-              <div className="flex justify-between border-b border-emerald-800 py-1">
-                <span>Password:</span>
-                <span className="font-bold text-amber-300 select-all tracking-wider">
-                  {showSuccessCredentials.password}
-                </span>
-              </div>
-            </div>
+            </>
           )}
 
           <DialogFooter className="pt-2">
             <Button
-              className="bg-emerald-500 hover:bg-emerald-600 text-emerald-950 font-bold"
+              className="bg-emerald-500 hover:bg-emerald-600 text-emerald-950 font-bold w-full sm:w-auto"
               onClick={() => setShowSuccessCredentials(null)}
             >
               Done
