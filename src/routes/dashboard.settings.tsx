@@ -9,6 +9,7 @@ import { getForceCapsSetting, setForceCapsSetting } from "@/lib/capitalize-setti
 import { getMigrationStatus } from "@/lib/migration";
 import { ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
 import { getSession } from "@/lib/auth";
+import { ClearDataDialog } from "@/components/ClearDataDialog";
 import {
   type RolePermissions,
   saveStaffPermissions,
@@ -49,6 +50,7 @@ function SettingsPage() {
 
   const [permissions, setPermissions] = useState<RolePermissions>(defaultPermissions);
   const [permsSaved, setPermsSaved] = useState(false);
+  const [clearDataDialogOpen, setClearDataDialogOpen] = useState(false);
 
   const session = getSession();
   if (session?.role === "employee") {
@@ -99,19 +101,6 @@ function SettingsPage() {
     setForceCapsState(enabled);
     // Dispatch event so other components can listen for setting changes
     window.dispatchEvent(new Event("force-caps-changed"));
-  };
-
-  const reset = () => {
-    if (!confirm("Clear ALL local data (records, tasks, documents)?")) return;
-    [
-      "registry-clients",
-      "registry-leads",
-      "registry-applications",
-      "registry-customers",
-      "registry-tasks",
-      "registry-documents",
-    ].forEach((k) => localStorage.removeItem(k));
-    alert("Data cleared. Reload to reseed.");
   };
 
   return (
@@ -224,11 +213,15 @@ function SettingsPage() {
       <div className="rounded-xl border border-destructive/30 bg-card p-6 space-y-3">
         <h3 className="font-semibold text-destructive">Danger zone</h3>
         <p className="text-sm text-muted-foreground">
-          Permanently delete all locally stored records and tasks.
+          Permanently delete all CRM data from the database (except employee accounts).
         </p>
-        <Button variant="destructive" onClick={reset}>
-          Clear all data
-        </Button>
+        {isAdmin ? (
+          <Button variant="destructive" onClick={() => setClearDataDialogOpen(true)}>
+            Clear all CRM data
+          </Button>
+        ) : (
+          <p className="text-xs text-muted-foreground">Only admins can clear data.</p>
+        )}
       </div>
 
       {migrationStatus && migrationStatus.unmigratedRecords > 0 && (
@@ -268,6 +261,11 @@ function SettingsPage() {
           </div>
         </div>
       )}
+      
+      <ClearDataDialog 
+        open={clearDataDialogOpen} 
+        onOpenChange={setClearDataDialogOpen} 
+      />
     </div>
   );
 }

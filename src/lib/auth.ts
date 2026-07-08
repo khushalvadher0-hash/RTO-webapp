@@ -4,7 +4,6 @@
 import { signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  createUserWithEmailAndPassword,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch } from "firebase/firestore";
 import { auth, db } from "./firebase";
@@ -65,47 +64,6 @@ export const STAFF_CREDENTIALS = ALL_ACCOUNTS.map((a) => ({
 
 // ─── First-run provisioning ───────────────────────────────────────────────────
 
-async function provisionUsers(): Promise<void> {
-  // Check whether we've already provisioned
-  const metaRef = doc(db, "_meta", "provisioned");
-  const metaSnap = await getDoc(metaRef);
-  if (metaSnap.exists()) {
-    // If already provisioned, we still want to make sure the manager and employee1-7 exist.
-    // Let's run provision sequence for all default accounts anyway to be safe.
-  }
-
-  // Create Firebase Auth accounts and Firestore profiles
-  for (const acct of ALL_ACCOUNTS) {
-    try {
-      const cred = await createUserWithEmailAndPassword(
-        auth,
-        toEmail(acct.username),
-        acct.password,
-      );
-      await setDoc(doc(db, "users", cred.user.uid), {
-        username: acct.username,
-        name: acct.name,
-        role: acct.role,
-        status: "active",
-        isActive: true,
-        fullName: acct.name,
-        employeeId: acct.employeeId,
-        createdAt: new Date().toISOString(),
-        createdBy: "system",
-      });
-    } catch {
-      // auth/email-already-in-use → already provisioned, skip
-    }
-  }
-
-  // Seed initial Firestore records
-  const { seedInitialData } = await import("./seed");
-  await seedInitialData();
-
-  // Mark as provisioned
-  await setDoc(metaRef, { provisionedAt: new Date().toISOString() });
-}
-
 // Migration: ensure every user document has required fields
 async function migrateUsers(): Promise<void> {
   const usersCol = collection(db, "users");
@@ -141,9 +99,8 @@ async function migrateUsers(): Promise<void> {
  * Returns an unsubscribe function for cleanup.
  */
 export function initAuth(onChange: (user: StaffUser | null) => void): () => void {
-  // Kick off provisioning in the background (no-op if already done)
+  // Run background migration only; do not create auth accounts during normal page load.
   (async () => {
-    await provisionUsers().catch(console.error);
     await migrateUsers().catch(console.error);
   })();
 

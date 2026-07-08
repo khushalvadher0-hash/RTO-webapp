@@ -15,6 +15,7 @@ import {
   Loader2,
   ChevronDown,
 } from "lucide-react";
+import { getSession } from "@/lib/auth";
 import { subscribeToAllClients, filterClients, type AggregatedClient } from "@/lib/allClients";
 import { SERVICE_TYPES, STATUS_OPTIONS, staffLabel } from "@/lib/records";
 import { formatActivityTime, getActivityDescription } from "@/lib/activity";
