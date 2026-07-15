@@ -11,6 +11,7 @@ import {
   deleteDoc,
   addDoc,
   getDocs,
+  getDoc,
   arrayUnion,
   Timestamp,
 } from "firebase/firestore";
@@ -18,6 +19,7 @@ import { db } from "./firebase";
 import { saveRecord, type Bucket, type RegistryRecord, type DeleteReason } from "./records";
 import { createActivity, logClientActivity, type ActivityLog } from "./activity";
 import { toast } from "sonner";
+import { invalidateCache } from "./cacheInvalidator";
 
 export function handleFirestoreError(err: any, context: string) {
   console.error(`[Firestore Error: ${context}]`, err);
@@ -119,6 +121,16 @@ export interface Task {
   lastRemark?: string;
   lastRemarkBy?: string;
   lastRemarkAt?: string;
+  // New fields for enterprise task management
+  taskId?: string;
+  clientId?: string;
+  clientName?: string;
+  serviceType?: string;
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
+  createdDate?: string;
+  remarks?: string;
+  activityLog?: any[];
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -147,6 +159,53 @@ export function removeUndefined<T>(obj: T): T {
 
   // Return primitives and other types as-is
   return obj;
+}
+
+function normalizeTaskIdentityValue(value?: string): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+export function isTaskAssignedToUser(
+  task: Task,
+  user?: { uid?: string; employeeId?: string; username?: string; name?: string } | null,
+): boolean {
+  if (!user) return false;
+
+  const uid = normalizeTaskIdentityValue(user.uid);
+  const employeeId = normalizeTaskIdentityValue(user.employeeId);
+  const username = normalizeTaskIdentityValue(user.username);
+  const name = normalizeTaskIdentityValue(user.name);
+
+  const assignedEmployeeId = normalizeTaskIdentityValue(task.assignedEmployeeId);
+  const assignedEmployeeName = normalizeTaskIdentityValue(task.assignedEmployeeName);
+  const assignee = normalizeTaskIdentityValue(task.assignee);
+
+  return (
+    assignedEmployeeId === uid ||
+    assignedEmployeeId === employeeId ||
+    assignedEmployeeName === username ||
+    assignedEmployeeName === name ||
+    assignee === uid ||
+    assignee === employeeId ||
+    assignee === username ||
+    assignee === name
+  );
+}
+
+export function taskMatchesClient(
+  task: Pick<Task, "recordId" | "clientId" | "clientName">,
+  clientId?: string,
+  clientName?: string,
+): boolean {
+  const targetValues = [clientId, clientName]
+    .map((value) => normalizeTaskIdentityValue(value))
+    .filter(Boolean);
+
+  const taskValues = [task.recordId, task.clientId, task.clientName]
+    .map((value) => normalizeTaskIdentityValue(value))
+    .filter(Boolean);
+
+  return targetValues.some((value) => taskValues.includes(value));
 }
 
 function activityEntry(actor: string, message: string): TaskActivity {
@@ -323,25 +382,30 @@ export async function reassignTask(
   newAssignee: string,
   actor: string,
 ): Promise<void> {
-  const { getDoc } = await import("firebase/firestore");
   const taskDoc = await getDoc(doc(db, COL, taskId));
   if (!taskDoc.exists()) throw new Error("Task not found");
 
   const task = taskDoc.data() as Task;
   const prevAssignee = task.assignee;
 
+  const assigneeInfo = await resolveAssigneeIdentity(newAssignee);
+  const newAssigneeId = assigneeInfo.assignedEmployeeId || newAssignee;
+  const newAssigneeName = assigneeInfo.assignedEmployeeName || newAssignee;
+
   const message =
     actor === newAssignee
       ? `Task taken over by ${actor}`
-      : `Task reassigned from ${prevAssignee} to ${newAssignee}`;
+      : `Task reassigned from ${prevAssignee} to ${newAssigneeName}`;
 
   const entry = activityEntry(actor, message);
-  const actLog = createActivity(actor, message, "assignee", prevAssignee, newAssignee);
+  const actLog = createActivity(actor, message, "assignee", prevAssignee, newAssigneeName);
 
   const now = new Date().toISOString();
   const cleanLog = removeUndefined(actLog);
   const updates = removeUndefined({
-    assignee: newAssignee,
+    assignee: assigneeInfo.assignee,
+    assignedEmployeeId: newAssigneeId,
+    assignedEmployeeName: newAssigneeName,
     lastUpdatedBy: actor,
     lastUpdatedAt: now,
     activity: arrayUnion(entry),
@@ -350,6 +414,7 @@ export async function reassignTask(
   console.log("👤 reassignTask raw:", { newAssignee, actLog });
   console.log("👤 reassignTask clean:", updates);
   await updateDoc(doc(db, COL, taskId), updates);
+  invalidateCache();
 }
 
 /**
@@ -417,24 +482,24 @@ export function subscribeToTasks(cb: (tasks: Task[]) => void): () => void {
 export function subscribeToTasksForRecord(
   recordId: string,
   cb: (tasks: Task[]) => void,
+  clientName?: string,
 ): () => void {
-  const q = query(
-    collection(db, COL),
-    where("recordId", "==", recordId),
-    orderBy("createdAt", "desc"),
-  );
+  const q = query(collection(db, COL), orderBy("createdAt", "desc"));
+
   return onSnapshot(
     q,
     (snap) => {
       const tasks = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as Task)
-        .filter((t) => !t.isDeleted);
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Task)
+        .filter((task) => !task.isDeleted)
+        .filter((task) => taskMatchesClient(task, recordId, clientName))
+        .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       cb(tasks);
     },
     (err) => {
       handleFirestoreError(err, "subscribeToTasksForRecord");
       cb([]);
-    }
+    },
   );
 }
 
@@ -454,6 +519,57 @@ export interface CreateTaskInput {
   createdBy: string;
   subtasks?: TaskSubtask[];
   templateId?: string;
+  // New fields
+  clientId?: string;
+  clientName?: string;
+  serviceType?: string;
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
+  remarks?: string;
+}
+
+async function resolveAssigneeIdentity(input: string): Promise<{
+  assignee: string;
+  assignedEmployeeId: string;
+  assignedEmployeeName: string;
+}> {
+  const normalized = input?.trim() ?? "";
+  if (!normalized) {
+    return { assignee: "", assignedEmployeeId: "", assignedEmployeeName: "" };
+  }
+
+  const directUser = await getDoc(doc(db, "users", normalized));
+  if (directUser.exists()) {
+    const data = directUser.data() as any;
+    const resolvedName = data.fullName || data.name || data.username || normalized;
+    return {
+      assignee: resolvedName,
+      assignedEmployeeId: directUser.id,
+      assignedEmployeeName: resolvedName,
+    };
+  }
+
+  const usersSnap = await getDocs(collection(db, "users"));
+  const match = usersSnap.docs.find((docSnap) => {
+    const data = docSnap.data() as any;
+    return [docSnap.id, data.username, data.fullName, data.name, data.employeeId].includes(normalized);
+  });
+
+  if (match) {
+    const data = match.data() as any;
+    const resolvedName = data.fullName || data.name || data.username || normalized;
+    return {
+      assignee: resolvedName,
+      assignedEmployeeId: match.id,
+      assignedEmployeeName: resolvedName,
+    };
+  }
+
+  return {
+    assignee: normalized,
+    assignedEmployeeId: normalized,
+    assignedEmployeeName: normalized,
+  };
 }
 
 export async function createManualTask(input: CreateTaskInput): Promise<Task> {
@@ -472,14 +588,16 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const assigneeInfo = await resolveAssigneeIdentity(input.assignee ?? "");
+  const linkedRecordId = input.recordId || input.clientId || undefined;
   const initActivity = createActivity(input.createdBy, "Task created");
   const task: Task = {
     id,
     title: input.title,
     serviceName: input.serviceName,
     description: input.description ?? "",
-    assignee: input.assignee,
-    status: "Assigned",
+    assignee: assigneeInfo.assignee,
+    status: input.status ?? "Assigned",
     priority: input.priority,
     done: false,
     createdAt: now,
@@ -488,7 +606,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     reminderMinutes: input.reminderMinutes,
     associationType: input.associationType,
     bucket: input.bucket,
-    recordId: input.recordId,
+    recordId: linkedRecordId,
     vehicleId: input.vehicleId,
     manual: true,
     subtasks: input.subtasks ?? [],
@@ -500,6 +618,16 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     lastUpdatedAt: now,
     activityLogs: [initActivity],
     templateId: input.templateId ?? "",
+    // New properties
+    taskId: id,
+    clientId: input.clientId ?? linkedRecordId,
+    clientName: input.clientName,
+    serviceType: input.serviceName,
+    assignedEmployeeId: input.assignedEmployeeId || assigneeInfo.assignedEmployeeId,
+    assignedEmployeeName: input.assignedEmployeeName || assigneeInfo.assignedEmployeeName,
+    createdDate: now,
+    remarks: input.description ?? "",
+    activityLog: [initActivity],
   };
 
   try {
@@ -525,11 +653,22 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
       lastUpdatedAt: task.lastUpdatedAt,
       activityLogs: task.activityLogs,
       templateId: task.templateId,
+      // New properties
+      taskId: task.taskId,
+      clientId: task.clientId,
+      clientName: task.clientName,
+      serviceType: task.serviceType,
+      assignedEmployeeId: task.assignedEmployeeId,
+      assignedEmployeeName: task.assignedEmployeeName,
+      createdDate: task.createdDate,
+      remarks: task.remarks,
+      activityLog: task.activityLog,
       // Conditionally include optional fields only if they have values
       ...(task.dueDate ? { dueDate: task.dueDate } : {}),
       ...(task.reminderMinutes !== undefined ? { reminderMinutes: task.reminderMinutes } : {}),
       ...(task.bucket ? { bucket: task.bucket } : {}),
       ...(task.recordId ? { recordId: task.recordId } : {}),
+      ...(task.clientId ? { clientId: task.clientId } : {}),
       ...(task.vehicleId ? { vehicleId: task.vehicleId } : {}),
     };
 
@@ -555,6 +694,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
         task.title,
       );
     }
+    invalidateCache();
     return task;
   } catch (error) {
     console.error("❌ Failed to create task:", error);
@@ -628,6 +768,7 @@ export async function updateTask(
         patch.title || existing.title,
       );
     }
+    invalidateCache();
   } catch (error) {
     console.error("❌ Failed to update task:", error);
     throw error;
@@ -635,7 +776,6 @@ export async function updateTask(
 }
 
 export async function setTaskDone(taskId: string, done: boolean, actor = "system"): Promise<void> {
-  const { getDoc } = await import("firebase/firestore");
   const taskDoc = await getDoc(doc(db, COL, taskId));
   const taskData = taskDoc.exists() ? (taskDoc.data() as Task) : null;
 
@@ -722,6 +862,7 @@ export async function addAttachment(taskId: string, file: TaskAttachment): Promi
 
 export async function removeTask(taskId: string): Promise<void> {
   await deleteDoc(doc(db, COL, taskId));
+  invalidateCache();
 }
 
 /** Soft-delete a task (admin only). */
@@ -744,6 +885,7 @@ export async function softDeleteTask(
   console.log("🗑️ softDeleteTask RAW:", { isDeleted: true, deleteLog });
   console.log("🗑️ softDeleteTask CLEAN:", updates);
   await updateDoc(doc(db, COL, taskId), updates);
+  invalidateCache();
 }
 
 /** Auto-sync a task from a record save — creates or updates the linked task. */
@@ -805,6 +947,7 @@ export async function syncTaskFromRecord(
       createdBy: actor,
       associationType: bucket === "leads" ? "lead" : "client",
       recordId: record.id,
+      clientId: record.id,
       bucket,
       manual: false,
       subtasks: [],

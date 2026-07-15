@@ -188,7 +188,11 @@ export interface RegistryRecord {
   // Vehicle Details addition
   chassisNo?: string;
   engineNo?: string;
-  // Legacy accounting fields removed – use services[].price and services[].amountReceived instead
+  // Legacy accounting fields (kept for migration compatibility)
+  serviceAmount?: number;
+  amountReceived?: number;
+  paymentDate?: string;
+  paymentStatus?: string;
   // Service Management fields
   serviceType?: ServiceType; // Legacy single service field (kept for compatibility)
   services?: ServiceDetail[]; // New multi-service support with details

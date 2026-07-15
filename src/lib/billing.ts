@@ -18,6 +18,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { logClientActivity } from "./activity";
 import type { RegistryRecord } from "./records";
 import { toast } from "sonner";
+import { invalidateCache } from "./cacheInvalidator";
 
 export function handleFirestoreError(err: any, context: string) {
   console.error(`[Firestore Error: ${context}]`, err);
@@ -448,6 +449,7 @@ export async function createInvoice(
     console.warn("[createInvoice] logClientActivity failed:", err);
   }
 
+  invalidateCache();
   return {
     id: docRef.id,
     ...invoicePayload,
@@ -749,4 +751,5 @@ export async function deleteInvoiceById(
   } catch (err) {
     console.warn("[deleteInvoiceById] logClientActivity failed:", err);
   }
+  invalidateCache();
 }

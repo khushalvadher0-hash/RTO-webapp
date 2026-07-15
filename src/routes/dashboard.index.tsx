@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
+import { getSession } from "@/lib/auth";
 import {
   subscribeToRecords,
   SERVICE_TYPES,
@@ -18,6 +19,7 @@ import { subscribeToAllPayments, type ClientPayment } from "@/lib/payments";
 import { subscribeToTasks, type Task } from "@/lib/tasks";
 import { subscribeToTargets, calculateTargetMetrics, type TargetMetrics } from "@/lib/targets";
 import { calculateBillingMetrics, subscribeToAllInvoices, type Invoice } from "@/lib/billing";
+import { subscribeAllClients } from "@/lib/hierarchy";
 import {
   ArrowRight,
   Users,
@@ -38,6 +40,7 @@ export const Route = createFileRoute("/dashboard/")({
 });
 
 function Overview() {
+  const session = useMemo(() => getSession(), []);
   const [clients, setClients] = useState<RegistryRecord[]>([]);
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
   const [customers, setCustomers] = useState<RegistryRecord[]>([]);
@@ -131,9 +134,21 @@ function Overview() {
   }, [categorizedCollections, collectionCategory]);
 
   useEffect(() => {
-    const u1 = subscribeToRecords("clients", setClients);
-    const u2 = subscribeToRecords("leads", setLeads);
-    const u3 = subscribeToRecords("customers", setCustomers);
+    const u1 = subscribeAllClients((items) => {
+      const parsedClients = items.filter((c) => c.type === "client").map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: "In Progress",
+      }));
+      const parsedLeads = items.filter((c) => c.type === "lead").map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: "In Progress",
+      }));
+      setClients(parsedClients as any);
+      setLeads(parsedLeads as any);
+      setCustomers([]);
+    });
     const u4 = subscribeToTasks((allTasks) => setTasks(allTasks));
     const u5 = subscribeToTargets((allTargets) => {
       const enriched = allTargets.map((t) => calculateTargetMetrics(t));
@@ -142,8 +157,6 @@ function Overview() {
     const u6 = subscribeToAllInvoices((data) => setInvoices(data));
     return () => {
       u1();
-      u2();
-      u3();
       u4();
       u5();
       u6();
@@ -549,6 +562,83 @@ function Overview() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Real-time Task Counters Card */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <CheckCircle2 className="size-5 text-indigo-500" />
+          Tasks Overview
+        </h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <Card>
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Total Tasks</CardTitle>
+            </CardHeader>
+            <CardContent className="py-1 px-3 pb-3">
+              <div className="text-xl font-bold">{tasks.length}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Pending Tasks</CardTitle>
+            </CardHeader>
+            <CardContent className="py-1 px-3 pb-3">
+              <div className="text-xl font-bold text-amber-600">
+                {tasks.filter((t) => !t.done && t.status !== "Completed").length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Completed Tasks</CardTitle>
+            </CardHeader>
+            <CardContent className="py-1 px-3 pb-3">
+              <div className="text-xl font-bold text-emerald-600">
+                {tasks.filter((t) => t.done || t.status === "Completed").length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Overdue Tasks</CardTitle>
+            </CardHeader>
+            <CardContent className="py-1 px-3 pb-3">
+              <div className="text-xl font-bold text-rose-600">
+                {tasks.filter((t) => {
+                  if (!t.dueDate || t.done || t.status === "Completed") return false;
+                  return new Date(t.dueDate).getTime() < Date.now();
+                }).length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">My Pending</CardTitle>
+            </CardHeader>
+            <CardContent className="py-1 px-3 pb-3">
+              <div className="text-xl font-bold text-indigo-600">
+                {tasks.filter((t) => {
+                  const isMy = t.assignedEmployeeId === session?.uid || t.assignedEmployeeId === session?.employeeId || t.assignee === session?.username || t.assignee === session?.name;
+                  return isMy && !t.done && t.status !== "Completed";
+                }).length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">My Completed</CardTitle>
+            </CardHeader>
+            <CardContent className="py-1 px-3 pb-3">
+              <div className="text-xl font-bold text-emerald-600">
+                {tasks.filter((t) => {
+                  const isMy = t.assignedEmployeeId === session?.uid || t.assignedEmployeeId === session?.employeeId || t.assignee === session?.username || t.assignee === session?.name;
+                  return isMy && (t.done || t.status === "Completed");
+                }).length}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Pending Follow-ups Section */}

@@ -10,10 +10,12 @@ import {
   getDocs,
   getDoc,
   addDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { removeUndefined, type ServiceType } from "./records";
 import { getSession } from "./auth";
+import { invalidateCache } from "./cacheInvalidator";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -28,6 +30,10 @@ export interface Client {
   type: "client" | "lead";
   createdAt?: string;
   updatedAt?: string;
+  createdBy?: string;
+  createdById?: string;
+  updatedBy?: string;
+  updatedById?: string;
 }
 
 export interface VehicleDocument {
@@ -215,8 +221,32 @@ export async function saveClient(
 
   await setDoc(docRef, cleanData, { merge: true });
 
-  // Log activity
+  // Automatically initialize all required profile collections
   if (isNew) {
+    const profiles = [
+      "accounting_profiles",
+      "service_profiles",
+      "task_profiles",
+      "billing_profiles",
+      "document_folders",
+      "activity_histories",
+      "payment_ledgers",
+      "insurance_profiles",
+      "registry_profiles",
+      "analytics_records",
+      "dashboard_counters"
+    ];
+    for (const colName of profiles) {
+      try {
+        await setDoc(doc(db, colName, id), {
+          clientId: id,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (err) {
+        console.error(`[saveClient] Failed to create profile ${colName}:`, err);
+      }
+    }
     await logActivity(id, "Created Client", null, null, null, actorOverride);
   } else if (existing) {
     // Compare fields
@@ -236,11 +266,108 @@ export async function saveClient(
       }
     }
   }
+  invalidateCache();
 }
 
-/** Delete a client doc. */
+/** Delete a client doc and all related records in a cascading fashion. */
 export async function deleteClient(id: string): Promise<void> {
-  await deleteDoc(doc(db, CLIENTS_COL, id));
+  const batch = writeBatch(db);
+
+  // 1. Delete client document
+  batch.delete(doc(db, CLIENTS_COL, id));
+
+  // 2. Delete static profiles (ID matches clientId)
+  const profiles = [
+    "accounting_profiles",
+    "service_profiles",
+    "task_profiles",
+    "billing_profiles",
+    "document_folders",
+    "activity_histories",
+    "payment_ledgers",
+    "insurance_profiles",
+    "registry_profiles",
+    "analytics_records",
+    "dashboard_counters"
+  ];
+  profiles.forEach((p) => {
+    batch.delete(doc(db, p, id));
+  });
+
+  // 3. Delete from queryable collections where clientId / recordId == id
+  const queries = [
+    query(collection(db, "finance_records"), where("clientId", "==", id)),
+    query(collection(db, "billing_invoices"), where("clientId", "==", id)),
+    query(collection(db, "billing_invoice_payments"), where("clientId", "==", id)),
+    query(collection(db, "payment_history"), where("clientId", "==", id)),
+    query(collection(db, "registry_tasks"), where("recordId", "==", id)),
+    query(collection(db, "registry_tasks"), where("clientId", "==", id)),
+    query(collection(db, "client_activity_logs"), where("clientId", "==", id)),
+    query(collection(db, "client_documents"), where("clientId", "==", id)),
+    query(collection(db, "vehicle_documents"), where("clientId", "==", id)),
+    query(collection(db, "registry_customer_docs"), where("customerId", "==", id)),
+    query(collection(db, "registry_vehicles_v2"), where("clientId", "==", id)),
+    query(collection(db, "accounts_ledger"), where("referenceId", "==", id)),
+  ];
+
+  const vehicleIds: string[] = [];
+  const invoiceIds: string[] = [];
+
+  for (const q of queries) {
+    try {
+      const snap = await getDocs(q);
+      snap.forEach((d) => {
+        batch.delete(d.ref);
+        if (d.ref.parent.id === "registry_vehicles_v2") {
+          vehicleIds.push(d.id);
+        }
+        if (d.ref.parent.id === "billing_invoices") {
+          invoiceIds.push(d.id);
+        }
+      });
+    } catch (err) {
+      console.warn(`[deleteClient] Query failed during cascade:`, err);
+    }
+  }
+
+  // 4. Delete services associated with the vehicles
+  for (const vId of vehicleIds) {
+    try {
+      const qServices = query(collection(db, "registry_services_v2"), where("vehicleId", "==", vId));
+      const snapServices = await getDocs(qServices);
+      snapServices.forEach((d) => {
+        batch.delete(d.ref);
+      });
+    } catch (err) {
+      console.warn(`[deleteClient] Service delete failed for vehicle ${vId}:`, err);
+    }
+  }
+
+  // 5. Delete finance records / payments for the invoices
+  for (const invId of invoiceIds) {
+    try {
+      const qFinance = query(collection(db, "finance_records"), where("invoiceId", "==", invId));
+      const snapFinance = await getDocs(qFinance);
+      snapFinance.forEach((d) => {
+        batch.delete(d.ref);
+      });
+    } catch (err) {
+      console.warn(`[deleteClient] Finance record delete failed for invoice ${invId}:`, err);
+    }
+
+    try {
+      const qPayments = query(collection(db, "payment_history"), where("invoiceId", "==", invId));
+      const snapPayments = await getDocs(qPayments);
+      snapPayments.forEach((d) => {
+        batch.delete(d.ref);
+      });
+    } catch (err) {
+      console.warn(`[deleteClient] Payment history delete failed for invoice ${invId}:`, err);
+    }
+  }
+
+  await batch.commit();
+  invalidateCache();
 }
 
 // ─── Vehicle Operations ───────────────────────────────────────────────────────

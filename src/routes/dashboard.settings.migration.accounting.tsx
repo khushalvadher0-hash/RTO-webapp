@@ -78,6 +78,63 @@ function AccountingMigration() {
     setDistributionOpen(true);
   };
 
+  const handleMigrateAll = async () => {
+    if (!recordsWithOldData.length) return;
+    if (
+      !confirm(
+        `Are you sure you want to automatically migrate all ${recordsWithOldData.length} records? This will distribute their old accounting amounts evenly across their services.`
+      )
+    ) {
+      return;
+    }
+
+    setProcessing(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const record of recordsWithOldData) {
+      try {
+        const services = getRecordServiceDetails(record);
+        if (services.length === 0) {
+          throw new Error("No services defined for this record");
+        }
+
+        const amountPerService = (record.serviceAmount || 0) / services.length;
+        const receivedPerService = (record.amountReceived || 0) / services.length;
+
+        const updatedServices = services.map((service) => ({
+          ...service,
+          price: amountPerService,
+          amountReceived: receivedPerService,
+        }));
+
+        const updatedRecord: RegistryRecord = {
+          ...record,
+          services: updatedServices,
+          serviceAmount: undefined,
+          amountReceived: undefined,
+          paymentDate: undefined,
+          paymentStatus: undefined,
+        };
+
+        const bucket = (Object.entries({
+          clients: allRecords.filter((r) => r.id === record.id),
+          leads: allRecords.filter((r) => r.id === record.id),
+          customers: allRecords.filter((r) => r.id === record.id),
+        }).find(([, records]) => records.length > 0)?.[0] || "clients") as Bucket;
+
+        await saveRecord(bucket, updatedRecord, session?.username || "system");
+        successCount++;
+      } catch (err) {
+        console.error(`Error migrating record ${record.name}:`, err);
+        errorCount++;
+      }
+    }
+
+    setProcessing(false);
+    alert(`Migration complete! Successfully migrated: ${successCount}, Failed: ${errorCount}`);
+  };
+
   const handleAutoDistribute = async (record: RecordWithOldData) => {
     if (!record.serviceAmount || record.serviceAmount === 0) return;
 
@@ -166,11 +223,22 @@ function AccountingMigration() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Accounting Migration Tool</h2>
-        <p className="text-sm text-muted-foreground">
-          Migrate old client-level accounting fields to the new service-wise accounting system
-        </p>
+      <div className="flex justify-between items-center gap-4 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Accounting Migration Tool</h2>
+          <p className="text-sm text-muted-foreground">
+            Migrate old client-level accounting fields to the new service-wise accounting system
+          </p>
+        </div>
+        {recordsWithOldData.length > 0 && (
+          <Button
+            onClick={handleMigrateAll}
+            disabled={processing}
+            className="bg-orange-600 hover:bg-orange-700 text-white font-semibold"
+          >
+            {processing ? "Migrating..." : `Auto Migrate All (${recordsWithOldData.length})`}
+          </Button>
+        )}
       </div>
 
       {/* Summary */}

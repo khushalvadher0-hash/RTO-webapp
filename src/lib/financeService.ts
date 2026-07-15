@@ -17,6 +17,7 @@ import {
 import { verifyAdminPin } from "./adminSecurity";
 import { subscribeToAllInvoices } from "./billing";
 import { toast } from "sonner";
+import { invalidateCache } from "./cacheInvalidator";
 
 export function handleFirestoreError(err: any, context: string) {
   console.error(`[Firestore Error: ${context}]`, err);
@@ -311,15 +312,16 @@ export async function recordPaymentEntry(
   recordId: string,
   payment: Omit<PaymentHistoryItem, "financeRecordId" | "invoiceId" | "receivedAt"> & { paymentDate: string },
 ) {
-  const ref = doc(db, FINANCE_COL, recordId);
+  const ref = doc(db, INVOICES_COL, recordId);
   const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Finance record not found");
+  if (!snap.exists()) throw new Error("Invoice not found");
 
-  const data = snap.data() as FinanceRecord;
+  const data = snap.data() as any;
+  const balanceAmount = data.totalAmount - (data.totalPaid || 0);
 
   // Validation: Received Amount <= Remaining Amount
-  if (payment.amount > data.balanceAmount) {
-    throw new Error(`Payment amount (₹${payment.amount}) exceeds remaining balance of ₹${data.balanceAmount}`);
+  if (payment.amount > balanceAmount) {
+    throw new Error(`Payment amount (₹${payment.amount}) exceeds remaining balance of ₹${balanceAmount}`);
   }
 
   if (payment.amount <= 0) {
@@ -327,19 +329,18 @@ export async function recordPaymentEntry(
   }
 
   // Prevent completion if approval is pending
-  if (data.askBhaylubha && payment.amount === data.balanceAmount) {
+  if (data.askBhaylubha && payment.amount === balanceAmount) {
     throw new Error("Cannot mark collection completed. Bhaylubha Approval is Pending.");
   }
 
-  const newReceived = data.receivedAmount + payment.amount;
-  const newBalance = data.invoiceAmount - newReceived;
+  const newReceived = (data.totalPaid || 0) + payment.amount;
+  const newBalance = data.totalAmount - newReceived;
 
   if (newBalance < 0) {
     throw new Error("Calculation error: Remaining balance cannot be less than 0");
   }
 
-  const newStatus: FinanceRecord["paymentStatus"] =
-    newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
+  const newStatus = newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
 
   const timestamp = payment.paymentDate ? new Date(payment.paymentDate).toISOString() : new Date().toISOString();
   const payId = await generatePaymentId();
@@ -369,27 +370,16 @@ export async function recordPaymentEntry(
     allocations: detailedAllocations,
   });
 
-  // Update finance record
+  // Update invoice directly
   await updateDoc(ref, {
-    receivedAmount: newReceived,
-    balanceAmount: newBalance,
-    paymentStatus: newStatus,
+    totalPaid: newReceived,
+    status: newStatus,
     receivedBy: payment.receivedBy,
     paymentMethod: payment.method,
     accountName: payment.accountName,
     remarks: payment.remarks,
     updatedAt: timestamp,
   });
-
-  // Keep parent invoice status and paid amount in sync
-  try {
-    await updateDoc(doc(db, INVOICES_COL, recordId), {
-      status: newStatus,
-      totalPaid: newReceived,
-    });
-  } catch (e) {
-    console.warn("Could not sync invoice status and payments:", e);
-  }
 
   // Create accounts ledger entry
   await recordLedgerEntry({
@@ -407,6 +397,7 @@ export async function recordPaymentEntry(
     recordId,
     `Added payment of ₹${payment.amount} via ${payment.method} into ${payment.accountName} (ID: ${payId})`,
   );
+  invalidateCache();
 }
 
 /** Record payment allocated across multiple invoices */
@@ -420,50 +411,38 @@ export async function recordMultiInvoicePayment(
   const timestamp = new Date(payment.paymentDate).toISOString();
   const payId = await generatePaymentId();
 
-  // We will store the allocations details in a single payment history document
   const payCol = collection(db, PAYMENTS_COL);
   const payDocRef = doc(payCol);
 
-  // We need to fetch the invoice numbers for all allocations to store in the allocations array
   const detailedAllocations: { invoiceId: string; invoiceNumber: string; allocatedAmount: number }[] = [];
 
   for (const alloc of allocations) {
     if (alloc.amount <= 0) continue;
 
-    const financeRef = doc(db, FINANCE_COL, alloc.invoiceId);
     const invoiceRef = doc(db, INVOICES_COL, alloc.invoiceId);
-
-    const fSnap = await getDoc(financeRef);
-    if (!fSnap.exists()) continue;
-    const fData = fSnap.data() as FinanceRecord;
+    const iSnap = await getDoc(invoiceRef);
+    if (!iSnap.exists()) continue;
+    const iData = iSnap.data() as any;
 
     detailedAllocations.push({
       invoiceId: alloc.invoiceId,
-      invoiceNumber: fData.invoiceNumber,
+      invoiceNumber: iData.invoiceNumber,
       allocatedAmount: alloc.amount,
     });
 
-    const newReceived = fData.receivedAmount + alloc.amount;
-    const newBalance = fData.invoiceAmount - newReceived;
-    const newStatus: FinanceRecord["paymentStatus"] =
-      newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
+    const newReceived = (iData.totalPaid || 0) + alloc.amount;
+    const newBalance = iData.totalAmount - newReceived;
+    const newStatus = newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
 
-    // Update finance record
-    batch.update(financeRef, {
-      receivedAmount: newReceived,
-      balanceAmount: newBalance,
-      paymentStatus: newStatus,
+    // Keep invoice in sync directly
+    batch.update(invoiceRef, {
+      status: newStatus,
+      totalPaid: newReceived,
       receivedBy: payment.receivedBy,
       paymentMethod: payment.method,
       accountName: payment.accountName,
       remarks: payment.remarks,
       updatedAt: timestamp,
-    });
-
-    // Keep parent invoice in sync
-    batch.update(invoiceRef, {
-      status: newStatus,
-      totalPaid: newReceived,
     });
 
     // Add ledger entry
@@ -476,7 +455,7 @@ export async function recordMultiInvoicePayment(
       amount: alloc.amount,
       account: payment.accountName,
       referenceId: payDocRef.id,
-      remarks: `Payment allocation for Invoice ${fData.invoiceNumber}. Recv by ${payment.receivedBy}`,
+      remarks: `Payment allocation for Invoice ${iData.invoiceNumber}. Recv by ${payment.receivedBy}`,
     });
   }
 
@@ -504,6 +483,7 @@ export async function recordMultiInvoicePayment(
     clientId,
     `Multi-invoice payment allocated. Total: ₹${payment.amount} (ID: ${payId})`,
   );
+  invalidateCache();
 }
 
 /** Record direct payment with no invoice linked */
@@ -674,13 +654,11 @@ export async function deleteInvoiceSecured(
     }
   });
 
-  // 3. Delete finance record
-  batch.delete(doc(db, FINANCE_COL, invoiceId));
-
-  // 4. Delete invoice itself
+  // 3. Delete invoice itself
   batch.delete(invoiceRef);
 
   await batch.commit();
+  invalidateCache();
 
   // Log to audit log
   await logFinanceAction(
@@ -708,21 +686,44 @@ export function subscribeAuditLogs(cb: (logs: FinanceAuditLog[]) => void) {
 }
 
 export function subscribeAndSyncFinance(cb: (records: FinanceRecord[]) => void) {
-  const unsubInvoices = subscribeToAllInvoices(async (invoices) => {
-    for (const inv of invoices) {
-      try {
-        await ensureFinanceRecord(inv);
-      } catch (err) {
-        console.error("Failed to sync finance record:", err);
+  return subscribeToAllInvoices((invoices) => {
+    const list: FinanceRecord[] = invoices.map((inv) => {
+      const receivedAmount = inv.totalPaid || 0;
+      const balanceAmount = inv.totalAmount - receivedAmount;
+      const paymentStatus: FinanceRecord["paymentStatus"] =
+        balanceAmount === 0 ? "Paid" : receivedAmount > 0 ? "Partially Paid" : "Pending";
+
+      let daysOverdue = 0;
+      const collectionDate = inv.collectionDate || new Date(inv.createdAt || Date.now()).toISOString().slice(0, 10);
+      if (paymentStatus !== "Paid" && collectionDate) {
+        const due = new Date(collectionDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        if (today.getTime() > due.getTime()) {
+          daysOverdue = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+        }
       }
-    }
+
+      return {
+        id: inv.id,
+        clientId: inv.clientId,
+        clientName: inv.clientName || "Unknown Client",
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        invoiceAmount: inv.totalAmount,
+        receivedAmount,
+        balanceAmount,
+        collectionDate,
+        paymentStatus,
+        askBhaylubha: !!inv.askBhaylubha,
+        createdAt: inv.createdAt,
+        updatedAt: inv.createdAt,
+        assignedEmployee: inv.createdBy || "System",
+        daysOverdue,
+      };
+    });
+    cb(list);
   });
-
-  const unsubFinance = subscribeFinanceRecords(cb);
-
-  return () => {
-    unsubInvoices();
-    unsubFinance();
-  };
 }
 

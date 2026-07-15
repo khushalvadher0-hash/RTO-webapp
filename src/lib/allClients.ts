@@ -6,8 +6,10 @@ import {
   getRecordPaymentStatus,
   type RegistryRecord,
   type Bucket,
+  type PaymentStatus,
 } from "./records";
 import { subscribeToCustomers, type CustomerProfile } from "./customers";
+import { subscribeAllClients, subscribeAllVehicles, subscribeAllServices } from "./hierarchy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,12 +19,12 @@ export interface ClientService {
   date: string;
   application: string;
   work: string;
-  status: RegistryRecord["status"];
+  status: string;
   serviceType?: string;
   dueDate?: string;
   serviceAmount?: number;
   amountReceived?: number;
-  paymentStatus?: RegistryRecord["paymentStatus"];
+  paymentStatus?: PaymentStatus;
   activityLogs?: RegistryRecord["activityLogs"];
 }
 
@@ -48,6 +50,7 @@ export interface AggregatedClient {
   statuses: string[]; // Aggregated service statuses
   isActive: boolean; // Has recent activity
   paymentStatus: "Paid" | "Partial" | "Unpaid";
+  type?: "client" | "lead";
 }
 
 // ─── Data aggregation ─────────────────────────────────────────────────────────
@@ -213,6 +216,9 @@ export function aggregateAllClients(
         totalReceived: 0,
         pendingRevenue: 0,
         lastActivityDate: undefined,
+        createdAt: undefined,
+        serviceTypes: [],
+        statuses: [],
         isActive: false,
         paymentStatus: "Unpaid",
       };
@@ -268,131 +274,199 @@ export function aggregateAllClients(
 }
 
 /**
- * Subscribe to all clients with live updates.
- * Automatically aggregates data from all buckets and customers.
+ * Subscribe to all clients with live updates from V2 collections.
+ * Automatically aggregates data from all clients, vehicles, and services in real-time.
  */
 export function subscribeToAllClients(callback: (clients: AggregatedClient[]) => void): () => void {
-  const buckets: Bucket[] = ["clients", "leads"];
-  const recordsByBucket: { [key in Bucket]?: RegistryRecord[] } = {
-    clients: [],
-    leads: [],
+  let clientsList: any[] = [];
+  let vehiclesList: any[] = [];
+  let servicesList: any[] = [];
+  let clientRecordsList: any[] = [];
+  let leadRecordsList: any[] = [];
+
+  let clientsReady = false;
+  let vehiclesReady = false;
+  let servicesReady = false;
+  let clientRecordsReady = false;
+  let leadRecordsReady = false;
+
+  const buildRecordClients = (records: any[], type: "client" | "lead") =>
+    records
+      .filter((record) => !record.isDeleted)
+      .map((record) => ({
+        id: record.id,
+        name: record.name,
+        mobile: record.mo || "",
+        address: "",
+        companyName: record.groupName || "",
+        type,
+        createdAt: record.createdAt,
+        updatedAt: record.lastUpdatedAt || record.createdAt,
+      }));
+
+  const buildSourceClients = () => {
+    const merged = new Map<string, any>();
+    const addClient = (client: any) => {
+      if (!client?.name) return;
+      const key = `${client.type || "client"}:${String(client.name).trim().toLowerCase()}`;
+      if (!merged.has(key)) {
+        merged.set(key, client);
+      }
+    };
+
+    clientsList.forEach(addClient);
+    buildRecordClients(clientRecordsList, "client").forEach(addClient);
+    buildRecordClients(leadRecordsList, "lead").forEach(addClient);
+
+    return Array.from(merged.values());
   };
-  let allCustomers: CustomerProfile[] = [];
 
-  // Track readiness for each data source
-  let ready = {
-    clients: false,
-    leads: false,
-    profiles: false,
-  };
-
-  let initialLoadComplete = false;
-  let errorState = false;
-
-  const unsubscribers: Array<() => void> = [];
-
-  const safeAggregate = () => {
-    try {
-      return aggregateAllClients(
-        recordsByBucket as { [key in Bucket]: RegistryRecord[] },
-        allCustomers,
-      );
-    } catch (error) {
-      console.error("[subscribeToAllClients] Failed to aggregate clients:", error);
-      errorState = true;
-      return [] as AggregatedClient[];
-    }
-  };
-
-  /**
-   * Check if all data sources are ready and trigger update if so
-   */
   const checkAndUpdate = () => {
-    const allReady = ready.clients && ready.leads && ready.profiles;
-
-    if (allReady) {
-      initialLoadComplete = true;
-      const clients = safeAggregate();
-      callback(clients);
+    if (!clientsReady || !vehiclesReady || !servicesReady || !clientRecordsReady || !leadRecordsReady) {
+      return;
     }
+
+    const sourceClients = buildSourceClients();
+    const aggregated: AggregatedClient[] = sourceClients.map((client) => {
+      const clientVehicles = vehiclesList.filter((v) => v.clientId === client.id);
+      const vehicleIds = clientVehicles.map((v) => v.id);
+      const vehicleNumbers = clientVehicles.map((v) => v.vehicleNumber);
+
+      const clientServices = servicesList.filter((s) => vehicleIds.includes(s.vehicleId));
+
+      let activeServices = 0;
+      let pendingServices = 0;
+      let completedServices = 0;
+      let totalRevenue = 0;
+      let totalReceived = 0;
+      let lastActivityDate: string | undefined;
+
+      const allServices: ClientService[] = clientServices.map((service) => {
+        const serviceAmount = service.serviceAmount ?? 0;
+        const amountReceived = service.amountReceived ?? 0;
+        totalRevenue += serviceAmount;
+        totalReceived += amountReceived;
+
+        if (service.taskStatus === "Completed") {
+          completedServices++;
+        } else {
+          activeServices++;
+          if (
+            service.taskStatus === "Not Started" ||
+            service.taskStatus === "Documents Collected" ||
+            service.taskStatus === "Verification"
+          ) {
+            pendingServices++;
+          }
+        }
+
+        if (service.updatedAt && (!lastActivityDate || service.updatedAt > lastActivityDate)) {
+          lastActivityDate = service.updatedAt;
+        }
+
+        return {
+          id: service.id,
+          bucket: client.type === "lead" ? "leads" : "clients",
+          date: service.createdAt || client.createdAt || "",
+          application: service.serviceType,
+          work: service.notes || "",
+          status: service.taskStatus === "Completed" ? "Completed" : "In Progress",
+          serviceType: service.serviceType,
+          dueDate: service.dueDate,
+          serviceAmount,
+          amountReceived,
+          paymentStatus:
+            amountReceived >= serviceAmount
+              ? "Paid"
+              : amountReceived > 0
+                ? "Partially Paid"
+                : "Unpaid",
+        };
+      });
+
+      const pendingRevenue = totalRevenue - totalReceived;
+      let paymentStatus: "Paid" | "Partial" | "Unpaid" = "Unpaid";
+      if (totalRevenue > 0) {
+        if (totalReceived >= totalRevenue) {
+          paymentStatus = "Paid";
+        } else if (totalReceived > 0) {
+          paymentStatus = "Partial";
+        }
+      }
+
+      let isActive = activeServices > 0;
+      if (!isActive && lastActivityDate) {
+        const lastDate = new Date(lastActivityDate);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        isActive = lastDate > thirtyDaysAgo;
+      }
+
+      return {
+        id: client.id,
+        name: client.name,
+        groupName: client.companyName || undefined,
+        mobile: client.mobile || "",
+        email: client.email || "",
+        address: client.address || "",
+        vehicles: vehicleNumbers,
+        allServices,
+        activeServices,
+        pendingServices,
+        completedServices,
+        assignee: clientServices[0]?.assignedStaff || undefined,
+        totalRevenue,
+        totalReceived,
+        pendingRevenue,
+        lastActivityDate: lastActivityDate || client.updatedAt || client.createdAt,
+        createdAt: client.createdAt,
+        serviceTypes: Array.from(new Set(clientServices.map((s) => s.serviceType))),
+        statuses: Array.from(new Set(clientServices.map((s) => s.taskStatus))),
+        isActive,
+        paymentStatus,
+        type: client.type || "client",
+      };
+    });
+
+    callback(aggregated.sort((a, b) => a.name.localeCompare(b.name)));
   };
 
-  // Subscribe to records
-  buckets.forEach((bucket) => {
-    const unsub = subscribeToRecords(
-      bucket,
-      (records) => {
-        recordsByBucket[bucket] = records;
-        ready[bucket] = true;
-
-        // After initial load, always update
-        if (initialLoadComplete) {
-          const clients = safeAggregate();
-          callback(clients);
-        } else {
-          // During initial load, wait for all sources
-          checkAndUpdate();
-        }
-      },
-      (error) => {
-        console.warn(
-          `[subscribeToAllClients] ${bucket} subscription failed, continuing with empty records.`,
-          error,
-        );
-        ready[bucket] = true;
-        if (initialLoadComplete) {
-          const clients = safeAggregate();
-          callback(clients);
-        } else {
-          checkAndUpdate();
-        }
-      },
-    );
-    unsubscribers.push(unsub);
+  const unsubClients = subscribeAllClients((clients) => {
+    clientsList = clients;
+    clientsReady = true;
+    checkAndUpdate();
   });
 
-  // Subscribe to customers
-  const unsub = subscribeToCustomers(
-    (customers) => {
-      allCustomers = customers;
-      ready.profiles = true;
+  const unsubClientRecords = subscribeToRecords("clients", (records) => {
+    clientRecordsList = records;
+    clientRecordsReady = true;
+    checkAndUpdate();
+  });
 
-      // After initial load, always update
-      if (initialLoadComplete) {
-        const clients = safeAggregate();
-        callback(clients);
-      } else {
-        // During initial load, wait for all sources
-        checkAndUpdate();
-      }
-    },
-    (error) => {
-      console.warn(
-        "[subscribeToAllClients] Customer subscription failed, continuing with empty profiles.",
-        error,
-      );
-      ready.profiles = true;
-      if (initialLoadComplete) {
-        const clients = safeAggregate();
-        callback(clients);
-      } else {
-        checkAndUpdate();
-      }
-    },
-  );
-  unsubscribers.push(unsub);
+  const unsubLeadRecords = subscribeToRecords("leads", (records) => {
+    leadRecordsList = records;
+    leadRecordsReady = true;
+    checkAndUpdate();
+  });
 
-  const timeoutId = globalThis.setTimeout(() => {
-    if (!initialLoadComplete) {
-      console.warn("[subscribeToAllClients] initial load timed out, returning empty client list.");
-      initialLoadComplete = true;
-      callback([]);
-    }
-  }, 8000);
+  const unsubVehicles = subscribeAllVehicles((vehicles) => {
+    vehiclesList = vehicles;
+    vehiclesReady = true;
+    checkAndUpdate();
+  });
+
+  const unsubServices = subscribeAllServices((services) => {
+    servicesList = services;
+    servicesReady = true;
+    checkAndUpdate();
+  });
 
   return () => {
-    globalThis.clearTimeout(timeoutId);
-    unsubscribers.forEach((u) => u());
+    unsubClients();
+    unsubClientRecords();
+    unsubLeadRecords();
+    unsubVehicles();
+    unsubServices();
   };
 }
 
@@ -442,7 +516,7 @@ export function filterClients(
     result = result.filter(
       (c) =>
         [c.name, c.mobile, c.groupName, c.assignee, ...c.vehicles]
-          .filter(Boolean)
+          .filter((v): v is string => !!v)
           .some((v) => v.toLowerCase().includes(q)) ||
         c.serviceTypes.some((type) => typeof type === "string" && type.toLowerCase().includes(q)) ||
         c.statuses.some(

@@ -54,7 +54,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, doc, query, where } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { getSession } from "@/lib/auth";
 import {
@@ -64,6 +64,8 @@ import {
   type Bucket,
   type RegistryRecord,
 } from "@/lib/records";
+import { subscribeAllVehicles } from "@/lib/hierarchy";
+import { subscribeToAllClients } from "@/lib/allClients";
 import {
   subscribeToTasks,
   createManualTask,
@@ -78,6 +80,8 @@ import {
   markTaskAsRead,
   removeTask,
   updateSubtasks,
+  isTaskAssignedToUser,
+  taskMatchesClient,
   PRIORITY_OPTIONS,
   TASK_STATUS_OPTIONS,
   subscribeToTemplates,
@@ -150,6 +154,7 @@ function TasksPage() {
   const [clients, setClients] = useState<RegistryRecord[]>([]);
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
 
   // view and filters
   const [viewTab, setViewTab] = useState<"my" | "all">("my");
@@ -175,30 +180,104 @@ function TasksPage() {
 
   useEffect(() => {
     const u1 = subscribeToTasks(setTasks);
-    const u2 = subscribeToRecords("clients", setClients);
-    const u3 = subscribeToRecords("leads", setLeads);
+    const u2 = subscribeToAllClients((items) => {
+      const parsedClients = items.filter((c) => c.type === "client").map((c) => ({
+        ...c,
+        mo: c.mobile || "",
+        status: "In Progress",
+        mvNo: c.vehicles?.join(", ") || "",
+        work: c.allServices?.map((s) => s.work || s.application).join(", ") || "",
+      }));
+      const parsedLeads = items.filter((c) => c.type === "lead").map((c) => ({
+        ...c,
+        mo: c.mobile || "",
+        status: "In Progress",
+        mvNo: c.vehicles?.join(", ") || "",
+        work: c.allServices?.map((s) => s.work || s.application).join(", ") || "",
+      }));
+      setClients(parsedClients as any);
+      setLeads(parsedLeads as any);
+    });
     const u4 = onSnapshot(collection(db, "registry_vehicles_v2"), (snap) => {
       setVehicles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    const u5 = onSnapshot(collection(db, "users"), (snap) => {
+      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => {
       u1();
       u2();
-      u3();
       u4();
+      u5();
     };
   }, []);
 
   const isAdmin = session?.role === "admin" || session?.role === "manager";
-  const canSeeAllTasks = isAdmin;
+  const canSeeAllTasks = true;
   const detailsTask = tasks.find((t) => t.id === detailsId) ?? null;
+
+
+
+  const allTasks = useMemo(() => {
+    // 1. Get manual tasks
+    const manualTasks = tasks;
+
+    // 2. Generate task objects for each service of each client from client module
+    const clientServiceTasks: Task[] = clients.flatMap((c: any) =>
+      (c.allServices || []).map((s: any) => ({
+        id: s.id,
+        title: s.work || s.application || "Service Task",
+        serviceName: s.serviceType || s.application,
+        description: s.work || "",
+        assignee: c.assignee || "",
+        status: (s.status === "Completed" ? "Completed" : "In Progress") as TaskStatus,
+        priority: "Medium" as TaskPriority,
+        done: s.status === "Completed",
+        createdAt: s.date || c.createdAt || new Date().toISOString(),
+        createdBy: "system",
+        dueDate: s.dueDate,
+        associationType: "client" as AssociationType,
+        bucket: s.bucket,
+        recordId: c.id,
+        clientId: c.id,
+        clientName: c.name,
+        manual: false,
+        progress: s.status === "Completed" ? 100 : 0,
+      }))
+    );
+
+    // 3. Generate task objects for each service of each lead from lead module
+    const leadServiceTasks: Task[] = leads.flatMap((c: any) =>
+      (c.allServices || []).map((s: any) => ({
+        id: s.id,
+        title: s.work || s.application || "Service Task",
+        serviceName: s.serviceType || s.application,
+        description: s.work || "",
+        assignee: c.assignee || "",
+        status: (s.status === "Completed" ? "Completed" : "In Progress") as TaskStatus,
+        priority: "Medium" as TaskPriority,
+        done: s.status === "Completed",
+        createdAt: s.date || c.createdAt || new Date().toISOString(),
+        createdBy: "system",
+        dueDate: s.dueDate,
+        associationType: "lead" as AssociationType,
+        bucket: s.bucket,
+        recordId: c.id,
+        clientId: c.id,
+        clientName: c.name,
+        manual: false,
+        progress: s.status === "Completed" ? 100 : 0,
+      }))
+    );
+
+    return [...manualTasks, ...clientServiceTasks, ...leadServiceTasks];
+  }, [tasks, clients, leads]);
 
   // Separate task lists for tab counting
   const myTasks = useMemo(() => {
     if (!session) return [];
-    return tasks.filter((t) => t.assignee === session.username);
-  }, [tasks, session]);
-
-  const allTasks = tasks;
+    return allTasks.filter((t) => isTaskAssignedToUser(t, session));
+  }, [allTasks, session]);
 
   // Apply filters based on view tab
   const baseList = useMemo(() => {
@@ -212,6 +291,16 @@ function TasksPage() {
     if (!session) return [];
     let list = baseList;
 
+    console.log("🐛 [DEBUG TASKS] --- Filtering Start ---");
+    console.log("🐛 Current User Session:", session);
+    console.log("🐛 Current Employee ID (uid):", session.uid, " | employeeId:", session.employeeId);
+    console.log("🐛 Current Employee Name:", session.name);
+    console.log("🐛 Base List Count:", baseList.length);
+    console.log("🐛 All Tasks Count (total in Firestore/state):", tasks.length);
+    baseList.forEach((t) => {
+      console.log(`  - Task: "${t.title}" | Assignee: "${t.assignee}" | Assigned ID: "${t.assignedEmployeeId}" | Assigned Name: "${t.assignedEmployeeName}"`);
+    });
+
     if (query.trim()) {
       const q = query.toLowerCase();
       list = list.filter(
@@ -223,7 +312,13 @@ function TasksPage() {
     }
     if (statusFilter !== "all") list = list.filter((t) => t.status === statusFilter);
     if (priorityFilter !== "all") list = list.filter((t) => t.priority === priorityFilter);
-    if (assigneeFilter !== "all") list = list.filter((t) => t.assignee === assigneeFilter);
+    if (assigneeFilter !== "all") {
+      list = list.filter((t) =>
+        t.assignee === assigneeFilter ||
+        t.assignedEmployeeId === assigneeFilter ||
+        t.assignedEmployeeName === assigneeFilter
+      );
+    }
     if (associationFilter !== "all")
       list = list.filter((t) => t.associationType === associationFilter);
 
@@ -254,6 +349,8 @@ function TasksPage() {
       }
       return 0;
     });
+    console.log("🐛 [DEBUG TASKS] Filtered List Count:", sorted.length);
+    console.log("🐛 [DEBUG TASKS] --- Filtering End ---");
     return sorted;
   }, [
     baseList,
@@ -304,6 +401,112 @@ function TasksPage() {
     }
   };
 
+  const [testing, setTesting] = useState(false);
+
+  const runTaskDiagnostics = async () => {
+    setTesting(true);
+    toast.info("Starting System Diagnostics...");
+    try {
+      const { getDoc, doc } = await import("firebase/firestore");
+      const clientName = "TEST KHUSHAL " + crypto.randomUUID().slice(0, 5);
+      const clientId = "client_" + crypto.randomUUID().slice(0, 8);
+
+      // TEST 1: Create client
+      console.log("🧪 [TEST 1] Creating client:", clientName);
+      const { saveClient } = await import("@/lib/hierarchy");
+      await saveClient({
+        id: clientId,
+        name: clientName,
+        mobile: "9876543210",
+        type: "client",
+      } as any);
+      
+      toast.success("TEST 1: Client created successfully!");
+
+      // TEST 2: Create task linked to client
+      console.log("🧪 [TEST 2] Creating task...");
+      const taskInput = {
+        title: "Insurance Renewal for " + clientName,
+        serviceName: "Insurance",
+        description: "Test description",
+        assignee: session?.username || "admin",
+        priority: "High" as const,
+        status: "Assigned" as const,
+        associationType: "client" as const,
+        createdBy: session?.username || "diagnostic_runner",
+        assignedEmployeeId: session?.uid || "diagnostic_id",
+        assignedEmployeeName: session?.name || "Diagnostic Runner",
+        clientId: clientId,
+        clientName: clientName,
+        recordId: clientId,
+      };
+      const createdTask = await createManualTask(taskInput);
+      if (createdTask.clientName !== clientName) {
+        throw new Error(`TEST 2 FAIL: Stored clientName is ${createdTask.clientName}, expected ${clientName}`);
+      }
+      toast.success("TEST 2: Task linked to client correctly!");
+
+      // TEST 3: Generate Invoice
+      console.log("🧪 [TEST 3] Generating Invoice...");
+      const { createInvoice } = await import("@/lib/billing");
+      const inv = await createInvoice({
+        id: clientId,
+        name: clientName,
+        mo: "9876543210",
+      } as any, [{
+        serviceId: "srv_id",
+        serviceName: "Insurance",
+        quantity: 1,
+        unitPrice: 4560,
+        amount: 4560,
+        tax: 0,
+        total: 4560,
+      }], "2026-07-01", "2026-07-30", session?.username || "admin");
+
+      toast.success("TEST 3: Invoice generated for ₹4,560 successfully!");
+
+      // TEST 4: Record Payment
+      console.log("🧪 [TEST 4] Recording Payment...");
+      const { recordPaymentEntry } = await import("@/lib/financeService");
+      await recordPaymentEntry(inv.id, {
+        amount: 4000,
+        method: "UPI",
+        receivedBy: session?.username || "admin",
+        accountName: "ICICI Bank",
+        remarks: "Diagnostic payment",
+        paymentDate: new Date().toISOString().slice(0, 10),
+      });
+
+      const invDoc = await getDoc(doc(db, "billing_invoices", inv.id));
+      const invData = invDoc.data() as any;
+      if (invData.totalPaid !== 4000) {
+        throw new Error(`TEST 4 FAIL: Total paid is ${invData.totalPaid}, expected 4000`);
+      }
+      toast.success("TEST 4: Payment ₹4,000 recorded successfully!");
+
+      // TEST 5: Delete Client (Cascade Deletion)
+      console.log("🧪 [TEST 5] Deleting Client...");
+      const { deleteClient } = await import("@/lib/hierarchy");
+      await deleteClient(clientId);
+
+      const deletedClientSnap = await getDoc(doc(db, "registry_clients_v2", clientId));
+      const deletedTaskSnap = await getDoc(doc(db, "registry_tasks", createdTask.id));
+      const deletedInvoiceSnap = await getDoc(doc(db, "billing_invoices", inv.id));
+
+      if (deletedClientSnap.exists() || deletedTaskSnap.exists() || deletedInvoiceSnap.exists()) {
+        throw new Error("TEST 5 FAIL: Cascade deletion did not clean up all related records.");
+      }
+      toast.success("TEST 5: Client and all records cascade deleted successfully!");
+
+      toast.success("🏆 ALL DIAGNOSTIC TESTS PASSED!");
+    } catch (err: any) {
+      console.error("🧪 [TEST] Diagnostics failed:", err);
+      toast.error(`Diagnostics failed: ${err.message || err}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
     try {
       await updateTask(
@@ -333,10 +536,15 @@ function TasksPage() {
           </p>
         </div>
         {isAdmin && (
-          <Button onClick={openCreate}>
-            <Plus className="size-4 mr-1" />
-            Add task
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={runTaskDiagnostics} disabled={testing}>
+              {testing ? "Testing..." : "Run System Diagnostics"}
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="size-4 mr-1" />
+              Add task
+            </Button>
+          </div>
         )}
       </div>
 
@@ -388,15 +596,15 @@ function TasksPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={assigneeFilter} onValueChange={setAssigneeFilter} disabled={!isAdmin}>
+              <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Assignee" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All staff</SelectItem>
-                  {STAFF_USERS.map((s) => (
-                    <SelectItem key={s.username} value={s.username}>
-                      {s.name}
+                  {employees.map((s) => (
+                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
+                      {s.fullName || s.name || s.username}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -480,6 +688,7 @@ function TasksPage() {
             leads={leads}
             vehicles={vehicles}
             isAdmin={!!isAdmin}
+            session={session}
             onView={(t) => setDetailsId(t.id)}
             onEdit={openEdit}
             onDelete={(t) => {
@@ -531,15 +740,15 @@ function TasksPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={assigneeFilter} onValueChange={setAssigneeFilter} disabled={!isAdmin}>
+              <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Assignee" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All staff</SelectItem>
-                  {STAFF_USERS.map((s) => (
-                    <SelectItem key={s.username} value={s.username}>
-                      {s.name}
+                  {employees.map((s) => (
+                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
+                      {s.fullName || s.name || s.username}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -623,6 +832,7 @@ function TasksPage() {
             leads={leads}
             vehicles={vehicles}
             isAdmin={!!isAdmin}
+            session={session}
             onView={(t) => setDetailsId(t.id)}
             onEdit={openEdit}
             onDelete={(t) => {
@@ -643,6 +853,7 @@ function TasksPage() {
         clients={clients}
         leads={leads}
         vehicles={vehicles}
+        employees={employees}
         actor={session?.username ?? "system"}
         isAdmin={!!isAdmin}
       />
@@ -727,6 +938,7 @@ function TaskTable({
   leads,
   vehicles,
   isAdmin,
+  session,
   onView,
   onEdit,
   onDelete,
@@ -739,6 +951,7 @@ function TaskTable({
   leads: RegistryRecord[];
   vehicles: any[];
   isAdmin: boolean;
+  session: any;
   onView: (t: Task) => void;
   onEdit: (t: Task) => void;
   onDelete: (t: Task) => void;
@@ -756,11 +969,18 @@ function TaskTable({
   }, [tasks, currentPage]);
 
   const getTaskInfo = (t: Task) => {
-    let clientName = "Standalone";
-    if (t.associationType === "client") {
-      clientName = clients.find((c) => c.id === t.recordId)?.name || "Unknown Client";
-    } else if (t.associationType === "lead") {
-      clientName = leads.find((l) => l.id === t.recordId)?.name || "Unknown Lead";
+    let clientName = t.clientName || "Standalone";
+    const targetId = t.clientId || t.recordId;
+    if (targetId) {
+      const foundClient = clients.find((c) => c.id === targetId);
+      if (foundClient) {
+        clientName = foundClient.name;
+      } else {
+        const foundLead = leads.find((l) => l.id === targetId);
+        if (foundLead) {
+          clientName = foundLead.name;
+        }
+      }
     }
 
     let taskName = t.title || "General Follow Up";
@@ -912,23 +1132,29 @@ function TaskTable({
                       <div className="flex items-center justify-center gap-1.5">
                         <Button
                           variant="ghost"
-                          size="xs"
+                          size="sm"
                           onClick={() => onView(t)}
                           title="View Detail"
                         >
                           <Eye className="size-3.5" />
                         </Button>
+                        {(() => {
+                          const isAssigned = isTaskAssignedToUser(t, session);
+                          const canEdit = isAdmin || isAssigned;
+                          return canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onEdit(t)}
+                              title="Edit Task"
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                          );
+                        })()}
                         <Button
                           variant="ghost"
-                          size="xs"
-                          onClick={() => onEdit(t)}
-                          title="Edit Task"
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="xs"
+                          size="sm"
                           onClick={() => onAddRemark(t)}
                           title="Add Remark"
                         >
@@ -937,7 +1163,7 @@ function TaskTable({
                         {isAdmin && (
                           <Button
                             variant="ghost"
-                            size="xs"
+                            size="sm"
                             onClick={() => onDelete(t)}
                             className="text-red-500 hover:bg-red-50"
                             title="Delete Task"
@@ -970,7 +1196,7 @@ function TaskTable({
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                size="xs"
+                size="sm"
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage(currentPage - 1)}
               >
@@ -978,7 +1204,7 @@ function TaskTable({
               </Button>
               <Button
                 variant="outline"
-                size="xs"
+                size="sm"
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage(currentPage + 1)}
               >
@@ -1000,6 +1226,7 @@ function TaskFormDialog({
   clients,
   leads,
   vehicles,
+  employees,
   actor,
   isAdmin,
 }: {
@@ -1009,13 +1236,16 @@ function TaskFormDialog({
   clients: RegistryRecord[];
   leads: RegistryRecord[];
   vehicles: any[];
+  employees: any[];
   actor: string;
   isAdmin: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [description, setDescription] = useState("");
-  const [assignee, setAssignee] = useState<string>(STAFF_USERS[0]?.username ?? "");
+  const [assignee, setAssignee] = useState<string>("");
+  const [assignedEmployeeId, setAssignedEmployeeId] = useState("");
+  const [assignedEmployeeName, setAssignedEmployeeName] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [status, setStatus] = useState<TaskStatus>("Assigned");
   const [associationType, setAssociationType] = useState<AssociationType>("client");
@@ -1047,6 +1277,8 @@ function TaskFormDialog({
       setServiceName(editing.serviceName ?? "");
       setDescription(editing.description ?? "");
       setAssignee(editing.assignee);
+      setAssignedEmployeeId(editing.assignedEmployeeId ?? "");
+      setAssignedEmployeeName(editing.assignedEmployeeName ?? "");
       setPriority(editing.priority);
       setStatus(editing.status);
       setAssociationType(editing.associationType);
@@ -1066,7 +1298,10 @@ function TaskFormDialog({
       setTitle("");
       setServiceName("");
       setDescription("");
-      setAssignee(STAFF_USERS[0]?.username ?? "");
+      const defaultEmp = employees[0];
+      setAssignee(defaultEmp?.id || defaultEmp?.username || STAFF_USERS[0]?.username || "");
+      setAssignedEmployeeId(defaultEmp?.id || defaultEmp?.employeeId || "");
+      setAssignedEmployeeName(defaultEmp?.fullName || defaultEmp?.username || "");
       setPriority("Medium");
       setStatus("Assigned");
       setAssociationType("client");
@@ -1078,7 +1313,7 @@ function TaskFormDialog({
       setReminderMinutes("0");
       setChecklist([]);
     }
-  }, [open, editing]);
+  }, [open, editing, employees]);
 
   // Handle service templates lookup
   const handleServiceSelect = (val: string) => {
@@ -1145,6 +1380,8 @@ function TaskFormDialog({
       const bucket: Bucket | undefined =
         associationType === "client" ? "clients" : associationType === "lead" ? "leads" : undefined;
       const rec = recordId || undefined;
+      const activeClientName = (associationType === "client" ? clients : associationType === "lead" ? leads : [])
+        .find(c => c.id === rec)?.name || "";
 
       if (editing) {
         await updateTask(
@@ -1163,6 +1400,11 @@ function TaskFormDialog({
             bucket,
             recordId: rec,
             vehicleId: vehicleId || undefined,
+            assignedEmployeeId,
+            assignedEmployeeName,
+            clientName: activeClientName,
+            serviceType: serviceName.trim(),
+            remarks: description,
           },
           actor,
           "Task edited",
@@ -1183,6 +1425,12 @@ function TaskFormDialog({
           vehicleId: vehicleId || undefined,
           createdBy: actor,
           subtasks: checklist,
+          assignedEmployeeId,
+          assignedEmployeeName,
+          clientId: rec,
+          clientName: activeClientName,
+          serviceType: serviceName.trim(),
+          remarks: description,
         });
       }
       onClose();
@@ -1369,14 +1617,21 @@ function TaskFormDialog({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-3">
             <div className="grid gap-1.5">
               <Label>Assignee *</Label>
-              <Select value={assignee} onValueChange={setAssignee} disabled={!isAdmin}>
+              <Select value={assignee} onValueChange={(val) => {
+                setAssignee(val);
+                const emp = employees.find(e => e.id === val || e.username === val || e.fullName === val);
+                if (emp) {
+                  setAssignedEmployeeId(emp.id || emp.employeeId || "");
+                  setAssignedEmployeeName(emp.fullName || emp.username || "");
+                }
+              }} disabled={!isAdmin}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select assignee..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {STAFF_USERS.map((s) => (
-                    <SelectItem key={s.username} value={s.username}>
-                      {s.name}
+                  {employees.map((s) => (
+                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
+                      {s.fullName || s.name || s.username}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1620,12 +1875,21 @@ function TaskDetailsSheet({
                   ))}
                 </SelectContent>
               </Select>
-              {isAdmin && (
-                <Button variant="outline" size="sm" onClick={() => onEdit(task)}>
-                  <Pencil className="size-4 mr-1" />
-                  Edit
-                </Button>
-              )}
+              {(() => {
+                const isAssigned = isTaskAssignedToUser(task, {
+                  uid: actor,
+                  employeeId: actor,
+                  username: actor,
+                  name: actor,
+                });
+                const canEdit = isAdmin || isAssigned;
+                return canEdit && (
+                  <Button variant="outline" size="sm" onClick={() => onEdit(task)}>
+                    <Pencil className="size-4 mr-1" />
+                    Edit
+                  </Button>
+                );
+              })()}
             </div>
 
             {isAdmin && <ReassignmentSection task={task} actor={actor} />}
@@ -1675,21 +1939,8 @@ function TaskDetailsSheet({
             </dl>
           </Section>
 
-          {linked && (
-            <Section title={`Linked ${task.bucket === "leads" ? "lead" : "client"}`}>
-              <div className="rounded-lg border p-3 text-sm space-y-1 bg-muted/30">
-                <div className="font-medium">{linked.name || "—"}</div>
-                {linkedVehicle && (
-                  <div className="font-semibold text-slate-700">
-                    Vehicle: {linkedVehicle.vehicleNumber} ({linkedVehicle.makeModel || "—"})
-                  </div>
-                )}
-                <div className="text-muted-foreground">Work: {linked.work || "—"}</div>
-                <div className="text-muted-foreground">
-                  Mobile: {linked.mo || "—"} • Status: {linked.status}
-                </div>
-              </div>
-            </Section>
+          {task.recordId && (
+            <ClientRelationshipPanel clientId={task.recordId} />
           )}
 
           <Section title="Attachments">
@@ -1820,14 +2071,14 @@ function TaskDetailsSheet({
                 ? (task.activityLogs ?? []).map((log) => (
                     <li key={log.id} className="text-sm">
                       <span className="absolute -left-1.5 mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
-                      <div className="font-medium">{log.message}</div>
-                      {log.before !== undefined && log.after !== undefined && (
+                      <div className="font-medium">{log.action}</div>
+                      {log.field && (log.oldValue !== undefined || log.newValue !== undefined) && (
                         <div className="text-xs text-muted-foreground">
-                          {log.before} → {log.after}
+                          {log.field}: {log.oldValue || "—"} → {log.newValue || "—"}
                         </div>
                       )}
                       <div className="text-xs text-muted-foreground">
-                        {staffLabel(log.actor) || log.actor} • {new Date(log.at).toLocaleString()}
+                        {staffLabel(log.actor) || log.actor} • {new Date(log.timestamp).toLocaleString()}
                       </div>
                     </li>
                   ))
@@ -1867,6 +2118,14 @@ function Meta({ label, value }: { label: string; value: string }) {
 }
 
 function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
+  const [employees, setEmployees] = useState<any[]>([]);
+
+  useEffect(() => {
+    return onSnapshot(collection(db, "users"), (snap: any) => {
+      setEmployees(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+    });
+  }, []);
+
   return (
     <div className="flex items-center gap-2 border bg-slate-50 p-2.5 rounded-lg max-w-sm">
       <Users className="size-4 text-muted-foreground shrink-0" />
@@ -1876,9 +2135,9 @@ function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {STAFF_USERS.map((s) => (
-            <SelectItem key={s.username} value={s.username} className="text-xs">
-              {s.name}
+          {employees.map((s) => (
+            <SelectItem key={s.id || s.username} value={s.id || s.username} className="text-xs">
+              {s.fullName || s.name || s.username}
             </SelectItem>
           ))}
         </SelectContent>
@@ -1888,6 +2147,14 @@ function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
 }
 
 function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
+  const [employees, setEmployees] = useState<any[]>([]);
+
+  useEffect(() => {
+    return onSnapshot(collection(db, "users"), (snap: any) => {
+      setEmployees(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+    });
+  }, []);
+
   const calculateProgress = (subs: any[]) => {
     if (!subs.length) return 0;
     const comp = subs.filter((s) => s.completed).length;
@@ -2252,9 +2519,9 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Unassigned</SelectItem>
-                  {STAFF_USERS.map((s) => (
-                    <SelectItem key={s.username} value={s.username}>
-                      {s.name}
+                  {employees.map((s) => (
+                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
+                      {s.fullName || s.name || s.username}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2312,9 +2579,9 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {STAFF_USERS.map((s) => (
-                      <SelectItem key={s.username} value={s.username}>
-                        {s.name}
+                    {employees.map((s) => (
+                      <SelectItem key={s.id || s.username} value={s.id || s.username}>
+                        {s.fullName || s.name || s.username}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2381,5 +2648,201 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
         </Dialog>
       )}
     </Section>
+  );
+}
+
+function ClientRelationshipPanel({ clientId }: { clientId: string }) {
+  const [client, setClient] = useState<any>(null);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [activity, setActivity] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!clientId) return;
+    setLoading(true);
+
+    const unsubClient = onSnapshot(doc(db, "registry_clients_v2", clientId), (snap: any) => {
+      if (snap.exists()) {
+        setClient({ id: snap.id, ...snap.data() });
+      }
+    });
+
+    const unsubVehicles = onSnapshot(
+      query(collection(db, "registry_vehicles_v2"), where("clientId", "==", clientId)),
+      (snap: any) => {
+        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        setVehicles(list);
+      }
+    );
+
+    const unsubServices = onSnapshot(
+      collection(db, "registry_services_v2"),
+      (snap: any) => {
+        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        setServices(list);
+      }
+    );
+
+    const unsubInvoices = onSnapshot(
+      query(collection(db, "billing_invoices"), where("clientId", "==", clientId)),
+      (snap: any) => {
+        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        setInvoices(list);
+      }
+    );
+
+    const unsubDocs = onSnapshot(
+      query(collection(db, "registry_customer_docs"), where("customerId", "==", clientId)),
+      (snap: any) => {
+        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        setDocuments(list);
+      }
+    );
+
+    const unsubActivity = onSnapshot(
+      query(collection(db, "client_activity_logs"), where("clientId", "==", clientId)),
+      (snap: any) => {
+        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        setActivity(list.sort((a: any, b: any) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()));
+      }
+    );
+
+    setLoading(false);
+
+    return () => {
+      unsubClient();
+      unsubVehicles();
+      unsubServices();
+      unsubInvoices();
+      unsubDocs();
+      unsubActivity();
+    };
+  }, [clientId]);
+
+  if (loading) return <div className="text-sm text-muted-foreground p-3 border rounded-lg bg-muted/20">Loading client relationships...</div>;
+  if (!client) return <div className="text-sm text-muted-foreground p-3 border rounded-lg bg-muted/20">No linked client details found.</div>;
+
+  // Filter services that belong to client's vehicles
+  const vehicleIds = vehicles.map((v) => v.id);
+  const clientServices = services.filter((s) => vehicleIds.includes(s.vehicleId));
+
+  // Calculate outstanding amount
+  const outstandingAmount = invoices.reduce((sum, inv) => sum + ((inv.totalAmount || 0) - (inv.totalPaid || 0)), 0);
+
+  return (
+    <div className="space-y-4 border-t pt-4">
+      <h4 className="text-xs uppercase font-bold text-gray-500 tracking-wide">Client Relationship Profile</h4>
+      
+      {/* Client Meta */}
+      <div className="bg-muted/40 p-3 rounded-lg border text-sm space-y-1.5">
+        <div><strong>Name:</strong> {client.name}</div>
+        <div><strong>Mobile:</strong> {client.mobile || "—"}</div>
+        {client.email && <div><strong>Email:</strong> {client.email}</div>}
+        {client.address && <div><strong>Address:</strong> {client.address}</div>}
+        {client.companyName && <div><strong>Company:</strong> {client.companyName}</div>}
+        {client.gstNumber && <div><strong>GST:</strong> {client.gstNumber}</div>}
+        {outstandingAmount > 0 && (
+          <div className="text-rose-600 font-semibold mt-1">
+            Outstanding Balance: ₹{outstandingAmount.toLocaleString("en-IN")}
+          </div>
+        )}
+      </div>
+
+      {/* Vehicles */}
+      {vehicles.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-muted-foreground uppercase">Vehicles ({vehicles.length})</span>
+          <div className="grid grid-cols-1 gap-2">
+            {vehicles.map((v) => (
+              <div key={v.id} className="bg-white border rounded p-2 text-xs">
+                <div className="font-semibold text-primary">{v.vehicleNumber} ({v.vehicleType || "Commercial"})</div>
+                {v.chassisNumber && <div>Chassis: {v.chassisNumber}</div>}
+                {v.engineNumber && <div>Engine: {v.engineNumber}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Services */}
+      {clientServices.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-muted-foreground uppercase">Active Services ({clientServices.length})</span>
+          <div className="grid grid-cols-1 gap-2">
+            {clientServices.map((s) => (
+              <div key={s.id} className="bg-white border rounded p-2 text-xs flex justify-between items-center">
+                <div>
+                  <div className="font-semibold">{s.serviceType}</div>
+                  <div className="text-muted-foreground">Due: {s.dueDate || "—"}</div>
+                </div>
+                <Badge variant="outline">{s.taskStatus}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Invoices */}
+      {invoices.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-muted-foreground uppercase">Invoices ({invoices.length})</span>
+          <div className="grid grid-cols-1 gap-2">
+            {invoices.map((inv) => (
+              <div key={inv.id} className="bg-white border rounded p-2 text-xs flex justify-between items-center">
+                <div>
+                  <div className="font-semibold">{inv.invoiceNumber}</div>
+                  <div className="text-muted-foreground">Date: {inv.invoiceDate || "—"}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">₹{inv.totalAmount}</div>
+                  <Badge variant="outline" className={inv.status === "Paid" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+                    {inv.status}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Documents */}
+      {documents.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-muted-foreground uppercase">Client Documents ({documents.length})</span>
+          <div className="grid grid-cols-1 gap-1">
+            {documents.map((doc) => (
+              <a
+                key={doc.id}
+                href={doc.downloadURL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 p-1.5 bg-white border rounded text-xs text-primary hover:underline"
+              >
+                <Paperclip className="size-3.5" />
+                <span className="truncate">{doc.name} ({doc.type})</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Activity */}
+      {activity.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-muted-foreground uppercase">Recent Activity</span>
+          <div className="bg-white border rounded p-2 text-[11px] max-h-36 overflow-y-auto space-y-1">
+            {activity.slice(0, 5).map((act) => (
+              <div key={act.id} className="border-b last:border-0 pb-1">
+                <span className="font-semibold">{act.performedBy}:</span> {act.action} {act.fieldName && `(${act.fieldName})`}
+                <div className="text-[10px] text-muted-foreground">{new Date(act.performedAt).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -51,6 +51,7 @@ import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, getDoc, 
 import { db } from "@/lib/firebase";
 import { InvoiceViewer } from "@/components/InvoiceViewer";
 import { generateInvoicePDF } from "@/lib/pdfGenerator";
+import { subscribeAllClients, subscribeAllVehicles, subscribeAllServices, type Service } from "@/lib/hierarchy";
 
 export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingDashboardPage,
@@ -61,9 +62,9 @@ function AccountingDashboardPage() {
   const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
   const [paymentEntries, setPaymentEntries] = useState<PaymentHistoryItem[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [clients, setClients] = useState<RegistryRecord[]>([]);
-  const [leads, setLeads] = useState<RegistryRecord[]>([]);
-  const [customers, setCustomers] = useState<RegistryRecord[]>([]);
+  const [v2Clients, setV2Clients] = useState<any[]>([]);
+  const [v2Vehicles, setV2Vehicles] = useState<any[]>([]);
+  const [v2Services, setV2Services] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Search & Filter state
@@ -125,17 +126,17 @@ function AccountingDashboardPage() {
     const unsubInvoices = subscribeToAllInvoices((list) => {
       setInvoices(list);
     });
-    const unsubClients = subscribeToRecords("clients", setClients);
-    const unsubLeads = subscribeToRecords("leads", setLeads);
-    const unsubCustomers = subscribeToRecords("customers", setCustomers);
+    const unsubClients = subscribeAllClients(setV2Clients);
+    const unsubVehicles = subscribeAllVehicles(setV2Vehicles);
+    const unsubServices = subscribeAllServices(setV2Services);
 
     return () => {
       unsubFinance();
       unsubPayments();
       unsubInvoices();
       unsubClients();
-      unsubLeads();
-      unsubCustomers();
+      unsubVehicles();
+      unsubServices();
     };
   }, []);
 
@@ -147,8 +148,18 @@ function AccountingDashboardPage() {
   }, [invoices]);
 
   const allClientsList = useMemo(() => {
-    return [...clients, ...leads, ...customers];
-  }, [clients, leads, customers]);
+    return v2Clients.map((c) => {
+      const clientVehicles = v2Vehicles.filter((v) => v.clientId === c.id);
+      const vehicleNum = clientVehicles.map((v) => v.vehicleNumber).join(", ") || "—";
+      return {
+        id: c.id,
+        name: c.name,
+        mo: c.mobile || "",
+        mvNo: vehicleNum,
+        serviceType: c.type === "lead" ? "Lead" : "Client",
+      };
+    });
+  }, [v2Clients, v2Vehicles]);
 
   const clientDetailsMap = useMemo(() => {
     const map = new Map<string, { mobile: string; vehicleNo: string; name: string }>();
@@ -383,18 +394,17 @@ function AccountingDashboardPage() {
   // Metrics
   const metrics = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
-    const totalReceivable = financeRecords.reduce((sum, r) => sum + r.invoiceAmount, 0);
-    const totalReceived = financeRecords.reduce((sum, r) => sum + r.receivedAmount, 0) + 
-      paymentEntries.filter((p) => p.invoiceId === "non-invoiced").reduce((sum, p) => sum + p.amount, 0);
-    const outstandingAmount = financeRecords.reduce((sum, r) => sum + r.balanceAmount, 0);
+    const totalReceivable = v2Services.reduce((sum, s) => sum + (s.serviceAmount || 0), 0);
+    const totalReceived = v2Services.reduce((sum, s) => sum + (s.amountReceived || 0), 0);
+    const outstandingAmount = v2Services.reduce((sum, s) => sum + (s.pendingAmount || 0), 0);
 
-    const todayCollections = financeRecords
-      .filter((r) => r.collectionDate === todayStr && r.balanceAmount > 0)
-      .reduce((sum, r) => sum + r.balanceAmount, 0);
+    const todayCollections = v2Services
+      .filter((s) => s.dueDate === todayStr && (s.pendingAmount || 0) > 0)
+      .reduce((sum, s) => sum + (s.pendingAmount || 0), 0);
 
-    const overdueCollections = financeRecords
-      .filter((r) => r.collectionDate && r.collectionDate < todayStr && r.balanceAmount > 0)
-      .reduce((sum, r) => sum + r.balanceAmount, 0);
+    const overdueCollections = v2Services
+      .filter((s) => s.dueDate && s.dueDate < todayStr && (s.pendingAmount || 0) > 0)
+      .reduce((sum, s) => sum + (s.pendingAmount || 0), 0);
 
     return {
       totalReceivable,
@@ -403,7 +413,7 @@ function AccountingDashboardPage() {
       todayCollections,
       overdueCollections,
     };
-  }, [financeRecords, paymentEntries]);
+  }, [v2Services]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {

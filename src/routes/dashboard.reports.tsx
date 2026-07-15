@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { subscribeToRecords, type RegistryRecord, type Bucket } from "@/lib/records";
+import { subscribeAllClients } from "@/lib/hierarchy";
+import { type RegistryRecord, type Bucket } from "@/lib/records";
 
 export const Route = createFileRoute("/dashboard/reports")({ component: ReportsPage });
 
@@ -14,12 +15,24 @@ function ReportsPage() {
   });
 
   useEffect(() => {
-    const u1 = subscribeToRecords("clients", (r) => setData((d) => ({ ...d, clients: r })));
-    const u2 = subscribeToRecords("leads", (r) => setData((d) => ({ ...d, leads: r })));
-    return () => {
-      u1();
-      u2();
-    };
+    const unsub = subscribeAllClients((items) => {
+      const clientsMapped = items.filter((c) => c.type === "client").map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: "In Progress",
+      }));
+      const leadsMapped = items.filter((c) => c.type === "lead").map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: "In Progress",
+      }));
+      setData({
+        clients: clientsMapped as any,
+        leads: leadsMapped as any,
+        customers: [],
+      });
+    });
+    return unsub;
   }, []);
 
   const all = BUCKETS.flatMap((b) => data[b]);

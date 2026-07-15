@@ -32,6 +32,7 @@ export interface CustomerAttachment {
   size: number;
   storagePath: string; // Firebase Storage path
   downloadUrl: string;
+  downloadURL?: string; // Support both cases
   uploadedAt: string;
   uploadedBy: string;
 }
@@ -46,41 +47,107 @@ export interface CustomerProfile {
   attachments?: CustomerAttachment[];
 }
 
-// ─── Firestore helpers ────────────────────────────────────────────────────────
+import { subscribeAllClients, subscribeAllVehicles, deleteClient, saveClient } from "./hierarchy";
+import { subscribeToAllDocs } from "./customerDocs";
 
-const COL = "registry_customers";
-
-/** Subscribe to live customer profile updates. Returns unsubscribe function. */
+/** Subscribe to live customer profile updates from V2 collections. */
 export function subscribeToCustomers(
   cb: (customers: CustomerProfile[]) => void,
   errorCb?: (error: unknown) => void,
 ): () => void {
-  const q = query(collection(db, COL), orderBy("name"));
-  return onSnapshot(
-    q,
-    (snap) => {
-      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CustomerProfile));
-    },
-    (error) => {
-      console.error("[subscribeToCustomers] Firestore error:", error);
-      if (errorCb) {
-        errorCb(error);
-      }
-      cb([]);
-    },
-  );
+  let clientsList: any[] = [];
+  let vehiclesList: any[] = [];
+  let docsList: any[] = [];
+  let clientsReady = false;
+  let vehiclesReady = false;
+  let docsReady = false;
+
+  const checkAndUpdate = () => {
+    if (clientsReady && vehiclesReady && docsReady) {
+      const profiles: CustomerProfile[] = clientsList.map((client) => {
+        const clientVehicles = vehiclesList
+          .filter((v) => v.clientId === client.id)
+          .map((v) => ({
+            id: v.id,
+            mvNo: v.vehicleNumber,
+            work: "",
+            insurance: "",
+            fitness: "",
+            tax: "",
+            status: v.status || "Pending",
+          }));
+        
+        const clientDocs = docsList
+          .filter((d) => d.customerId === client.id && d.type === "Attachment")
+          .map((d) => ({
+            id: d.id,
+            name: d.name,
+            type: d.mimeType || "unknown",
+            size: d.fileSize || 0,
+            storagePath: d.storagePath || "",
+            downloadUrl: d.downloadURL || "",
+            downloadURL: d.downloadURL || "",
+            uploadedAt: d.addedAt || "",
+            uploadedBy: d.uploadedBy || "system",
+          }));
+
+        return {
+          id: client.id,
+          name: client.name,
+          address: client.address || "",
+          mobile: client.mobile || "",
+          email: client.email || "",
+          vehicles: clientVehicles,
+          attachments: clientDocs,
+        };
+      });
+      cb(profiles);
+    }
+  };
+
+  const unsubClients = subscribeAllClients((clients) => {
+    clientsList = clients;
+    clientsReady = true;
+    checkAndUpdate();
+  }, errorCb);
+
+  const unsubVehicles = subscribeAllVehicles((vehicles) => {
+    vehiclesList = vehicles;
+    vehiclesReady = true;
+    checkAndUpdate();
+  });
+
+  const unsubDocs = subscribeToAllDocs((docs) => {
+    docsList = docs;
+    docsReady = true;
+    checkAndUpdate();
+  });
+
+  return () => {
+    unsubClients();
+    unsubVehicles();
+    unsubDocs();
+  };
 }
 
 /** Upsert a customer profile. */
 export async function saveCustomerProfile(profile: CustomerProfile): Promise<void> {
-  const { id, ...data } = profile;
-  const cleanedData = removeUndefined(data);
-  await setDoc(doc(db, COL, id), cleanedData, { merge: true });
+  const { id, name, address, mobile, email } = profile;
+  await saveClient({
+    id,
+    name,
+    address,
+    mobile,
+    companyName: "",
+    gstNumber: "",
+    notes: "",
+    type: "client",
+  });
 }
 
 /** Delete a customer profile. */
 export async function deleteCustomerProfile(id: string): Promise<void> {
-  await deleteDoc(doc(db, COL, id));
+  await deleteClient(id);
 }
 
 /** Add an attachment to a customer profile. */
@@ -92,37 +159,27 @@ export async function addAttachment(
     customerId,
     attachmentId: attachment.id,
     attachmentName: attachment.name,
-    attachmentSize: attachment.size,
-    attachmentType: attachment.type,
-    storagePath: attachment.storagePath,
-    hasDownloadUrl: !!attachment.downloadUrl,
-    documentRef: `registry_customers/${customerId}`,
   });
 
-  // Validate attachment object doesn't contain problematic values
-  if (attachment.downloadUrl && typeof attachment.downloadUrl !== "string") {
-    throw new Error(`[addAttachment] Invalid downloadUrl type: ${typeof attachment.downloadUrl}`);
-  }
-  if (typeof attachment.size !== "number") {
-    throw new Error(`[addAttachment] Invalid size type: ${typeof attachment.size}`);
-  }
-
   try {
-    await updateDoc(doc(db, COL, customerId), {
-      attachments: arrayUnion(removeUndefined(attachment)),
+    const docRef = doc(db, "registry_customer_docs", attachment.id);
+    await setDoc(docRef, {
+      customerId,
+      name: attachment.name,
+      type: "Attachment",
+      addedAt: attachment.uploadedAt,
+      storagePath: attachment.storagePath,
+      downloadURL: attachment.downloadUrl,
+      mimeType: attachment.type,
+      fileSize: attachment.size,
+      uploadedBy: attachment.uploadedBy,
     });
     console.log("[addAttachment] FIRESTORE_UPDATE_SUCCESS:", {
       customerId,
       attachmentId: attachment.id,
     });
   } catch (error) {
-    console.error("[addAttachment] FIRESTORE_UPDATE_FAILED:", {
-      customerId,
-      attachmentId: attachment.id,
-      errorCode: (error as any)?.code,
-      errorMessage: (error as any)?.message,
-      fullError: error,
-    });
+    console.error("[addAttachment] FIRESTORE_UPDATE_FAILED:", error);
     throw error;
   }
 }

@@ -107,7 +107,19 @@ export function initAuth(onChange: (user: StaffUser | null) => void): () => void
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-      _session = snap.exists() ? ({ uid: firebaseUser.uid, ...snap.data() } as StaffUser) : null;
+      if (snap.exists()) {
+        const data = snap.data();
+        _session = {
+          uid: firebaseUser.uid,
+          username: data.username,
+          name: data.fullName || data.name || data.username || "",
+          role: data.role,
+          employeeId: data.employeeId,
+          ...data
+        } as StaffUser;
+      } else {
+        _session = null;
+      }
     } else {
       _session = null;
     }
@@ -175,7 +187,14 @@ export async function login(username: string, password: string): Promise<StaffUs
     // Fallback for any other disabled state
     throw new Error('Account disabled');
   }
-  _session = { uid: cred.user.uid, ...profile } as StaffUser;
+  _session = {
+    uid: cred.user.uid,
+    username: profile.username,
+    name: profile.fullName || profile.name || profile.username || "",
+    role: profile.role,
+    employeeId: profile.employeeId,
+    ...profile
+  } as StaffUser;
   try {
     localStorage.setItem(
       "rp_session",
