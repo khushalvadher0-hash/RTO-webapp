@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { getSession } from "@/lib/auth";
+import { collection, onSnapshot, query } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import {
   subscribeToRecords,
   SERVICE_TYPES,
@@ -44,30 +46,159 @@ function Overview() {
   const [clients, setClients] = useState<RegistryRecord[]>([]);
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
   const [customers, setCustomers] = useState<RegistryRecord[]>([]);
-  const [totalRevenue, setTotalRevenue] = useState(0);
-  const [activeServices, setActiveServices] = useState(0);
-  const [revenueByService, setRevenueByService] = useState<{ service: string; revenue: number }[]>(
-    [],
-  );
-  const [upcomingRenewals, setUpcomingRenewals] = useState<RegistryRecord[]>([]);
   const [allPayments, setAllPayments] = useState<ClientPayment[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [targets, setTargets] = useState<TargetMetrics[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{ type: string } | null>(null);
-  const [billingMetrics, setBillingMetrics] = useState({
-    totalInvoiced: 0,
-    totalCollected: 0,
-    outstandingAmount: 0,
-    invoicesThisMonth: 0,
-    pendingInvoices: 0,
-    overdueInvoices: 0,
-    collectionRate: 0,
-  });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [collectionCategory, setCollectionCategory] = useState<
     "today" | "7days" | "15days" | "30days" | "overdue"
   >("7days");
+
+  const totalRevenue = useMemo(() => {
+    return services.reduce((sum, s: any) => sum + (s.serviceAmount || 0), 0);
+  }, [services]);
+
+  const activeServices = useMemo(() => {
+    const activeStatuses = ["In Progress", "Documents Collected", "Verification", "Submitted", "Approved", "Active"];
+    return services.filter((s: any) => activeStatuses.includes(s.taskStatus)).length;
+  }, [services]);
+
+  const revenueByService = useMemo(() => {
+    const serviceTypes = [
+      "Insurance",
+      "Fitness",
+      "Gujarat Permit",
+      "National Permit",
+      "Tax",
+      "PUC",
+      "License New",
+      "License Renew",
+      "RC Transfer",
+      "HP Addition",
+      "HP Termination",
+    ];
+
+    const result = serviceTypes.map((type) => {
+      const rev = services
+        .filter((s: any) => s.serviceType === type)
+        .reduce((sum, s: any) => sum + (s.serviceAmount || 0), 0);
+      return { service: type, revenue: rev };
+    });
+
+    return result.filter((r) => r.revenue > 0);
+  }, [services]);
+
+  const upcomingRenewals = useMemo(() => {
+    const now = new Date();
+
+    const vehiclesMap = new Map<string, any>(vehicles.map(v => [v.id, v]));
+    const clientsMap = new Map<string, any>([...clients, ...leads].map(c => [c.id, c]));
+
+    const records: any[] = [];
+    services.forEach((s: any) => {
+      if (!s.dueDate) return;
+      const dueDate = new Date(s.dueDate);
+      if (isNaN(dueDate.getTime())) return;
+
+      const timeDiff = dueDate.getTime() - now.getTime();
+      const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+      if (daysRemaining >= 0 && daysRemaining <= 30) {
+        const vehicle = vehiclesMap.get(s.vehicleId);
+        if (!vehicle) return;
+        const client = clientsMap.get(vehicle.clientId);
+        if (!client) return;
+
+        let status = "Pending";
+        if (s.taskStatus === "Completed") status = "Completed";
+        else if (s.taskStatus === "On Hold") status = "On Hold";
+        else if (s.taskStatus !== "Not Started") status = "In Progress";
+
+        records.push({
+          id: client.id,
+          date: s.createdAt || client.createdAt || new Date().toISOString(),
+          mvNo: vehicle.vehicleNumber,
+          application: s.serviceType,
+          work: s.notes || "",
+          name: client.name,
+          status,
+          mo: client.mobile || "",
+          co: client.address || "",
+          groupName: client.companyName || "",
+          assignee: s.assignedStaff || "",
+          createdAt: s.createdAt || client.createdAt,
+          serviceType: s.serviceType,
+          serviceStatus: s.taskStatus,
+          serviceDueDate: s.dueDate,
+          type: client.type || "client",
+          services: [
+            {
+              serviceType: s.serviceType,
+              dueDate: s.dueDate || "",
+              status: s.taskStatus || "Pending",
+              price: s.serviceAmount ?? 0,
+              amountReceived: s.amountReceived ?? 0,
+              assignee: s.assignedStaff || "",
+            }
+          ]
+        });
+      }
+    });
+
+    return Array.from(new Map(records.map(r => [r.id, r])).values());
+  }, [services, vehicles, clients, leads]);
+
+  const billingMetrics = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getUTCMonth();
+    const currentYear = now.getUTCFullYear();
+
+    let totalInvoiced = 0;
+    let totalCollected = 0;
+    let invoicesThisMonth = 0;
+    let pendingCount = 0;
+    let overdueCount = 0;
+
+    for (const invoice of invoices) {
+      totalInvoiced += invoice.totalAmount || 0;
+      totalCollected += invoice.totalPaid || 0;
+
+      const invoiceDate = invoice.invoiceDate ? new Date(invoice.invoiceDate) : null;
+      if (
+        invoiceDate &&
+        invoiceDate.getUTCMonth() === currentMonth &&
+        invoiceDate.getUTCFullYear() === currentYear
+      ) {
+        invoicesThisMonth += 1;
+      }
+
+      if (invoice.status === "Pending" || invoice.status === "Partially Paid") {
+        pendingCount += 1;
+        const endDate = invoice.billingPeriodEnd ? new Date(invoice.billingPeriodEnd) : null;
+        if (endDate && endDate.getTime() < now.getTime()) {
+          overdueCount += 1;
+        }
+      }
+    }
+
+    const outstandingAmount = Math.max(0, totalInvoiced - totalCollected);
+    const collectionRate = totalInvoiced > 0 ? (totalCollected / totalInvoiced) * 100 : 0;
+
+    return {
+      totalInvoiced,
+      totalCollected,
+      outstandingAmount,
+      invoicesThisMonth,
+      pendingInvoices: pendingCount,
+      overdueInvoices: overdueCount,
+      collectionRate,
+    };
+  }, [invoices]);
 
   const categorizedCollections = useMemo(() => {
     const today: any[] = [];
@@ -134,13 +265,39 @@ function Overview() {
   }, [categorizedCollections, collectionCategory]);
 
   useEffect(() => {
+    let clientsLoaded = false;
+    let tasksLoaded = false;
+    let targetsLoaded = false;
+    let invoicesLoaded = false;
+    let vehiclesLoaded = false;
+    let servicesLoaded = false;
+    let employeesLoaded = false;
+    let paymentsLoaded = false;
+
+    const checkLoaded = () => {
+      if (
+        clientsLoaded &&
+        tasksLoaded &&
+        targetsLoaded &&
+        invoicesLoaded &&
+        vehiclesLoaded &&
+        servicesLoaded &&
+        employeesLoaded &&
+        paymentsLoaded
+      ) {
+        setLoading(false);
+      }
+    };
+
     const u1 = subscribeAllClients((items) => {
       const parsedClients = items.filter((c) => c.type === "client").map((c) => ({
+        ...c,
         id: c.id,
         name: c.name,
         status: "In Progress",
       }));
       const parsedLeads = items.filter((c) => c.type === "lead").map((c) => ({
+        ...c,
         id: c.id,
         name: c.name,
         status: "In Progress",
@@ -148,64 +305,65 @@ function Overview() {
       setClients(parsedClients as any);
       setLeads(parsedLeads as any);
       setCustomers([]);
+      clientsLoaded = true;
+      checkLoaded();
     });
-    const u4 = subscribeToTasks((allTasks) => setTasks(allTasks));
+
+    const u4 = subscribeToTasks((allTasks) => {
+      setTasks(allTasks);
+      tasksLoaded = true;
+      checkLoaded();
+    });
+
     const u5 = subscribeToTargets((allTargets) => {
       const enriched = allTargets.map((t) => calculateTargetMetrics(t));
       setTargets(enriched);
+      targetsLoaded = true;
+      checkLoaded();
     });
-    const u6 = subscribeToAllInvoices((data) => setInvoices(data));
+
+    const u6 = subscribeToAllInvoices((data) => {
+      setInvoices(data);
+      invoicesLoaded = true;
+      checkLoaded();
+    });
+
+    const { collection: firestoreCol, onSnapshot: firestoreOnSnapshot } = import.meta.env ? { collection, onSnapshot } : { collection: null, onSnapshot: null };
+    
+    const u7 = onSnapshot(collection(db, "registry_vehicles_v2"), (snap) => {
+      setVehicles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      vehiclesLoaded = true;
+      checkLoaded();
+    });
+
+    const u8 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
+      setServices(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      servicesLoaded = true;
+      checkLoaded();
+    });
+
+    const u9 = onSnapshot(collection(db, "users"), (snap) => {
+      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      employeesLoaded = true;
+      checkLoaded();
+    });
+
+    const u10 = subscribeToAllPayments((items) => {
+      setAllPayments(items);
+      paymentsLoaded = true;
+      checkLoaded();
+    });
+
     return () => {
       u1();
       u4();
       u5();
       u6();
+      u7();
+      u8();
+      u9();
+      u10();
     };
-  }, []);
-
-  useEffect(() => {
-    const unsub = subscribeToAllPayments((items) => {
-      setAllPayments(items);
-      const sum = items.reduce((s, p) => s + (p.amount || 0), 0);
-      setTotalRevenue(sum);
-    });
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    if (clients.length > 0) {
-      console.log("clients.length:", clients.length);
-      console.log("unique client ids count:", new Set(clients.map((c) => c.id)).size);
-    }
-  }, [clients]);
-
-  useEffect(() => {
-    const loadServiceData = async () => {
-      try {
-        const [revenue, active, byService, renewals, billing] = await Promise.all([
-          getTotalRevenue(),
-          getActiveServicesCount(),
-          getRevenueByService(),
-          getUpcomingRenewals(30),
-          calculateBillingMetrics(),
-        ]);
-
-        setTotalRevenue(revenue);
-        setActiveServices(active);
-        setRevenueByService(byService);
-        const uniqueRenewals = Array.from(
-          new Map(renewals.map((item) => [item.id, item])).values()
-        );
-        setUpcomingRenewals(uniqueRenewals);
-        setBillingMetrics(billing);
-      } catch (error) {
-        console.error("Error loading service data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadServiceData();
   }, []);
 
   // Compute follow-ups in real-time from all registry buckets

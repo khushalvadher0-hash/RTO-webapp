@@ -173,22 +173,13 @@ export function isTaskAssignedToUser(
 
   const uid = normalizeTaskIdentityValue(user.uid);
   const employeeId = normalizeTaskIdentityValue(user.employeeId);
-  const username = normalizeTaskIdentityValue(user.username);
-  const name = normalizeTaskIdentityValue(user.name);
 
   const assignedEmployeeId = normalizeTaskIdentityValue(task.assignedEmployeeId);
-  const assignedEmployeeName = normalizeTaskIdentityValue(task.assignedEmployeeName);
   const assignee = normalizeTaskIdentityValue(task.assignee);
 
   return (
-    assignedEmployeeId === uid ||
-    assignedEmployeeId === employeeId ||
-    assignedEmployeeName === username ||
-    assignedEmployeeName === name ||
-    assignee === uid ||
-    assignee === employeeId ||
-    assignee === username ||
-    assignee === name
+    (assignedEmployeeId !== "" && (assignedEmployeeId === employeeId || assignedEmployeeId === uid)) ||
+    (assignee !== "" && (assignee === employeeId || assignee === uid))
   );
 }
 
@@ -544,7 +535,7 @@ async function resolveAssigneeIdentity(input: string): Promise<{
     const resolvedName = data.fullName || data.name || data.username || normalized;
     return {
       assignee: resolvedName,
-      assignedEmployeeId: directUser.id,
+      assignedEmployeeId: data.employeeId || directUser.id,
       assignedEmployeeName: resolvedName,
     };
   }
@@ -560,7 +551,7 @@ async function resolveAssigneeIdentity(input: string): Promise<{
     const resolvedName = data.fullName || data.name || data.username || normalized;
     return {
       assignee: resolvedName,
-      assignedEmployeeId: match.id,
+      assignedEmployeeId: data.employeeId || match.id,
       assignedEmployeeName: resolvedName,
     };
   }

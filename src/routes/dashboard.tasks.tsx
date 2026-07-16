@@ -246,6 +246,8 @@ function TasksPage() {
         serviceName: s.serviceType || "",
         description: `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
         assignee: s.assignedTo || s.employeeId || s.assignee || "",
+        assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
+        assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
         status: (s.taskStatus === "Completed" ? "Completed" : s.taskStatus === "In Progress" ? "In Progress" : "Assigned") as TaskStatus,
         priority: "Medium" as TaskPriority,
         done: s.taskStatus === "Completed",
@@ -1500,9 +1502,9 @@ function TaskFormDialog({
               <Label>Assignee *</Label>
               <Select value={assignee} onValueChange={(val) => {
                 setAssignee(val);
-                const emp = employees.find(e => e.id === val || e.username === val || e.fullName === val);
+                const emp = employees.find(e => e.employeeId === val || e.id === val || e.username === val || e.fullName === val);
                 if (emp) {
-                  setAssignedEmployeeId(emp.id || emp.employeeId || "");
+                  setAssignedEmployeeId(emp.employeeId || emp.id || "");
                   setAssignedEmployeeName(emp.fullName || emp.username || "");
                 }
               }}>
@@ -1511,7 +1513,7 @@ function TaskFormDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map((s) => (
-                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
+                    <SelectItem key={s.id || s.username} value={s.employeeId || s.id || s.username}>
                       {s.fullName || s.name || s.username}
                     </SelectItem>
                   ))}
@@ -2005,13 +2007,13 @@ function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
     <div className="flex items-center gap-2 border bg-slate-50 p-2.5 rounded-lg max-w-sm">
       <Users className="size-4 text-muted-foreground shrink-0" />
       <div className="flex-1 text-xs font-semibold">Assignee</div>
-      <Select value={task.assignee} onValueChange={(v) => reassignTask(task.id, v, actor)}>
+      <Select value={task.assignedEmployeeId || task.assignee} onValueChange={(v) => reassignTask(task.id, v, actor)}>
         <SelectTrigger className="w-36 h-8 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {employees.map((s) => (
-            <SelectItem key={s.id || s.username} value={s.id || s.username} className="text-xs">
+            <SelectItem key={s.id || s.username} value={s.employeeId || s.id || s.username} className="text-xs">
               {s.fullName || s.name || s.username}
             </SelectItem>
           ))}

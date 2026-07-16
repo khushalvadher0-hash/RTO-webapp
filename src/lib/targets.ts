@@ -33,6 +33,13 @@ export interface Target {
   id: string;
   category: TargetCategory;
   target: number;
+  monthlyTarget?: number;
+  quarterlyTarget?: number;
+  yearlyTarget?: number;
+  startDate?: string;
+  endDate?: string;
+  color?: string;
+  status?: string;
   completed: number;
   lastUpdatedBy?: string;
   lastUpdatedAt?: string;
@@ -102,33 +109,41 @@ async function enrichTargetWithRealCount(target: Target): Promise<Target> {
  * Returns an unsubscribe function for cleanup.
  */
 export function subscribeToTargets(callback: (targets: TargetMetrics[]) => void): () => void {
-  const q = query(collection(db, TARGETS_COLLECTION));
+  let targetsList: Target[] = [];
+  let servicesList: any[] = [];
 
-  const unsub = onSnapshot(q, (snapshot) => {
-    // Get targets from Firestore
-    const firestoreTargets: Target[] = snapshot.docs.map((doc) => {
-      const data = doc.data() as Omit<Target, "id">;
-      return { ...data, id: doc.id };
+  const update = () => {
+    const enrichedTargets = targetsList.map((target) => {
+      const serviceType = categoryToServiceType(target.category);
+      const completedCount = servicesList.filter((s) => {
+        return s.serviceType === serviceType;
+      }).length;
+
+      return {
+        ...target,
+        completed: completedCount,
+      };
     });
 
-    // Enrich all targets with real completed counts
-    Promise.all(firestoreTargets.map(enrichTargetWithRealCount))
-      .then((enrichedTargets) => {
-        const metrics = enrichedTargets.map(calculateTargetMetrics);
-        // Sort by category for consistent display
-        metrics.sort((a, b) => a.category.localeCompare(b.category));
-        callback(metrics);
-      })
-      .catch((error) => {
-        console.error("[subscribeToTargets] Error enriching targets:", error);
-        // Fallback: use targets without real count enrichment
-        const metrics = firestoreTargets.map(calculateTargetMetrics);
-        metrics.sort((a, b) => a.category.localeCompare(b.category));
-        callback(metrics);
-      });
+    const metrics = enrichedTargets.map(calculateTargetMetrics);
+    metrics.sort((a, b) => a.category.localeCompare(b.category));
+    callback(metrics);
+  };
+
+  const unsubTargets = onSnapshot(query(collection(db, TARGETS_COLLECTION)), (snap) => {
+    targetsList = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as Target);
+    update();
   });
 
-  return unsub;
+  const unsubServices = onSnapshot(query(collection(db, "registry_services_v2")), (snap) => {
+    servicesList = snap.docs.map((d) => d.data());
+    update();
+  });
+
+  return () => {
+    unsubTargets();
+    unsubServices();
+  };
 }
 
 /**
@@ -158,28 +173,34 @@ export async function createOrInitializeTarget(
   category: TargetCategory,
   targetValue: number,
   actor: string,
+  extra?: Partial<Target>
 ): Promise<void> {
   const existing = await getTargetByCategory(category);
 
   if (existing) {
-    // Update existing
     const targetRef = doc(db, TARGETS_COLLECTION, existing.id);
     const activity = createActivity(
       actor,
-      "Created",
-      "target",
+      "Updated",
+      "target config",
       `${existing.target}`,
-      `${targetValue}`,
+      `${targetValue}`
     );
 
-    await updateDoc(targetRef, {
+    await updateDoc(targetRef, removeUndefined({
       target: targetValue,
+      monthlyTarget: extra?.monthlyTarget ?? targetValue,
+      quarterlyTarget: extra?.quarterlyTarget,
+      yearlyTarget: extra?.yearlyTarget,
+      startDate: extra?.startDate,
+      endDate: extra?.endDate,
+      color: extra?.color,
+      status: extra?.status,
       lastUpdatedBy: actor,
       lastUpdatedAt: new Date().toISOString(),
       activityLogs: arrayUnion(activity),
-    });
+    }));
   } else {
-    // Create new
     const targetRef = doc(collection(db, TARGETS_COLLECTION));
     const activity = createActivity(actor, "Created", "target", "0", `${targetValue}`);
 
@@ -188,11 +209,18 @@ export async function createOrInitializeTarget(
       removeUndefined({
         category,
         target: targetValue,
+        monthlyTarget: extra?.monthlyTarget ?? targetValue,
+        quarterlyTarget: extra?.quarterlyTarget,
+        yearlyTarget: extra?.yearlyTarget,
+        startDate: extra?.startDate,
+        endDate: extra?.endDate,
+        color: extra?.color,
+        status: extra?.status ?? "Active",
         completed: 0,
         lastUpdatedBy: actor,
         lastUpdatedAt: new Date().toISOString(),
         activityLogs: [activity],
-      } as Target),
+      } as Target)
     );
   }
 }
@@ -204,6 +232,7 @@ export async function updateTargetValue(
   id: string,
   newTarget: number,
   actor: string,
+  extra?: Partial<Target>
 ): Promise<void> {
   const targetRef = doc(db, TARGETS_COLLECTION, id);
   const snapshot = await getDoc(targetRef);
@@ -215,12 +244,19 @@ export async function updateTargetValue(
   const currentTarget = snapshot.data().target;
   const activity = createActivity(actor, "Updated", "target", `${currentTarget}`, `${newTarget}`);
 
-  await updateDoc(targetRef, {
+  await updateDoc(targetRef, removeUndefined({
     target: newTarget,
+    monthlyTarget: extra?.monthlyTarget ?? newTarget,
+    quarterlyTarget: extra?.quarterlyTarget,
+    yearlyTarget: extra?.yearlyTarget,
+    startDate: extra?.startDate,
+    endDate: extra?.endDate,
+    color: extra?.color,
+    status: extra?.status,
     lastUpdatedBy: actor,
     lastUpdatedAt: new Date().toISOString(),
     activityLogs: arrayUnion(activity),
-  });
+  }));
 }
 
 /**

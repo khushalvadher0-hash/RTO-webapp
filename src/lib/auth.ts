@@ -134,6 +134,7 @@ export function initAuth(onChange: (user: StaffUser | null) => void): () => void
             username: _session.username,
             name: _session.name,
             role: _session.role,
+            employeeId: _session.employeeId,
           }),
         );
       } else {
@@ -203,6 +204,7 @@ export async function login(username: string, password: string): Promise<StaffUs
         username: _session.username,
         name: _session.name,
         role: _session.role,
+        employeeId: _session.employeeId,
       }),
     );
   } catch {
