@@ -394,112 +394,6 @@ function TasksPage() {
     }
   };
 
-  const [testing, setTesting] = useState(false);
-
-  const runTaskDiagnostics = async () => {
-    setTesting(true);
-    toast.info("Starting System Diagnostics...");
-    try {
-      const { getDoc, doc } = await import("firebase/firestore");
-      const clientName = "TEST KHUSHAL " + crypto.randomUUID().slice(0, 5);
-      const clientId = "client_" + crypto.randomUUID().slice(0, 8);
-
-      // TEST 1: Create client
-      console.log("🧪 [TEST 1] Creating client:", clientName);
-      const { saveClient } = await import("@/lib/hierarchy");
-      await saveClient({
-        id: clientId,
-        name: clientName,
-        mobile: "9876543210",
-        type: "client",
-      } as any);
-      
-      toast.success("TEST 1: Client created successfully!");
-
-      // TEST 2: Create task linked to client
-      console.log("🧪 [TEST 2] Creating task...");
-      const taskInput = {
-        title: "Insurance Renewal for " + clientName,
-        serviceName: "Insurance",
-        description: "Test description",
-        assignee: session?.username || "admin",
-        priority: "High" as const,
-        status: "Assigned" as const,
-        associationType: "client" as const,
-        createdBy: session?.username || "diagnostic_runner",
-        assignedEmployeeId: session?.uid || "diagnostic_id",
-        assignedEmployeeName: session?.name || "Diagnostic Runner",
-        clientId: clientId,
-        clientName: clientName,
-        recordId: clientId,
-      };
-      const createdTask = await createManualTask(taskInput);
-      if (createdTask.clientName !== clientName) {
-        throw new Error(`TEST 2 FAIL: Stored clientName is ${createdTask.clientName}, expected ${clientName}`);
-      }
-      toast.success("TEST 2: Task linked to client correctly!");
-
-      // TEST 3: Generate Invoice
-      console.log("🧪 [TEST 3] Generating Invoice...");
-      const { createInvoice } = await import("@/lib/billing");
-      const inv = await createInvoice({
-        id: clientId,
-        name: clientName,
-        mo: "9876543210",
-      } as any, [{
-        serviceId: "srv_id",
-        serviceName: "Insurance",
-        quantity: 1,
-        unitPrice: 4560,
-        amount: 4560,
-        tax: 0,
-        total: 4560,
-      }], "2026-07-01", "2026-07-30", session?.username || "admin");
-
-      toast.success("TEST 3: Invoice generated for ₹4,560 successfully!");
-
-      // TEST 4: Record Payment
-      console.log("🧪 [TEST 4] Recording Payment...");
-      const { recordPaymentEntry } = await import("@/lib/financeService");
-      await recordPaymentEntry(inv.id, {
-        amount: 4000,
-        method: "UPI",
-        receivedBy: session?.username || "admin",
-        accountName: "ICICI Bank",
-        remarks: "Diagnostic payment",
-        paymentDate: new Date().toISOString().slice(0, 10),
-      });
-
-      const invDoc = await getDoc(doc(db, "billing_invoices", inv.id));
-      const invData = invDoc.data() as any;
-      if (invData.totalPaid !== 4000) {
-        throw new Error(`TEST 4 FAIL: Total paid is ${invData.totalPaid}, expected 4000`);
-      }
-      toast.success("TEST 4: Payment ₹4,000 recorded successfully!");
-
-      // TEST 5: Delete Client (Cascade Deletion)
-      console.log("🧪 [TEST 5] Deleting Client...");
-      const { deleteClient } = await import("@/lib/hierarchy");
-      await deleteClient(clientId);
-
-      const deletedClientSnap = await getDoc(doc(db, "registry_clients_v2", clientId));
-      const deletedTaskSnap = await getDoc(doc(db, "registry_tasks", createdTask.id));
-      const deletedInvoiceSnap = await getDoc(doc(db, "billing_invoices", inv.id));
-
-      if (deletedClientSnap.exists() || deletedTaskSnap.exists() || deletedInvoiceSnap.exists()) {
-        throw new Error("TEST 5 FAIL: Cascade deletion did not clean up all related records.");
-      }
-      toast.success("TEST 5: Client and all records cascade deleted successfully!");
-
-      toast.success("🏆 ALL DIAGNOSTIC TESTS PASSED!");
-    } catch (err: any) {
-      console.error("🧪 [TEST] Diagnostics failed:", err);
-      toast.error(`Diagnostics failed: ${err.message || err}`);
-    } finally {
-      setTesting(false);
-    }
-  };
-
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
     try {
       await updateTask(
@@ -530,9 +424,6 @@ function TasksPage() {
         </div>
         {isAdmin && (
           <div className="flex gap-2">
-            <Button variant="outline" onClick={runTaskDiagnostics} disabled={testing}>
-              {testing ? "Testing..." : "Run System Diagnostics"}
-            </Button>
             <Button onClick={openCreate}>
               <Plus className="size-4 mr-1" />
               Add task
