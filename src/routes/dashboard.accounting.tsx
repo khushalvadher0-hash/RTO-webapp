@@ -87,6 +87,7 @@ function AccountingDashboardPage() {
   const [payMethod, setPayMethod] = useState<any>("UPI");
   const [payAccount, setPayAccount] = useState<any>("ICICI Bank");
   const [payRemarks, setPayRemarks] = useState("");
+  const [payReference, setPayReference] = useState("");
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [savingPayment, setSavingPayment] = useState(false);
 
@@ -98,6 +99,7 @@ function AccountingDashboardPage() {
   const [pinDialogOpen, setPinDialogOpen] = useState(false);
   const [adminPin, setAdminPin] = useState("");
   const [paymentToDelete, setPaymentToDelete] = useState<PaymentHistoryItem | null>(null);
+  const [invoiceToDeleteId, setInvoiceToDeleteId] = useState<string | null>(null);
 
   // Approval state
   const [approvalRemarks, setApprovalRemarks] = useState("");
@@ -258,30 +260,112 @@ function AccountingDashboardPage() {
   }, [allClientsList, financeRecords, invoices, paymentEntries]);
 
   // Unique lists for filters
+  // Unique lists for filters
   const employees = useMemo(() => {
     const set = new Set<string>();
-    financeRecords.forEach((r) => r.assignedEmployee && set.add(r.assignedEmployee));
+    v2Services.forEach((s) => s.assignedStaff && set.add(s.assignedStaff));
+    v2Clients.forEach((c) => c.assignee && set.add(c.assignee));
     return Array.from(set);
-  }, [financeRecords]);
+  }, [v2Services, v2Clients]);
 
   const servicesList = useMemo(() => {
     const set = new Set<string>();
-    invoices.forEach((inv) => {
-      inv.services?.forEach((s) => s.serviceName && set.add(s.serviceName));
-    });
+    v2Services.forEach((s) => s.serviceType && set.add(s.serviceType));
     return Array.from(set);
-  }, [invoices]);
+  }, [v2Services]);
 
   // Filtered lists
+  const allAccountingRows = useMemo(() => {
+    const rows: any[] = [];
+    const clientsWithServices = new Set<string>();
+
+    v2Services.forEach((s) => {
+      const vehicle = v2Vehicles.find((v) => v.id === s.vehicleId);
+      const vehicleNum = vehicle?.vehicleNumber || "—";
+      const clientId = vehicle?.clientId || s.clientId || "";
+      if (clientId) {
+        clientsWithServices.add(clientId);
+      }
+
+      const client = v2Clients.find((c) => c.id === clientId);
+      const clientName = client?.name || s.clientName || "Unknown Client";
+      const clientMobile = client?.mobile || client?.mo || s.clientMobile || "";
+
+      const invoiceAmount = s.serviceAmount || 0;
+      const receivedAmount = s.amountReceived || 0;
+      const balanceAmount = Math.max(0, invoiceAmount - receivedAmount);
+      const paymentStatus = balanceAmount === 0 ? "Paid" : receivedAmount > 0 ? "Partially Paid" : "Pending";
+      const colDate = s.collectionDate || s.dueDate || "";
+
+      let daysOverdue = 0;
+      if (paymentStatus !== "Paid" && colDate) {
+        const due = new Date(colDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        if (today.getTime() > due.getTime()) {
+          daysOverdue = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+        }
+      }
+
+      rows.push({
+        id: s.id, // The service ID itself is the row ID
+        clientId: clientId,
+        clientName: clientName,
+        clientMobile: clientMobile,
+        vehicleNumber: vehicleNum,
+        invoiceId: s.invoiceId || s.id,
+        invoiceNumber: s.invoiceNumber || "Pending Invoice",
+        invoiceAmount: invoiceAmount,
+        receivedAmount: receivedAmount,
+        balanceAmount: balanceAmount,
+        collectionDate: colDate,
+        paymentStatus: paymentStatus,
+        askBhaylubha: !!s.askBhaylubha,
+        assignedEmployee: s.assignedStaff || client?.assignee || "—",
+        daysOverdue,
+        services: s.serviceType || "—",
+        hasInvoice: !!s.invoiceNumber,
+      });
+    });
+
+    // Add clients with no services as Pending Invoice fallback
+    v2Clients.forEach((c) => {
+      if (!clientsWithServices.has(c.id)) {
+        const clientVehicles = v2Vehicles.filter((v) => v.clientId === c.id);
+        const vehicleNum = c.mvNo || clientVehicles.map((v) => v.vehicleNumber).join(", ") || "—";
+        rows.push({
+          id: `no-service-${c.id}`,
+          clientId: c.id,
+          clientName: c.name || "Unknown Client",
+          clientMobile: c.mo || c.mobile || "",
+          vehicleNumber: vehicleNum,
+          invoiceId: "none",
+          invoiceNumber: "Pending Invoice",
+          invoiceAmount: 0,
+          receivedAmount: 0,
+          balanceAmount: 0,
+          collectionDate: "",
+          paymentStatus: "Pending Invoice",
+          askBhaylubha: false,
+          assignedEmployee: c.assignee || "—",
+          daysOverdue: 0,
+          services: "—",
+          hasInvoice: false,
+        });
+      }
+    });
+
+    return rows;
+  }, [v2Clients, v2Vehicles, v2Services]);
+
   const filteredRecords = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
-    return financeRecords.filter((r) => {
-      const inv = invoicesMap.get(r.invoiceId);
-      const cDetails = clientDetailsMap.get(r.clientId);
-
+    return allAccountingRows.filter((r) => {
       const term = searchTerm.toLowerCase();
-      const mobile = inv?.clientMobile || cDetails?.mobile || "";
-      const vehicle = inv?.vehicleNumber || cDetails?.vehicleNo || "";
+      const mobile = r.clientMobile || "";
+      const vehicle = r.vehicleNumber || "";
+      
       const matchesSearch =
         searchTerm === "" ||
         r.clientName.toLowerCase().includes(term) ||
@@ -293,16 +377,21 @@ function AccountingDashboardPage() {
       if (filterEmployee !== "all" && r.assignedEmployee !== filterEmployee) return false;
 
       if (filterService !== "all") {
-        const hasService = inv?.services?.some((s) => s.serviceName === filterService);
-        if (!hasService) return false;
+        if (!r.services || !r.services.toLowerCase().includes(filterService.toLowerCase())) return false;
       }
 
-      const isOverdue = r.paymentStatus !== "Paid" && r.collectionDate && r.collectionDate < todayStr;
       if (filterStatus !== "all") {
-        if (filterStatus === "Overdue" && !isOverdue) return false;
-        if (filterStatus === "Pending" && (r.paymentStatus !== "Pending" || isOverdue)) return false;
-        if (filterStatus === "Partially Paid" && (r.paymentStatus !== "Partially Paid" || isOverdue)) return false;
-        if (filterStatus === "Paid" && r.paymentStatus !== "Paid") return false;
+        if (filterStatus === "Overdue") {
+          if (r.paymentStatus === "Pending Invoice" || r.paymentStatus === "Paid") return false;
+          const isOverdue = r.collectionDate && r.collectionDate < todayStr;
+          if (!isOverdue) return false;
+        } else if (filterStatus === "Pending") {
+          if (r.paymentStatus !== "Pending") return false;
+        } else if (filterStatus === "Partially Paid") {
+          if (r.paymentStatus !== "Partially Paid") return false;
+        } else if (filterStatus === "Paid") {
+          if (r.paymentStatus !== "Paid") return false;
+        }
       }
 
       if (filterStartDate && r.collectionDate && r.collectionDate < filterStartDate) return false;
@@ -310,7 +399,7 @@ function AccountingDashboardPage() {
 
       return true;
     });
-  }, [financeRecords, invoicesMap, clientDetailsMap, searchTerm, filterEmployee, filterService, filterStatus, filterStartDate, filterEndDate]);
+  }, [allAccountingRows, searchTerm, filterEmployee, filterService, filterStatus, filterStartDate, filterEndDate]);
 
   const filteredPayments = useMemo(() => {
     return paymentEntries.filter((p) => {
@@ -394,17 +483,33 @@ function AccountingDashboardPage() {
   // Metrics
   const metrics = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
-    const totalReceivable = v2Services.reduce((sum, s) => sum + (s.serviceAmount || 0), 0);
-    const totalReceived = v2Services.reduce((sum, s) => sum + (s.amountReceived || 0), 0);
-    const outstandingAmount = v2Services.reduce((sum, s) => sum + (s.pendingAmount || 0), 0);
+    
+    let totalReceivable = 0;
+    let totalReceived = 0;
+    let overdueCollections = 0;
 
-    const todayCollections = v2Services
-      .filter((s) => s.dueDate === todayStr && (s.pendingAmount || 0) > 0)
-      .reduce((sum, s) => sum + (s.pendingAmount || 0), 0);
+    v2Services.forEach((s) => {
+      const amt = s.serviceAmount || 0;
+      const rec = s.amountReceived || 0;
+      const pending = Math.max(0, amt - rec);
 
-    const overdueCollections = v2Services
-      .filter((s) => s.dueDate && s.dueDate < todayStr && (s.pendingAmount || 0) > 0)
-      .reduce((sum, s) => sum + (s.pendingAmount || 0), 0);
+      totalReceivable += amt;
+      totalReceived += rec;
+
+      const colDate = s.collectionDate || s.dueDate || "";
+      if (pending > 0 && colDate && colDate < todayStr) {
+        overdueCollections += pending;
+      }
+    });
+
+    const outstandingAmount = Math.max(0, totalReceivable - totalReceived);
+
+    const todayCollections = paymentEntries
+      .filter((p) => {
+        const payDateStr = p.paymentDate || p.receivedAt?.slice(0, 10) || "";
+        return payDateStr === todayStr;
+      })
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
     return {
       totalReceivable,
@@ -413,7 +518,7 @@ function AccountingDashboardPage() {
       todayCollections,
       overdueCollections,
     };
-  }, [v2Services]);
+  }, [v2Services, paymentEntries]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {
@@ -508,6 +613,7 @@ function AccountingDashboardPage() {
           remarks: payRemarks || "Direct Payment (No Invoice)",
           receivedBy: username,
           paymentDate: payDate,
+          referenceNumber: payReference || null,
         });
         toast.success("Direct payment recorded successfully!");
       } else if (paymentModeType === "single") {
@@ -523,6 +629,7 @@ function AccountingDashboardPage() {
           remarks: payRemarks,
           receivedBy: username,
           paymentDate: payDate,
+          referenceNumber: payReference || null,
         });
         toast.success("Payment recorded successfully!");
       } else {
@@ -542,6 +649,7 @@ function AccountingDashboardPage() {
           remarks: payRemarks || "Multi-invoice Payment Allocation",
           receivedBy: username,
           paymentDate: payDate,
+          referenceNumber: payReference || null,
         });
         toast.success("Multi-invoice payments allocated successfully!");
       }
@@ -549,6 +657,7 @@ function AccountingDashboardPage() {
       setPaymentDialogOpen(false);
       setPayAmount("");
       setPayRemarks("");
+      setPayReference("");
       setPaymentClientId("");
       setSelectedSingleInvoiceId("");
       setMultiAllocations({});
@@ -562,7 +671,42 @@ function AccountingDashboardPage() {
   const startDeletePayment = (payment: PaymentHistoryItem) => {
     if (!isAdmin) return toast.error("Access Denied: Only Admin can delete payments.");
     setPaymentToDelete(payment);
+    setInvoiceToDeleteId(null);
     setPinDialogOpen(true);
+  };
+
+  const startDeleteInvoice = (id: string) => {
+    if (!isAdmin) return toast.error("Access Denied: Only Admin can delete invoices.");
+    setInvoiceToDeleteId(id);
+    setPaymentToDelete(null);
+    setPinDialogOpen(true);
+  };
+
+  const handleDeleteInvoiceVerified = async () => {
+    if (!invoiceToDeleteId) return;
+    const ok = await verifyAdminPin(adminPin);
+    if (!ok) {
+      toast.error("Invalid Admin PIN");
+      return;
+    }
+
+    try {
+      // Import dynamic secured deletion
+      const { deleteInvoiceSecured } = await import("@/lib/financeService");
+      await deleteInvoiceSecured(
+        invoiceToDeleteId,
+        adminPin,
+        "Deleted from Accounting Dashboard",
+        username,
+        userRole
+      );
+      toast.success("Invoice deleted successfully!");
+      setPinDialogOpen(false);
+      setAdminPin("");
+      setInvoiceToDeleteId(null);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to delete invoice");
+    }
   };
 
   const handleDeletePaymentVerified = async () => {
@@ -576,55 +720,94 @@ function AccountingDashboardPage() {
     try {
       const batch = writeBatch(db);
 
-      // Revert allocations
+      // Revert allocations in billing_invoices and registry_services_v2
       if (paymentToDelete.allocations && paymentToDelete.allocations.length > 0) {
         for (const alloc of paymentToDelete.allocations) {
-          const financeRef = doc(db, "finance_records", alloc.invoiceId);
           const invoiceRef = doc(db, "billing_invoices", alloc.invoiceId);
+          const iSnap = await getDoc(invoiceRef);
+          if (!iSnap.exists()) continue;
+          const iData = iSnap.data() as any;
 
-          const fSnap = await getDoc(financeRef);
-          if (!fSnap.exists()) continue;
-          const fData = fSnap.data() as FinanceRecord;
-
-          const newReceived = Math.max(0, fData.receivedAmount - alloc.allocatedAmount);
-          const newBalance = fData.invoiceAmount - newReceived;
+          const newReceived = Math.max(0, (iData.totalPaid || 0) - alloc.allocatedAmount);
+          const newBalance = iData.totalAmount - newReceived;
           const newStatus = newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
-
-          batch.update(financeRef, {
-            receivedAmount: newReceived,
-            balanceAmount: newBalance,
-            paymentStatus: newStatus,
-            updatedAt: new Date().toISOString(),
-          });
 
           batch.update(invoiceRef, {
             status: newStatus,
             totalPaid: newReceived,
           });
+
+          // Revert registry_services_v2 service amount received
+          if (iData.services && iData.services.length > 0) {
+            for (const sItem of iData.services) {
+              const sId = sItem.serviceId;
+              if (!sId) continue;
+              const sRef = doc(db, "registry_services_v2", sId);
+              const sSnap = await getDoc(sRef);
+              if (sSnap.exists()) {
+                const sData = sSnap.data() as any;
+                const serviceRatio = sItem.total / iData.totalAmount;
+                const allocatedAmount = Math.round(alloc.allocatedAmount * serviceRatio);
+                const newSReceived = Math.max(0, (sData.amountReceived || 0) - allocatedAmount);
+                const newSPending = Math.max(0, sItem.total - newSReceived);
+                batch.update(sRef, {
+                  amountReceived: newSReceived,
+                  pendingAmount: newSPending,
+                  taskStatus: newSPending === 0 ? "Completed" : sData.taskStatus,
+                });
+              }
+            }
+          }
         }
       } else if (paymentToDelete.invoiceId !== "non-invoiced") {
-        // Fallback for legacy payments without allocations array
-        const financeRef = doc(db, "finance_records", paymentToDelete.financeRecordId);
+        // Fallback for legacy payments without allocations array or direct service payments
         const invoiceRef = doc(db, "billing_invoices", paymentToDelete.invoiceId);
-
-        const fSnap = await getDoc(financeRef);
-        if (fSnap.exists()) {
-          const fData = fSnap.data() as FinanceRecord;
-          const newReceived = Math.max(0, fData.receivedAmount - paymentToDelete.amount);
-          const newBalance = fData.invoiceAmount - newReceived;
+        const iSnap = await getDoc(invoiceRef);
+        if (iSnap.exists()) {
+          const iData = iSnap.data() as any;
+          const newReceived = Math.max(0, (iData.totalPaid || 0) - paymentToDelete.amount);
+          const newBalance = iData.totalAmount - newReceived;
           const newStatus = newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
-
-          batch.update(financeRef, {
-            receivedAmount: newReceived,
-            balanceAmount: newBalance,
-            paymentStatus: newStatus,
-            updatedAt: new Date().toISOString(),
-          });
 
           batch.update(invoiceRef, {
             status: newStatus,
             totalPaid: newReceived,
           });
+
+          if (iData.services && iData.services.length > 0) {
+            for (const sItem of iData.services) {
+              const sId = sItem.serviceId;
+              if (!sId) continue;
+              const sRef = doc(db, "registry_services_v2", sId);
+              const sSnap = await getDoc(sRef);
+              if (sSnap.exists()) {
+                const sData = sSnap.data() as any;
+                const serviceRatio = sItem.total / iData.totalAmount;
+                const allocatedAmount = Math.round(paymentToDelete.amount * serviceRatio);
+                const newSReceived = Math.max(0, (sData.amountReceived || 0) - allocatedAmount);
+                const newSPending = Math.max(0, sItem.total - newSReceived);
+                batch.update(sRef, {
+                  amountReceived: newSReceived,
+                  pendingAmount: newSPending,
+                  taskStatus: newSPending === 0 ? "Completed" : sData.taskStatus,
+                });
+              }
+            }
+          }
+        } else {
+          // Check if invoiceId is actually a serviceId (direct service payment log)
+          const sRef = doc(db, "registry_services_v2", paymentToDelete.invoiceId);
+          const sSnap = await getDoc(sRef);
+          if (sSnap.exists()) {
+            const sData = sSnap.data() as any;
+            const newSReceived = Math.max(0, (sData.amountReceived || 0) - paymentToDelete.amount);
+            const newSPending = Math.max(0, sData.serviceAmount - newSReceived);
+            batch.update(sRef, {
+              amountReceived: newSReceived,
+              pendingAmount: newSPending,
+              taskStatus: newSPending === 0 ? "Completed" : sData.taskStatus,
+            });
+          }
         }
       }
 
@@ -1036,22 +1219,19 @@ function AccountingDashboardPage() {
                         <th className="p-3">Client</th>
                         <th className="p-3">Invoice Number</th>
                         <th className="p-3">Service</th>
-                        <th className="p-3">Collection Date</th>
+                        <th className="p-3">Payment Collection Date</th>
                         <th className="p-3 text-right">Invoice Amount</th>
                         <th className="p-3 text-right">Received Amount</th>
-                        <th className="p-3 text-right">Balance</th>
+                        <th className="p-3 text-right">Outstanding Balance</th>
                         <th className="p-3">Assigned Employee</th>
                         <th className="p-3">Status</th>
-                        <th className="p-3">Bhaylubha</th>
+                        <th className="p-3">Ask Bhaylubha</th>
                         <th className="p-3 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y text-gray-700">
                       {filteredRecords.map((r) => {
-                        const inv = invoicesMap.get(r.invoiceId);
-                        const cDetails = clientDetailsMap.get(r.clientId);
-                        const serviceNames = inv?.services?.map((s) => s.serviceName).join(", ") || "—";
-                        const mobile = inv?.clientMobile || cDetails?.mobile || "";
+                        const mobile = r.clientMobile || "";
 
                         return (
                           <tr key={r.id} className="hover:bg-slate-50 transition">
@@ -1067,15 +1247,19 @@ function AccountingDashboardPage() {
                               </button>
                             </td>
                             <td className="p-3 font-mono">{r.invoiceNumber}</td>
-                            <td className="p-3 max-w-[150px] truncate" title={serviceNames}>{serviceNames}</td>
+                            <td className="p-3 max-w-[150px] truncate" title={r.services}>{r.services}</td>
                             <td className="p-3">
-                              <input
-                                type="date"
-                                value={r.collectionDate || ""}
-                                onChange={(e) => handleUpdateDate(r.id, e.target.value)}
-                                disabled={isStaff}
-                                className="bg-white border rounded p-1 text-[11px] font-mono focus:ring-1 focus:ring-primary w-28 disabled:bg-slate-50"
-                              />
+                              {r.hasInvoice ? (
+                                <input
+                                  type="date"
+                                  value={r.collectionDate || ""}
+                                  onChange={(e) => handleUpdateDate(r.id, e.target.value)}
+                                  disabled={isStaff}
+                                  className="bg-white border rounded p-1 text-[11px] font-mono focus:ring-1 focus:ring-primary w-28 disabled:bg-slate-50"
+                                />
+                              ) : (
+                                <span className="text-slate-400">Not Scheduled</span>
+                              )}
                             </td>
                             <td className="p-3 text-right font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
                             <td className="p-3 text-right font-mono text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
@@ -1087,7 +1271,9 @@ function AccountingDashboardPage() {
                                   ? "bg-green-100 text-green-800"
                                   : r.paymentStatus === "Partially Paid"
                                     ? "bg-amber-100 text-amber-800"
-                                    : "bg-orange-100 text-orange-800"
+                                    : r.paymentStatus === "Pending Invoice"
+                                      ? "bg-slate-100 text-slate-500"
+                                      : "bg-orange-100 text-orange-800"
                               }`}>
                                 {r.paymentStatus}
                               </span>
@@ -1097,33 +1283,48 @@ function AccountingDashboardPage() {
                                 type="checkbox"
                                 checked={r.askBhaylubha}
                                 onChange={(e) => handleToggleBhaylubhaFlag(r.id, e.target.checked)}
-                                disabled={isStaff}
+                                disabled={isStaff || !r.hasInvoice}
                                 className="size-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
                               />
                             </td>
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    handleClientChange(r.clientId);
-                                    setPaymentModeType("single");
-                                    setSelectedSingleInvoiceId(r.id);
-                                    setPaymentDialogOpen(true);
-                                  }}
-                                  className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto"
-                                >
-                                  Record Payment
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.invoiceNumber, r.balanceAmount)}
-                                  className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto"
-                                >
-                                  WhatsApp
-                                </Button>
+                                {r.hasInvoice ? (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        handleClientChange(r.clientId);
+                                        setPaymentModeType("single");
+                                        setSelectedSingleInvoiceId(r.id);
+                                        setPaymentDialogOpen(true);
+                                      }}
+                                      className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
+                                    >
+                                      Record Payment
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.invoiceNumber, r.balanceAmount)}
+                                      className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
+                                    >
+                                      WhatsApp
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => startDeleteInvoice(r.invoiceId)}
+                                      disabled={isStaff}
+                                      className="text-red-600 hover:text-red-900 text-xs px-2 py-1 h-auto"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">No Actions</span>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1156,13 +1357,11 @@ function AccountingDashboardPage() {
                       <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
                         <th className="p-3">Client</th>
                         <th className="p-3">Invoice</th>
-                        <th className="p-3">Service</th>
-                        <th className="p-3 text-right">Invoice Amount</th>
-                        <th className="p-3 text-right">Paid</th>
+                        <th className="p-3 text-right">Amount</th>
                         <th className="p-3 text-right">Outstanding</th>
-                        <th className="p-3">Due Date</th>
-                        <th className="p-3">Days Overdue</th>
-                        <th className="p-3">Status</th>
+                        <th className="p-3">Collection Date</th>
+                        <th className="p-3">Days Due</th>
+                        <th className="p-3 text-center">Ask Bhaylubha</th>
                         <th className="p-3 text-center">Actions</th>
                       </tr>
                     </thead>
@@ -1170,7 +1369,6 @@ function AccountingDashboardPage() {
                       {filteredRecords.filter(r => r.balanceAmount > 0).map((r) => {
                         const inv = invoicesMap.get(r.invoiceId);
                         const cDetails = clientDetailsMap.get(r.clientId);
-                        const serviceNames = inv?.services?.map((s) => s.serviceName).join(", ") || "—";
                         const mobile = inv?.clientMobile || cDetails?.mobile || "";
 
                         let daysOverdue = 0;
@@ -1198,18 +1396,18 @@ function AccountingDashboardPage() {
                               </button>
                             </td>
                             <td className="p-3 font-mono">{r.invoiceNumber}</td>
-                            <td className="p-3 max-w-[150px] truncate" title={serviceNames}>{serviceNames}</td>
                             <td className="p-3 text-right font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
-                            <td className="p-3 text-right font-mono text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
                             <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
                             <td className="p-3 font-mono">{r.collectionDate || "—"}</td>
                             <td className="p-3 text-red-600 font-bold">{daysOverdue > 0 ? `${daysOverdue} Days` : "—"}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                                daysOverdue > 0 ? "bg-red-100 text-red-800" : "bg-orange-100 text-orange-800"
-                              }`}>
-                                {daysOverdue > 0 ? "Overdue" : "Outstanding"}
-                              </span>
+                            <td className="p-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={r.askBhaylubha}
+                                onChange={(e) => handleToggleBhaylubhaFlag(r.id, e.target.checked)}
+                                disabled={isStaff}
+                                className="size-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                              />
                             </td>
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center gap-2">
@@ -1222,7 +1420,7 @@ function AccountingDashboardPage() {
                                     setSelectedSingleInvoiceId(r.id);
                                     setPaymentDialogOpen(true);
                                   }}
-                                  className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto"
+                                  className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
                                 >
                                   Record Payment
                                 </Button>
@@ -1230,7 +1428,7 @@ function AccountingDashboardPage() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.invoiceNumber, r.balanceAmount)}
-                                  className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto"
+                                  className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
                                 >
                                   WhatsApp
                                 </Button>
@@ -1265,15 +1463,14 @@ function AccountingDashboardPage() {
                     <thead>
                       <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
                         <th className="p-3">Payment Date</th>
-                        <th className="p-3">Payment ID</th>
                         <th className="p-3">Client</th>
-                        <th className="p-3">Invoice Number</th>
-                        <th className="p-3">Service</th>
-                        <th className="p-3 text-right">Allocated Amount</th>
+                        <th className="p-3">Invoice</th>
+                        <th className="p-3 text-right">Amount</th>
                         <th className="p-3">Method</th>
-                        <th className="p-3">Received In Account</th>
+                        <th className="p-3">Account</th>
                         <th className="p-3">Received By</th>
                         <th className="p-3">Remarks</th>
+                        <th className="p-3">Reference</th>
                         <th className="p-3 text-center">Actions</th>
                       </tr>
                     </thead>
@@ -1281,13 +1478,11 @@ function AccountingDashboardPage() {
                       {flattenedPayments.map((p) => {
                         const inv = invoicesMap.get(p.invoiceId);
                         const r = financeRecords.find((rec) => rec.invoiceId === p.invoiceId);
-                        const serviceNames = inv?.services?.map((s) => s.serviceName).join(", ") || "—";
                         const clientName = r?.clientName || p.clientName || "—";
 
                         return (
                           <tr key={p.uniqueKey} className="hover:bg-slate-50 transition">
                             <td className="p-3 font-mono">{p.receivedAt?.slice(0, 10) || "—"}</td>
-                            <td className="p-3 font-semibold text-indigo-600 font-mono">{p.paymentId || "PAY-Legacy"}</td>
                             <td className="p-3 font-semibold text-gray-900">
                               <button
                                 onClick={() => {
@@ -1309,7 +1504,6 @@ function AccountingDashboardPage() {
                                 p.invoiceNumber || `#${p.invoiceId?.slice(-6).toUpperCase()}`
                               )}
                             </td>
-                            <td className="p-3 max-w-[150px] truncate" title={serviceNames}>{serviceNames}</td>
                             <td className="p-3 text-right font-mono font-bold text-emerald-600">₹{p.allocatedAmount.toLocaleString("en-IN")}</td>
                             <td className="p-3">
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-800">
@@ -1319,6 +1513,7 @@ function AccountingDashboardPage() {
                             <td className="p-3 text-slate-700">{p.accountName}</td>
                             <td className="p-3 text-slate-700">{p.receivedBy}</td>
                             <td className="p-3 italic text-muted-foreground truncate max-w-[150px]" title={p.remarks}>{p.remarks || "—"}</td>
+                            <td className="p-3 font-mono">{p.referenceNumber || p.paymentId || "—"}</td>
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <Button
@@ -1499,6 +1694,27 @@ function AccountingDashboardPage() {
                       </select>
                     </div>
                   )}
+
+                  {paymentModeType === "single" && selectedSingleInvoiceId && (() => {
+                    const selectedInv = outstandingInvoicesForClient.find(i => i.id === selectedSingleInvoiceId);
+                    if (!selectedInv) return null;
+                    return (
+                      <div className="grid grid-cols-3 gap-2 mt-2 bg-slate-50 p-2 border rounded-md text-xs">
+                        <div>
+                          <Label className="text-[9px] font-bold uppercase text-gray-400">Invoice Number</Label>
+                          <Input readOnly value={selectedInv.invoiceNumber} className="bg-slate-100 text-xs h-8 border-slate-200" />
+                        </div>
+                        <div>
+                          <Label className="text-[9px] font-bold uppercase text-gray-400">Invoice Amount</Label>
+                          <Input readOnly value={`₹${selectedInv.invoiceAmount.toLocaleString("en-IN")}`} className="bg-slate-100 text-xs h-8 font-mono border-slate-200" />
+                        </div>
+                        <div>
+                          <Label className="text-[9px] font-bold uppercase text-gray-400">Current Outstanding</Label>
+                          <Input readOnly value={`₹${selectedInv.balanceAmount.toLocaleString("en-IN")}`} className="bg-slate-100 text-xs h-8 font-mono text-rose-600 font-bold border-slate-200" />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1566,7 +1782,7 @@ function AccountingDashboardPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase text-gray-500">Payment Mode</Label>
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Payment Method</Label>
                   <select
                     value={payMethod}
                     onChange={(e) => setPayMethod(e.target.value as any)}
@@ -1593,6 +1809,26 @@ function AccountingDashboardPage() {
                     <option value="SBI">SBI</option>
                     <option value="Other">Other</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Received By</Label>
+                  <Input
+                    readOnly
+                    value={username}
+                    className="bg-slate-50 text-xs border-slate-200"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Reference Number (Optional)</Label>
+                  <Input
+                    placeholder="e.g. TXN123456"
+                    value={payReference}
+                    onChange={(e) => setPayReference(e.target.value)}
+                    className="bg-white text-xs"
+                  />
                 </div>
               </div>
 
@@ -1855,7 +2091,7 @@ function AccountingDashboardPage() {
                 Admin Action Required
               </DialogTitle>
               <CardDescription>
-                Please enter the Admin PIN to authorize the deletion of this payment.
+                Please enter the Admin PIN to authorize the deletion of this {invoiceToDeleteId ? "invoice" : "payment"}.
               </CardDescription>
             </DialogHeader>
             <div className="space-y-3 py-3">
@@ -1870,10 +2106,17 @@ function AccountingDashboardPage() {
               />
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setPinDialogOpen(false)}>
+              <Button variant="outline" onClick={() => {
+                setPinDialogOpen(false);
+                setInvoiceToDeleteId(null);
+                setPaymentToDelete(null);
+              }}>
                 Cancel
               </Button>
-              <Button variant="destructive" onClick={handleDeletePaymentVerified}>
+              <Button
+                variant="destructive"
+                onClick={invoiceToDeleteId ? handleDeleteInvoiceVerified : handleDeletePaymentVerified}
+              >
                 Authorize & Delete
               </Button>
             </DialogFooter>

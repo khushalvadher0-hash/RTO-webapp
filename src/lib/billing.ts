@@ -435,6 +435,23 @@ export async function createInvoice(
 
   const docRef = await addDoc(collection(db, BILLING_INVOICES_COL), invoicePayload as any);
 
+  // Update corresponding registry_services_v2 documents with the invoice info
+  for (const item of services) {
+    const sId = item.serviceId;
+    if (!sId) continue;
+    const sRef = doc(db, "registry_services_v2", sId);
+    const sSnap = await getDoc(sRef);
+    if (sSnap.exists()) {
+      await updateDoc(sRef, {
+        invoiceId: docRef.id,
+        invoiceNumber: invoiceNumber,
+        collectionDate: collectionDate || null,
+        askBhaylubha: askBhaylubha || false,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
   try {
     await logClientActivity(
       client.id,
@@ -452,7 +469,27 @@ export async function createInvoice(
   invalidateCache();
   return {
     id: docRef.id,
-    ...invoicePayload,
+    invoiceNumber,
+    clientId: client.id,
+    clientName: client.name,
+    clientMobile: client.mo || undefined,
+    clientAddress: client.application || undefined,
+    vehicleNumber: client.mvNo || undefined,
+    vehicleType: (client as any).vehicleType || client.work || undefined,
+    billingPeriodStart: formattedStart,
+    billingPeriodEnd: formattedEnd,
+    subtotal,
+    totalTax,
+    totalAmount,
+    totalPaid: 0,
+    invoiceDate,
+    createdBy,
+    createdAt,
+    status: "Pending" as InvoiceStatus,
+    services,
+    pdfUrl: null,
+    collectionDate: collectionDate || null,
+    askBhaylubha: askBhaylubha || false,
   };
 }
 

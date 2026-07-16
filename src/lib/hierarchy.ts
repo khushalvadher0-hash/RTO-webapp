@@ -82,6 +82,13 @@ export interface Service {
   notes: string;
   createdAt?: string;
   updatedAt?: string;
+  clientId?: string;
+  clientName?: string;
+  clientMobile?: string;
+  collectionDate?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  askBhaylubha?: boolean;
 }
 
 export interface ClientAccounting {
@@ -312,6 +319,7 @@ export async function deleteClient(id: string): Promise<void> {
 
   const vehicleIds: string[] = [];
   const invoiceIds: string[] = [];
+  const deletedPaymentIds: string[] = [];
 
   for (const q of queries) {
     try {
@@ -323,6 +331,9 @@ export async function deleteClient(id: string): Promise<void> {
         }
         if (d.ref.parent.id === "billing_invoices") {
           invoiceIds.push(d.id);
+        }
+        if (d.ref.parent.id === "payment_history") {
+          deletedPaymentIds.push(d.id || d.ref.id);
         }
       });
     } catch (err) {
@@ -360,9 +371,23 @@ export async function deleteClient(id: string): Promise<void> {
       const snapPayments = await getDocs(qPayments);
       snapPayments.forEach((d) => {
         batch.delete(d.ref);
+        deletedPaymentIds.push(d.id || d.ref.id);
       });
     } catch (err) {
       console.warn(`[deleteClient] Payment history delete failed for invoice ${invId}:`, err);
+    }
+  }
+
+  // 6. Delete ledger entries for all deleted payments
+  for (const pid of deletedPaymentIds) {
+    try {
+      const qLedger = query(collection(db, "accounts_ledger"), where("referenceId", "==", pid));
+      const snapLedger = await getDocs(qLedger);
+      snapLedger.forEach((d) => {
+        batch.delete(d.ref);
+      });
+    } catch (err) {
+      console.warn(`[deleteClient] Ledger delete failed for payment ${pid}:`, err);
     }
   }
 
@@ -462,8 +487,14 @@ export async function saveVehicle(
   }
 }
 
-/** Delete a vehicle doc. */
+/** Delete a vehicle doc and cascade delete services and accounting records. */
 export async function deleteVehicle(id: string): Promise<void> {
+  const servicesSnap = await getDocs(
+    query(collection(db, SERVICES_COL), where("vehicleId", "==", id))
+  );
+  for (const d of servicesSnap.docs) {
+    await deleteService(d.id);
+  }
   await deleteDoc(doc(db, VEHICLES_COL, id));
 }
 
@@ -632,7 +663,7 @@ export async function saveService(
   }
 }
 
-/** Delete a service doc. */
+/** Delete a service doc and cascade delete its billing invoices, payments, and ledger entries. */
 export async function deleteService(
   id: string,
   actorOverride?: { name: string; uid: string; role: string },
@@ -659,6 +690,55 @@ export async function deleteService(
         actorOverride,
       );
     }
+
+    const batch = writeBatch(db);
+
+    // 1. Find and delete invoices containing this serviceId
+    const invoicesSnap = await getDocs(collection(db, "billing_invoices"));
+    const deletedInvoiceIds: string[] = [];
+    invoicesSnap.forEach((d) => {
+      const inv = d.data() as any;
+      if (inv.services?.some((s: any) => s.serviceId === id)) {
+        batch.delete(d.ref);
+        deletedInvoiceIds.push(d.id);
+      }
+    });
+
+    // 2. Delete payment history and ledger entries associated with those invoices
+    for (const invId of deletedInvoiceIds) {
+      const paymentsSnap = await getDocs(collection(db, "payment_history"));
+      const deletedPaymentIds: string[] = [];
+      paymentsSnap.forEach((d) => {
+        const data = d.data();
+        if (data.invoiceId === invId) {
+          batch.delete(d.ref);
+          deletedPaymentIds.push(d.id || d.ref.id);
+        } else if (data.allocations?.some((alloc: any) => alloc.invoiceId === invId)) {
+          const updatedAllocations = data.allocations.filter((alloc: any) => alloc.invoiceId !== invId);
+          const newAmount = updatedAllocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
+          if (updatedAllocations.length === 0) {
+            batch.delete(d.ref);
+            deletedPaymentIds.push(d.id || d.ref.id);
+          } else {
+            batch.update(d.ref, {
+              amount: newAmount,
+              allocations: updatedAllocations
+            });
+          }
+        }
+      });
+
+      for (const pid of deletedPaymentIds) {
+        const ledgerSnap = await getDocs(
+          query(collection(db, "accounts_ledger"), where("referenceId", "==", pid))
+        );
+        ledgerSnap.forEach((d) => {
+          batch.delete(d.ref);
+        });
+      }
+    }
+
+    await batch.commit();
   }
   await deleteDoc(doc(db, SERVICES_COL, id));
 }

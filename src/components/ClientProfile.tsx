@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -38,7 +38,7 @@ import { InvoiceViewer } from "@/components/InvoiceViewer";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import type { Invoice } from "@/lib/billing";
 import { toast } from "sonner";
-
+import { formatDate } from "@/lib/formatting";
 function normalizeActivityTimestamp(timestamp: unknown): string {
   if (!timestamp) return "";
   if (typeof timestamp === "string") return timestamp;
@@ -148,32 +148,48 @@ export function ClientProfile({
   const [activeTab, setActiveTab] = useState("activity");
   const [clientFinanceRecords, setClientFinanceRecords] = useState<any[]>([]);
   const [clientPayments, setClientPayments] = useState<any[]>([]);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!record) return;
-    const q = query(collection(db, "finance_records"), where("clientId", "==", record.id));
+    const q = query(collection(db, "billing_invoices"), where("clientId", "==", record.id));
     const unsubFinance = onSnapshot(q, (snap) => {
-      setClientFinanceRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const mapped = snap.docs.map((d) => {
+        const inv = d.data() as any;
+        const receivedAmount = inv.totalPaid || 0;
+        const balanceAmount = inv.totalAmount - receivedAmount;
+        const paymentStatus = balanceAmount === 0 ? "Paid" : receivedAmount > 0 ? "Partially Paid" : "Pending";
+        return {
+          id: d.id,
+          invoiceId: d.id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceAmount: inv.totalAmount,
+          receivedAmount,
+          balanceAmount,
+          collectionDate: inv.collectionDate || new Date(inv.createdAt || Date.now()).toISOString().slice(0, 10),
+          paymentStatus,
+          askBhaylubha: !!inv.askBhaylubha,
+        };
+      });
+      setClientFinanceRecords(mapped);
     });
     return () => unsubFinance();
   }, [record?.id]);
 
   useEffect(() => {
-    if (!record || clientFinanceRecords.length === 0) {
+    if (!record) {
       setClientPayments([]);
       return;
     }
-    const invoiceIds = clientFinanceRecords.map((r) => r.invoiceId);
-    const q = query(collection(db, "payment_history"));
+    const q = query(collection(db, "payment_history"), where("clientId", "==", record.id));
     const unsubPay = onSnapshot(q, (snap) => {
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
-        .filter((p) => invoiceIds.includes(p.invoiceId))
         .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
       setClientPayments(list);
     });
     return () => unsubPay();
-  }, [record?.id, clientFinanceRecords]);
+  }, [record?.id]);
   const session = getSession();
   const actor = session?.username || "system";
   const actorName = session?.name || session?.username || "System";
@@ -899,24 +915,89 @@ export function ClientProfile({
                         </thead>
                         <tbody className="divide-y text-gray-700">
                           {clientFinanceRecords.map((r) => (
-                            <tr key={r.id} className="hover:bg-slate-50">
-                              <td className="p-2.5 font-mono font-semibold">{r.invoiceNumber}</td>
-                              <td className="p-2.5 font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-2.5 font-mono text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-2.5 font-mono text-rose-600 font-bold">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-2.5 font-mono">{formatDate(r.collectionDate)}</td>
-                              <td className="p-2.5">
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                                  r.paymentStatus === "Paid"
-                                    ? "bg-green-100 text-green-800"
-                                    : r.paymentStatus === "Partially Paid"
-                                      ? "bg-amber-100 text-amber-800"
-                                      : "bg-orange-100 text-orange-800"
-                                }`}>
-                                  {r.paymentStatus}
-                                </span>
-                              </td>
-                            </tr>
+                            <React.Fragment key={r.id}>
+                              <tr
+                                className="hover:bg-slate-50 cursor-pointer"
+                                onClick={() => setExpandedInvoiceId(expandedInvoiceId === r.id ? null : r.id)}
+                              >
+                                <td className="p-2.5 font-mono font-semibold flex items-center gap-1">
+                                  <span className="text-[9px] text-slate-400">{expandedInvoiceId === r.id ? "▼" : "▶"}</span>
+                                  {r.invoiceNumber}
+                                </td>
+                                <td className="p-2.5 font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
+                                <td className="p-2.5 font-mono text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
+                                <td className="p-2.5 font-mono text-rose-600 font-bold">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
+                                <td className="p-2.5 font-mono">{formatDate(r.collectionDate)}</td>
+                                <td className="p-2.5">
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                    r.paymentStatus === "Paid"
+                                      ? "bg-green-100 text-green-800"
+                                      : r.paymentStatus === "Partially Paid"
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-orange-100 text-orange-800"
+                                  }`}>
+                                    {r.paymentStatus}
+                                  </span>
+                                </td>
+                              </tr>
+                              {expandedInvoiceId === r.id && (
+                                <tr>
+                                  <td colSpan={6} className="bg-slate-50/50 p-3 border-t border-b">
+                                    <div className="space-y-2">
+                                      <h6 className="font-bold text-[10px] text-gray-500 uppercase tracking-wider">Invoice Allocation Ledger</h6>
+                                      {(() => {
+                                        const invoicePayments = clientPayments
+                                          .filter((p) => p.invoiceId === r.id || p.allocations?.some((a: any) => a.invoiceId === r.id))
+                                          .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+
+                                        if (invoicePayments.length === 0) {
+                                          return <p className="text-[11px] text-slate-500 italic">No payments allocated to this invoice.</p>;
+                                        }
+
+                                        let currentBalance = r.invoiceAmount;
+
+                                        return (
+                                          <div className="border rounded-lg overflow-hidden bg-white">
+                                            <table className="w-full text-left text-[11px]">
+                                              <thead>
+                                                <tr className="bg-slate-100 border-b text-[10px] font-bold text-slate-500 uppercase">
+                                                  <th className="p-2">Payment Date</th>
+                                                  <th className="p-2">Receipt ID</th>
+                                                  <th className="p-2">Method</th>
+                                                  <th className="p-2">Deposit Account</th>
+                                                  <th className="p-2">Received By</th>
+                                                  <th className="p-2 font-sans">Remarks</th>
+                                                  <th className="p-2 text-right">Paid Amount</th>
+                                                  <th className="p-2 text-right">Running Balance</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y text-slate-700">
+                                                {invoicePayments.map((p) => {
+                                                  const allocAmount = p.allocations?.find((a: any) => a.invoiceId === r.id)?.allocatedAmount ?? p.amount;
+                                                  currentBalance -= allocAmount;
+                                                  return (
+                                                    <tr key={p.id} className="hover:bg-slate-50 font-mono">
+                                                      <td className="p-2">{formatDate(p.receivedAt)}</td>
+                                                      <td className="p-2">#{p.id?.slice(-6).toUpperCase()}</td>
+                                                      <td className="p-2 font-sans font-semibold">{p.method}</td>
+                                                      <td className="p-2 font-sans">{p.accountName}</td>
+                                                      <td className="p-2 font-sans">{p.receivedBy}</td>
+                                                      <td className="p-2 font-sans italic text-slate-500 truncate max-w-[120px]" title={p.remarks}>{p.remarks || "—"}</td>
+                                                      <td className="p-2 text-right text-emerald-600 font-bold">₹{allocAmount.toLocaleString("en-IN")}</td>
+                                                      <td className="p-2 text-right font-bold">₹{Math.max(0, currentBalance).toLocaleString("en-IN")}</td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>

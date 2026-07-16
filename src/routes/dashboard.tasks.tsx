@@ -155,9 +155,17 @@ function TasksPage() {
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [v2Services, setV2Services] = useState<any[]>([]);
+
+  const isAdmin = session?.role === "admin" || session?.role === "manager";
+  const canSeeAllTasks = isAdmin;
 
   // view and filters
-  const [viewTab, setViewTab] = useState<"my" | "all">("my");
+  const [viewTab, setViewTab] = useState<"my" | "all">(() => {
+    const sess = getSession();
+    const isAd = sess?.role === "admin" || sess?.role === "manager";
+    return isAd ? "all" : "my";
+  });
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -204,16 +212,18 @@ function TasksPage() {
     const u5 = onSnapshot(collection(db, "users"), (snap) => {
       setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
+    const u6 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
+      setV2Services(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
     return () => {
       u1();
       u2();
       u4();
       u5();
+      u6();
     };
   }, []);
 
-  const isAdmin = session?.role === "admin" || session?.role === "manager";
-  const canSeeAllTasks = true;
   const detailsTask = tasks.find((t) => t.id === detailsId) ?? null;
 
 
@@ -222,62 +232,45 @@ function TasksPage() {
     // 1. Get manual tasks
     const manualTasks = tasks;
 
-    // 2. Generate task objects for each service of each client from client module
-    const clientServiceTasks: Task[] = clients.flatMap((c: any) =>
-      (c.allServices || []).map((s: any) => ({
-        id: s.id,
-        title: s.work || s.application || "Service Task",
-        serviceName: s.serviceType || s.application,
-        description: s.work || "",
-        assignee: c.assignee || "",
-        status: (s.status === "Completed" ? "Completed" : "In Progress") as TaskStatus,
-        priority: "Medium" as TaskPriority,
-        done: s.status === "Completed",
-        createdAt: s.date || c.createdAt || new Date().toISOString(),
-        createdBy: "system",
-        dueDate: s.dueDate,
-        associationType: "client" as AssociationType,
-        bucket: s.bucket,
-        recordId: c.id,
-        clientId: c.id,
-        clientName: c.name,
-        manual: false,
-        progress: s.status === "Completed" ? 100 : 0,
-      }))
-    );
+    // 2. Generate task objects dynamically from registry_services_v2 joined with vehicles and clients/leads
+    const serviceTasks: Task[] = v2Services.map((s: any) => {
+      const vehicle = vehicles.find((v) => v.id === s.vehicleId);
+      const vehicleNo = vehicle?.vehicleNumber || "—";
+      const clientId = vehicle?.clientId || s.clientId || "";
+      const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
+      const clientName = client?.name || s.clientName || "Unknown Client";
 
-    // 3. Generate task objects for each service of each lead from lead module
-    const leadServiceTasks: Task[] = leads.flatMap((c: any) =>
-      (c.allServices || []).map((s: any) => ({
+      return {
         id: s.id,
-        title: s.work || s.application || "Service Task",
-        serviceName: s.serviceType || s.application,
-        description: s.work || "",
-        assignee: c.assignee || "",
-        status: (s.status === "Completed" ? "Completed" : "In Progress") as TaskStatus,
+        title: `${s.serviceType || "Service"} - ${vehicleNo}`,
+        serviceName: s.serviceType || "",
+        description: `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
+        assignee: s.assignedTo || s.employeeId || s.assignee || "",
+        status: (s.taskStatus === "Completed" ? "Completed" : s.taskStatus === "In Progress" ? "In Progress" : "Assigned") as TaskStatus,
         priority: "Medium" as TaskPriority,
-        done: s.status === "Completed",
-        createdAt: s.date || c.createdAt || new Date().toISOString(),
-        createdBy: "system",
-        dueDate: s.dueDate,
-        associationType: "lead" as AssociationType,
-        bucket: s.bucket,
-        recordId: c.id,
-        clientId: c.id,
-        clientName: c.name,
+        done: s.taskStatus === "Completed",
+        createdAt: s.createdAt || s.startDate || new Date().toISOString(),
+        createdBy: s.createdBy || "System",
+        dueDate: s.dueDate || s.startDate || "",
+        associationType: (client?.isDeleted ? "lead" : "client") as AssociationType,
+        bucket: client?.isDeleted ? "leads" : "clients",
+        recordId: clientId,
+        clientId: clientId,
+        clientName: clientName,
         manual: false,
-        progress: s.status === "Completed" ? 100 : 0,
-      }))
-    );
+        progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
+      };
+    });
 
-    return [...manualTasks, ...clientServiceTasks, ...leadServiceTasks];
-  }, [tasks, clients, leads]);
+    return [...manualTasks, ...serviceTasks];
+  }, [tasks, v2Services, vehicles, clients, leads]);
 
   // Separate task lists for tab counting
   const myTasks = useMemo(() => {
     if (!session) return [];
+    if (isAdmin) return []; // Admin/Manager "My Tasks" should be empty
     return allTasks.filter((t) => isTaskAssignedToUser(t, session));
-  }, [allTasks, session]);
+  }, [allTasks, session, isAdmin]);
 
   // Apply filters based on view tab
   const baseList = useMemo(() => {

@@ -67,6 +67,7 @@ export interface PaymentHistoryItem {
   clientName?: string;
   paymentDate?: string;
   paymentId?: string;
+  referenceNumber?: string | null;
   allocations?: {
     invoiceId: string;
     invoiceNumber: string;
@@ -154,61 +155,33 @@ export async function logFinanceAction(
  * If not, creates one. Otherwise returns the existing one.
  */
 export async function ensureFinanceRecord(invoice: any): Promise<FinanceRecord> {
-  const fDocRef = doc(db, FINANCE_COL, invoice.id);
-  const fSnap = await getDoc(fDocRef);
+  const receivedAmount = invoice.totalPaid || 0;
+  const balanceAmount = invoice.totalAmount - receivedAmount;
+  const paymentStatus: FinanceRecord["paymentStatus"] =
+    balanceAmount === 0 ? "Paid" : receivedAmount > 0 ? "Partially Paid" : "Pending";
 
-  if (fSnap.exists()) {
-    return { id: fSnap.id, ...fSnap.data() } as FinanceRecord;
-  }
-
-  // Create new finance record mapping to the invoice
-  const record: FinanceRecord = {
+  return {
     id: invoice.id,
     clientId: invoice.clientId,
     clientName: invoice.clientName || "Unknown Client",
     invoiceId: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     invoiceAmount: invoice.totalAmount,
-    receivedAmount: invoice.totalPaid || 0,
-    balanceAmount: invoice.totalAmount - (invoice.totalPaid || 0),
-    collectionDate: invoice.collectionDate || new Date().toISOString().slice(0, 10),
-    paymentStatus: invoice.status === "Paid" ? "Paid" : (invoice.totalPaid > 0 ? "Partially Paid" : "Pending"),
+    receivedAmount,
+    balanceAmount,
+    collectionDate: invoice.collectionDate || new Date(invoice.createdAt || Date.now()).toISOString().slice(0, 10),
+    paymentStatus,
     askBhaylubha: !!invoice.askBhaylubha,
     createdAt: invoice.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    updatedAt: invoice.createdAt || new Date().toISOString(),
     assignedEmployee: invoice.createdBy || "System",
   };
-
-  await setDoc(fDocRef, record);
-  return record;
 }
 
 // ─── Finance Records Read ────────────────────────────────────────────────────
 
 export function subscribeFinanceRecords(cb: (records: FinanceRecord[]) => void) {
-  return onSnapshot(
-    collection(db, FINANCE_COL),
-    async (snapshot) => {
-      const list: FinanceRecord[] = [];
-      snapshot.forEach((d) => {
-        const data = d.data() as FinanceRecord;
-        // Calculate days overdue
-        let daysOverdue = 0;
-        if (data.paymentStatus !== "Paid" && data.collectionDate) {
-          const due = new Date(data.collectionDate);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          due.setHours(0, 0, 0, 0);
-          if (today.getTime() > due.getTime()) {
-            daysOverdue = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-          }
-        }
-        list.push({ ...data, id: d.id, daysOverdue });
-      });
-      cb(list);
-    },
-    (err) => handleFirestoreError(err, "subscribeFinanceRecords"),
-  );
+  return subscribeAndSyncFinance(cb);
 }
 
 // ─── Collection Date Scheduling ──────────────────────────────────────────────
@@ -218,31 +191,32 @@ export async function updateRecordCollectionDate(
   date: string,
   performedBy: string,
 ) {
-  const ref = doc(db, FINANCE_COL, recordId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Finance record not found");
-
-  const oldVal = snap.data().collectionDate || "None";
-  await updateDoc(ref, {
-    collectionDate: date,
-    updatedAt: new Date().toISOString(),
-  });
-
-  // Keep parent invoice collectionDate in sync
-  try {
-    await updateDoc(doc(db, INVOICES_COL, recordId), {
+  // Update registry_services_v2 if exists
+  const sRef = doc(db, "registry_services_v2", recordId);
+  const sSnap = await getDoc(sRef);
+  if (sSnap.exists()) {
+    await updateDoc(sRef, {
       collectionDate: date,
+      dueDate: date,
+      updatedAt: new Date().toISOString(),
     });
-  } catch (e) {
-    console.warn("Could not sync invoice collectionDate:", e);
   }
 
-  await logFinanceAction(
-    "Collection Date Changed",
-    performedBy,
-    recordId,
-    `Changed collection date from ${oldVal} to ${date}`,
-  );
+  const ref = doc(db, INVOICES_COL, recordId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const oldVal = snap.data().collectionDate || "None";
+    await updateDoc(ref, {
+      collectionDate: date,
+      updatedAt: new Date().toISOString(),
+    });
+    await logFinanceAction(
+      "Collection Date Changed",
+      performedBy,
+      recordId,
+      `Changed collection date from ${oldVal} to ${date}`,
+    );
+  }
 }
 
 // ─── Bhaylubha Approval Logic ────────────────────────────────────────────────
@@ -252,27 +226,31 @@ export async function setBhaylubhaRequirement(
   required: boolean,
   performedBy: string,
 ) {
-  const ref = doc(db, FINANCE_COL, recordId);
-  await updateDoc(ref, {
-    askBhaylubha: required,
-    updatedAt: new Date().toISOString(),
-  });
-
-  // Keep parent invoice askBhaylubha in sync
-  try {
-    await updateDoc(doc(db, INVOICES_COL, recordId), {
+  // Update registry_services_v2 if exists
+  const sRef = doc(db, "registry_services_v2", recordId);
+  const sSnap = await getDoc(sRef);
+  if (sSnap.exists()) {
+    await updateDoc(sRef, {
       askBhaylubha: required,
+      updatedAt: new Date().toISOString(),
     });
-  } catch (e) {
-    console.warn("Could not sync invoice askBhaylubha flag:", e);
   }
 
-  await logFinanceAction(
-    required ? "Approval Removed" : "Approval Granted",
-    performedBy,
-    recordId,
-    required ? "Enabled Bhaylubha approval requirement" : "Disabled/Cleared Bhaylubha approval requirement",
-  );
+  const ref = doc(db, INVOICES_COL, recordId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    await updateDoc(ref, {
+      askBhaylubha: required,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await logFinanceAction(
+      required ? "Approval Removed" : "Approval Granted",
+      performedBy,
+      recordId,
+      required ? "Enabled Bhaylubha approval requirement" : "Disabled/Cleared Bhaylubha approval requirement",
+    );
+  }
 }
 
 export async function approveRecordBhaylubha(
@@ -280,30 +258,34 @@ export async function approveRecordBhaylubha(
   approvedBy: string,
   remarks: string,
 ) {
-  const ref = doc(db, FINANCE_COL, recordId);
-  await updateDoc(ref, {
-    askBhaylubha: false, // Flag cleared when approved
-    approvedBy,
-    approvedAt: new Date().toISOString(),
-    approvedRemarks: remarks,
-    updatedAt: new Date().toISOString(),
-  });
-
-  // Keep parent invoice askBhaylubha in sync
-  try {
-    await updateDoc(doc(db, INVOICES_COL, recordId), {
+  // Update registry_services_v2 if exists
+  const sRef = doc(db, "registry_services_v2", recordId);
+  const sSnap = await getDoc(sRef);
+  if (sSnap.exists()) {
+    await updateDoc(sRef, {
       askBhaylubha: false,
+      updatedAt: new Date().toISOString(),
     });
-  } catch (e) {
-    console.warn("Could not sync invoice askBhaylubha flag:", e);
   }
 
-  await logFinanceAction(
-    "Approval Granted",
-    approvedBy,
-    recordId,
-    `Bhaylubha approval granted. Remarks: ${remarks}`,
-  );
+  const ref = doc(db, INVOICES_COL, recordId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    await updateDoc(ref, {
+      askBhaylubha: false, // Flag cleared when approved
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+      approvedRemarks: remarks,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await logFinanceAction(
+      "Approval Granted",
+      approvedBy,
+      recordId,
+      `Bhaylubha approval granted. Remarks: ${remarks}`,
+    );
+  }
 }
 
 // ─── Payment Entry Recording ─────────────────────────────────────────────────
@@ -312,89 +294,126 @@ export async function recordPaymentEntry(
   recordId: string,
   payment: Omit<PaymentHistoryItem, "financeRecordId" | "invoiceId" | "receivedAt"> & { paymentDate: string },
 ) {
-  const ref = doc(db, INVOICES_COL, recordId);
+  // 1. Try finding in registry_services_v2
+  const sRef = doc(db, "registry_services_v2", recordId);
+  const sSnap = await getDoc(sRef);
+  
+  let targetInvoiceId = recordId;
+  let clientName = payment.clientName || "Unknown Client";
+  let clientId = payment.clientId || "";
+  let invoiceNumber = "Service payment";
+
+  if (sSnap.exists()) {
+    const sData = sSnap.data() as any;
+    const balanceAmount = sData.serviceAmount - (sData.amountReceived || 0);
+
+    if (payment.amount > balanceAmount) {
+      throw new Error(`Payment amount (₹${payment.amount}) exceeds remaining balance of ₹${balanceAmount}`);
+    }
+    if (payment.amount <= 0) {
+      throw new Error("Payment amount must be greater than zero");
+    }
+
+    const newReceived = (sData.amountReceived || 0) + payment.amount;
+    const newBalance = sData.serviceAmount - newReceived;
+
+    await updateDoc(sRef, {
+      amountReceived: newReceived,
+      pendingAmount: newBalance,
+      taskStatus: newBalance === 0 ? "Completed" : sData.taskStatus,
+      updatedAt: new Date().toISOString(),
+    });
+
+    targetInvoiceId = sData.invoiceId || recordId;
+    invoiceNumber = sData.invoiceNumber || invoiceNumber;
+  }
+
+  // 2. Also try updating invoice in billing_invoices
+  const ref = doc(db, INVOICES_COL, targetInvoiceId);
   const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Invoice not found");
+  if (snap.exists()) {
+    const data = snap.data() as any;
+    clientName = data.clientName;
+    clientId = data.clientId;
+    invoiceNumber = data.invoiceNumber;
+    const balanceAmount = data.totalAmount - (data.totalPaid || 0);
 
-  const data = snap.data() as any;
-  const balanceAmount = data.totalAmount - (data.totalPaid || 0);
+    const newReceived = (data.totalPaid || 0) + payment.amount;
+    const newBalance = data.totalAmount - newReceived;
+    const newStatus = newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
 
-  // Validation: Received Amount <= Remaining Amount
-  if (payment.amount > balanceAmount) {
-    throw new Error(`Payment amount (₹${payment.amount}) exceeds remaining balance of ₹${balanceAmount}`);
+    await updateDoc(ref, {
+      totalPaid: newReceived,
+      status: newStatus,
+      receivedBy: payment.receivedBy,
+      paymentMethod: payment.method,
+      accountName: payment.accountName,
+      remarks: payment.remarks,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Proportional allocation to services in invoice payload
+    if (data.services && data.services.length > 0) {
+      for (const sItem of data.services) {
+        const sId = sItem.serviceId;
+        if (!sId) continue;
+        const innerSRef = doc(db, "registry_services_v2", sId);
+        const innerSSnap = await getDoc(innerSRef);
+        if (innerSSnap.exists()) {
+          const innerSData = innerSSnap.data() as any;
+          const serviceRatio = sItem.total / data.totalAmount;
+          const allocatedAmount = Math.round(payment.amount * serviceRatio);
+          const newSReceived = Math.min(sItem.total, (innerSData.amountReceived || 0) + allocatedAmount);
+          const newSPending = Math.max(0, sItem.total - newSReceived);
+          await updateDoc(innerSRef, {
+            amountReceived: newSReceived,
+            pendingAmount: newSPending,
+            taskStatus: newSPending === 0 ? "Completed" : innerSData.taskStatus,
+          });
+        }
+      }
+    }
   }
 
-  if (payment.amount <= 0) {
-    throw new Error("Payment amount must be greater than zero");
-  }
-
-  // Prevent completion if approval is pending
-  if (data.askBhaylubha && payment.amount === balanceAmount) {
-    throw new Error("Cannot mark collection completed. Bhaylubha Approval is Pending.");
-  }
-
-  const newReceived = (data.totalPaid || 0) + payment.amount;
-  const newBalance = data.totalAmount - newReceived;
-
-  if (newBalance < 0) {
-    throw new Error("Calculation error: Remaining balance cannot be less than 0");
-  }
-
-  const newStatus = newBalance === 0 ? "Paid" : newReceived > 0 ? "Partially Paid" : "Pending";
-
+  // 3. Create payment history and ledger entries
   const timestamp = payment.paymentDate ? new Date(payment.paymentDate).toISOString() : new Date().toISOString();
   const payId = await generatePaymentId();
-
-  // Create payment history doc
   const payCol = collection(db, PAYMENTS_COL);
   const payDocRef = doc(payCol);
-  
-  const detailedAllocations = [{
-    invoiceId: recordId,
-    invoiceNumber: data.invoiceNumber,
-    allocatedAmount: payment.amount,
-  }];
 
   await setDoc(payDocRef, {
     paymentId: payId,
-    clientId: data.clientId,
-    clientName: data.clientName,
+    clientId,
+    clientName,
     financeRecordId: recordId,
-    invoiceId: recordId,
+    invoiceId: targetInvoiceId,
     amount: payment.amount,
     method: payment.method,
     receivedBy: payment.receivedBy,
     receivedAt: timestamp,
     accountName: payment.accountName,
     remarks: payment.remarks,
-    allocations: detailedAllocations,
+    referenceNumber: payment.referenceNumber || null,
+    allocations: [{
+      invoiceId: targetInvoiceId,
+      invoiceNumber: invoiceNumber,
+      allocatedAmount: payment.amount,
+    }],
   });
 
-  // Update invoice directly
-  await updateDoc(ref, {
-    totalPaid: newReceived,
-    status: newStatus,
-    receivedBy: payment.receivedBy,
-    paymentMethod: payment.method,
-    accountName: payment.accountName,
-    remarks: payment.remarks,
-    updatedAt: timestamp,
-  });
-
-  // Create accounts ledger entry
   await recordLedgerEntry({
     timestamp,
-    type: "Debit", // Debit Cash/Bank to increase balance
+    type: "Debit",
     amount: payment.amount,
     account: payment.accountName,
     referenceId: payDocRef.id,
-    remarks: `Payment for Invoice ${data.invoiceNumber}. Recv by ${payment.receivedBy}`,
+    remarks: `Payment for Service/Invoice ${invoiceNumber}. Recv by ${payment.receivedBy}`,
   });
 
   await logFinanceAction(
     "Payment Added",
     payment.receivedBy,
-    recordId,
+    targetInvoiceId,
     `Added payment of ₹${payment.amount} via ${payment.method} into ${payment.accountName} (ID: ${payId})`,
   );
   invalidateCache();
@@ -472,6 +491,7 @@ export async function recordMultiInvoicePayment(
     receivedAt: timestamp,
     accountName: payment.accountName,
     remarks: payment.remarks || "Multi-invoice Payment Allocation",
+    referenceNumber: payment.referenceNumber || null,
     allocations: detailedAllocations,
   });
 
@@ -510,6 +530,7 @@ export async function recordDirectPayment(
     receivedAt: timestamp,
     accountName: payment.accountName,
     remarks: payment.remarks || "Direct Non-Invoiced Payment",
+    referenceNumber: payment.referenceNumber || null,
     allocations: [],
   });
 
@@ -634,17 +655,20 @@ export async function deleteInvoiceSecured(
     batch.delete(d.ref);
   });
 
-  // 2. Delete payment_history payments
+  // 2. Delete payment_history payments and collect their IDs for ledger deletion
   const paymentsSnap2 = await getDocs(collection(db, PAYMENTS_COL));
+  const deletedPaymentIds: string[] = [];
   paymentsSnap2.forEach((d) => {
     const data = d.data();
     if (data.invoiceId === invoiceId) {
       batch.delete(d.ref);
+      deletedPaymentIds.push(d.id || d.ref.id);
     } else if (data.allocations?.some((alloc: any) => alloc.invoiceId === invoiceId)) {
       const updatedAllocations = data.allocations.filter((alloc: any) => alloc.invoiceId !== invoiceId);
       const newAmount = updatedAllocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
       if (updatedAllocations.length === 0) {
         batch.delete(d.ref);
+        deletedPaymentIds.push(d.id || d.ref.id);
       } else {
         batch.update(d.ref, {
           amount: newAmount,
@@ -654,7 +678,17 @@ export async function deleteInvoiceSecured(
     }
   });
 
-  // 3. Delete invoice itself
+  // 3. Delete accounts_ledger entries for deleted payments
+  for (const pid of deletedPaymentIds) {
+    const ledgerSnap = await getDocs(
+      query(collection(db, LEDGER_COL), where("referenceId", "==", pid))
+    );
+    ledgerSnap.forEach((d) => {
+      batch.delete(d.ref);
+    });
+  }
+
+  // 4. Delete invoice itself
   batch.delete(invoiceRef);
 
   await batch.commit();
