@@ -1260,3 +1260,110 @@ export async function deleteTemplate(templateId: string, deletedBy: string): Pro
     console.warn("Template Deleted log activity failed:", err);
   }
 }
+
+/** Permanently deletes a task and cleans up all references. */
+export async function deleteTaskPermanently(taskId: string): Promise<void> {
+  const taskRef = doc(db, COL, taskId);
+  const taskSnap = await getDoc(taskRef);
+  
+  let recordId: string | undefined;
+  let assignee: string | undefined;
+  
+  if (taskSnap.exists()) {
+    const taskData = taskSnap.data() as Task;
+    recordId = taskData.recordId || (taskData as any).clientId;
+    assignee = taskData.assignee;
+  }
+  
+  // Delete the actual task document
+  await deleteDoc(taskRef);
+  
+  // Clean up related service if it exists in registry_services_v2
+  try {
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      await deleteDoc(serviceRef);
+    }
+  } catch (err) {
+    console.error("Failed to delete related service:", err);
+  }
+
+  // Clean up client/lead references
+  if (recordId) {
+    try {
+      const clientRef = doc(db, "registry_clients_v2", recordId);
+      const clientSnap = await getDoc(clientRef);
+      if (clientSnap.exists()) {
+        const clientData = clientSnap.data() as any;
+        const clientUpdates: any = {};
+        
+        if (Array.isArray(clientData.taskIds)) {
+          clientUpdates.taskIds = clientData.taskIds.filter((id: string) => id !== taskId);
+        }
+        if (Array.isArray(clientData.activeTasks)) {
+          clientUpdates.activeTasks = clientData.activeTasks.filter((t: any) => {
+            if (typeof t === "string") return t !== taskId;
+            if (t && typeof t === "object") return t.id !== taskId;
+            return true;
+          });
+        }
+        if (Array.isArray(clientData.linkedTasks)) {
+          clientUpdates.linkedTasks = clientData.linkedTasks.filter((t: any) => {
+            if (typeof t === "string") return t !== taskId;
+            if (t && typeof t === "object") return t.id !== taskId;
+            return true;
+          });
+        }
+        
+        if (Object.keys(clientUpdates).length > 0) {
+          await updateDoc(clientRef, clientUpdates);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to clean up client task references:", err);
+    }
+  }
+  
+  // Clean up employee references
+  if (assignee) {
+    try {
+      const usersSnap = await getDocs(query(
+        collection(db, "users"),
+        where("username", "==", assignee)
+      ));
+      
+      for (const userDoc of usersSnap.docs) {
+        const userData = userDoc.data() as any;
+        const userUpdates: any = {};
+        if (Array.isArray(userData.taskIds)) {
+          userUpdates.taskIds = userData.taskIds.filter((id: string) => id !== taskId);
+        }
+        if (Array.isArray(userData.activeTasks)) {
+          userUpdates.activeTasks = userData.activeTasks.filter((id: string) => id !== taskId);
+        }
+        if (Object.keys(userUpdates).length > 0) {
+          await updateDoc(userDoc.ref, userUpdates);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to clean up employee task references:", err);
+    }
+  }
+  
+  // Clean up other collections referencing this taskId
+  const extraCollections = ["notifications", "reminders", "activity_logs", "client_activity_logs"];
+  for (const colName of extraCollections) {
+    try {
+      const qSnap = await getDocs(query(collection(db, colName), where("taskId", "==", taskId)));
+      for (const d of qSnap.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (err) {
+      console.warn(`Could not clean up references in ${colName}:`, err);
+    }
+  }
+
+  invalidateCache();
+}
+

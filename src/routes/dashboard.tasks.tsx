@@ -1023,8 +1023,7 @@ function TaskTable({
                           <Eye className="size-3.5" />
                         </Button>
                         {(() => {
-                          const isAssigned = isTaskAssignedToUser(t, session);
-                          const canEdit = isAdmin || isAssigned;
+                          const canEdit = true;
                           return canEdit && (
                             <Button
                               variant="ghost"
@@ -1044,17 +1043,15 @@ function TaskTable({
                         >
                           <MessageSquare className="size-3.5" />
                         </Button>
-                        {isAdmin && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onDelete(t)}
-                            className="text-red-500 hover:bg-red-50"
-                            title="Delete Task"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onDelete(t)}
+                          className="text-red-500 hover:bg-red-50"
+                          title="Delete Task"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -1508,7 +1505,7 @@ function TaskFormDialog({
                   setAssignedEmployeeId(emp.id || emp.employeeId || "");
                   setAssignedEmployeeName(emp.fullName || emp.username || "");
                 }
-              }} disabled={!isAdmin}>
+              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select assignee..." />
                 </SelectTrigger>
@@ -1760,13 +1757,7 @@ function TaskDetailsSheet({
                 </SelectContent>
               </Select>
               {(() => {
-                const isAssigned = isTaskAssignedToUser(task, {
-                  uid: actor,
-                  employeeId: actor,
-                  username: actor,
-                  name: actor,
-                });
-                const canEdit = isAdmin || isAssigned;
+                const canEdit = true;
                 return canEdit && (
                   <Button variant="outline" size="sm" onClick={() => onEdit(task)}>
                     <Pencil className="size-4 mr-1" />
