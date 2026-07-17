@@ -53,6 +53,7 @@ import {
   GripVertical,
   CheckCircle,
   X,
+  Copy,
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, onSnapshot, doc, query, where, updateDoc } from "firebase/firestore";
@@ -83,6 +84,7 @@ import {
   updateSubtasks,
   isTaskAssignedToUser,
   taskMatchesClient,
+  duplicateTask,
   PRIORITY_OPTIONS,
   TASK_STATUS_OPTIONS,
   subscribeToTemplates,
@@ -296,9 +298,8 @@ function TasksPage() {
   // Separate task lists for tab counting
   const myTasks = useMemo(() => {
     if (!session) return [];
-    if (isAdmin) return []; // Admin/Manager "My Tasks" should be empty
     return allTasks.filter((t) => isTaskAssignedToUser(t, session));
-  }, [allTasks, session, isAdmin]);
+  }, [allTasks, session]);
 
   // Apply filters based on view tab
   const baseList = useMemo(() => {
@@ -419,6 +420,15 @@ function TasksPage() {
       toast.error("Failed to add remark");
     } finally {
       setSavingRemark(false);
+    }
+  };
+
+  const handleDuplicateTask = async (task: Task) => {
+    try {
+      await duplicateTask(task.id, session?.username || "system");
+      toast.success("Task duplicated successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to duplicate task");
     }
   };
 
@@ -610,6 +620,7 @@ function TasksPage() {
             onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
             onAddRemark={(t) => setRemarkTaskId(t.id)}
             onChangeStatus={handleQuickChangeStatus}
+            onDuplicate={handleDuplicateTask}
           />
         </TabsContent>
 
@@ -754,6 +765,7 @@ function TasksPage() {
             onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
             onAddRemark={(t) => setRemarkTaskId(t.id)}
             onChangeStatus={handleQuickChangeStatus}
+            onDuplicate={handleDuplicateTask}
           />
         </TabsContent>
       </Tabs>
@@ -858,6 +870,7 @@ function TaskTable({
   onToggleDone,
   onAddRemark,
   onChangeStatus,
+  onDuplicate,
 }: {
   tasks: Task[];
   clients: RegistryRecord[];
@@ -871,6 +884,7 @@ function TaskTable({
   onToggleDone: (t: Task, v: boolean) => void;
   onAddRemark: (t: Task) => void;
   onChangeStatus: (t: Task, s: TaskStatus) => void;
+  onDuplicate: (t: Task) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -1064,6 +1078,15 @@ function TaskTable({
                             </Button>
                           );
                         })()}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onDuplicate(t)}
+                          title="Duplicate Task"
+                          className="text-emerald-600 hover:bg-emerald-50"
+                        >
+                          <Copy className="size-3.5" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

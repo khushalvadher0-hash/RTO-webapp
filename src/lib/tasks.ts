@@ -1712,3 +1712,56 @@ export async function deleteTaskPermanently(taskId: string): Promise<void> {
   invalidateCache();
 }
 
+/**
+ * Duplicate an existing task (manual or service).
+ */
+export async function duplicateTask(taskId: string, actor: string): Promise<Task> {
+  const { getDoc } = await import("firebase/firestore");
+  let taskDoc = await getDoc(doc(db, COL, taskId));
+  let isService = false;
+  if (!taskDoc.exists()) {
+    taskDoc = await getDoc(doc(db, "registry_services_v2", taskId));
+    if (!taskDoc.exists()) throw new Error("Task not found");
+    isService = true;
+  }
+  const task = taskDoc.data() as Task;
+  
+  // Clone task subtasks
+  const clonedSubtasks = (task.subtasks ?? []).map(st => ({
+    ...st,
+    id: crypto.randomUUID(),
+    completed: false,
+    completedBy: undefined,
+    completedOn: undefined,
+    completedAt: undefined,
+  }));
+
+  const input: CreateTaskInput = {
+    title: `Copy of ${task.title || "Untitled Task"}`,
+    serviceName: task.serviceName || task.serviceType || "",
+    description: task.description || task.remarks || "",
+    assignee: task.assignee || task.assignedEmployeeUid || "",
+    priority: task.priority || "Medium",
+    status: "Assigned",
+    dueDate: task.dueDate || undefined,
+    reminderMinutes: task.reminderMinutes || undefined,
+    associationType: task.associationType || "none",
+    bucket: task.bucket || undefined,
+    recordId: task.recordId || task.clientId || undefined,
+    vehicleId: task.vehicleId || undefined,
+    createdBy: actor,
+    subtasks: clonedSubtasks,
+    templateId: task.templateId || "",
+    clientId: task.clientId || task.recordId || undefined,
+    clientName: task.clientName || undefined,
+    serviceType: task.serviceType || task.serviceName || "",
+    assignedEmployeeId: task.assignedEmployeeId || undefined,
+    assignedEmployeeUid: task.assignedEmployeeUid || undefined,
+    assignedEmployeeName: task.assignedEmployeeName || undefined,
+    assignedEmployeeRole: task.assignedEmployeeRole || undefined,
+    remarks: task.remarks || task.description || "",
+  };
+
+  return createManualTask(input);
+}
+
