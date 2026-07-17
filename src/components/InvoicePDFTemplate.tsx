@@ -215,9 +215,6 @@ export const InvoicePDFTemplate = React.forwardRef<HTMLDivElement, InvoicePDFTem
               COMPANY DETAILS
             </h3>
             <p style={{ margin: "4px 0" }}>
-              <strong>GSTIN:</strong> {GST_NUMBER}
-            </p>
-            <p style={{ margin: "4px 0" }}>
               <strong>Phone:</strong> {CONTACT_NUMBER}
             </p>
             <p style={{ margin: "4px 0" }}>
@@ -252,9 +249,6 @@ export const InvoicePDFTemplate = React.forwardRef<HTMLDivElement, InvoicePDFTem
             </p>
             <p style={{ margin: "4px 0" }}>
               <strong>Address:</strong> {safeText(invoice.clientAddress)}
-            </p>
-            <p style={{ margin: "4px 0" }}>
-              <strong>GSTIN:</strong> —
             </p>
           </div>
         </div>
@@ -379,10 +373,12 @@ export const InvoicePDFTemplate = React.forwardRef<HTMLDivElement, InvoicePDFTem
               <span>Subtotal:</span>
               <span style={{ fontWeight: "600" }}>{formatCurrency(invoice.subtotal)}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>GST (18%):</span>
-              <span style={{ fontWeight: "600" }}>{formatCurrency(invoice.totalTax)}</span>
-            </div>
+            {invoice.totalTax > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>GST (18%):</span>
+                <span style={{ fontWeight: "600" }}>{formatCurrency(invoice.totalTax)}</span>
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Total:</span>
               <span style={{ fontWeight: "600" }}>{formatCurrency(invoice.totalAmount)}</span>

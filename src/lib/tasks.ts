@@ -20,6 +20,7 @@ import { saveRecord, type Bucket, type RegistryRecord, type DeleteReason } from 
 import { createActivity, logClientActivity, type ActivityLog } from "./activity";
 import { toast } from "sonner";
 import { invalidateCache } from "./cacheInvalidator";
+import { getProgressFromStatus } from "./hierarchy";
 
 export function handleFirestoreError(err: any, context: string) {
   console.error(`[Firestore Error: ${context}]`, err);
@@ -127,7 +128,9 @@ export interface Task {
   clientName?: string;
   serviceType?: string;
   assignedEmployeeId?: string;
+  assignedEmployeeUid?: string;
   assignedEmployeeName?: string;
+  assignedEmployeeRole?: string;
   createdDate?: string;
   remarks?: string;
   activityLog?: any[];
@@ -221,6 +224,17 @@ export async function updateSubtasks(
   subtasks: TaskSubtask[],
   actor: string,
 ): Promise<void> {
+  const { getDoc } = await import("firebase/firestore");
+  let taskDoc = await getDoc(doc(db, COL, taskId));
+  let isService = false;
+  
+  if (!taskDoc.exists()) {
+    taskDoc = await getDoc(doc(db, "registry_services_v2", taskId));
+    if (!taskDoc.exists()) throw new Error("Task not found");
+    isService = true;
+  }
+
+  const task = taskDoc.data() as Task;
   const progress = calculateProgress(subtasks);
   const isCompleted = progress === 100 && subtasks.length > 0;
 
@@ -238,9 +252,19 @@ export async function updateSubtasks(
     activity: arrayUnion(entry),
     activityLogs: arrayUnion(cleanLog),
   });
-  console.log("🔄 updateSubtasks raw:", { subtasks, progress, actLog });
-  console.log("🔄 updateSubtasks clean:", updates);
-  await updateDoc(doc(db, COL, taskId), updates);
+
+  if (isService) {
+    if (updates.status !== undefined) {
+      updates.taskStatus = updates.status;
+    }
+    const existingActivity = task.activity || [];
+    const existingActivityLogs = task.activityLogs || [];
+    updates.activity = [...existingActivity, entry];
+    updates.activityLogs = [...existingActivityLogs, cleanLog];
+    await updateDoc(doc(db, "registry_services_v2", taskId), updates);
+  } else {
+    await updateDoc(doc(db, COL, taskId), updates);
+  }
 }
 
 /**
@@ -255,8 +279,14 @@ export async function toggleSubtask(
 
   // Fetch current task to get all subtasks
   const { getDoc } = await import("firebase/firestore");
-  const taskDoc = await getDoc(doc(db, COL, taskId));
-  if (!taskDoc.exists()) throw new Error("Task not found");
+  let taskDoc = await getDoc(doc(db, COL, taskId));
+  let isService = false;
+  
+  if (!taskDoc.exists()) {
+    taskDoc = await getDoc(doc(db, "registry_services_v2", taskId));
+    if (!taskDoc.exists()) throw new Error("Task not found");
+    isService = true;
+  }
 
   const task = taskDoc.data() as Task;
   const subtasks = task.subtasks ?? [];
@@ -313,7 +343,19 @@ export async function toggleSubtask(
     });
     console.log("🔄 toggleSubtask raw:", { updates, actLog });
     console.log("🔄 toggleSubtask clean:", cleanUpdates);
-    await updateDoc(doc(db, COL, taskId), cleanUpdates);
+
+    if (isService) {
+      if (cleanUpdates.status !== undefined) {
+        cleanUpdates.taskStatus = cleanUpdates.status;
+      }
+      const existingActivity = task.activity || [];
+      const existingActivityLogs = task.activityLogs || [];
+      cleanUpdates.activity = [...existingActivity, entry];
+      cleanUpdates.activityLogs = [...existingActivityLogs, cleanLog];
+      await updateDoc(doc(db, "registry_services_v2", taskId), cleanUpdates);
+    } else {
+      await updateDoc(doc(db, COL, taskId), cleanUpdates);
+    }
     console.log("✅ Subtask toggled successfully, progress:", progress);
   } catch (error) {
     console.error("❌ Failed to toggle subtask:", error);
@@ -328,8 +370,14 @@ export async function addSubtask(taskId: string, title: string, actor: string): 
   console.log("➕ Adding subtask to task:", taskId, "title:", title);
 
   const { getDoc } = await import("firebase/firestore");
-  const taskDoc = await getDoc(doc(db, COL, taskId));
-  if (!taskDoc.exists()) throw new Error("Task not found");
+  let taskDoc = await getDoc(doc(db, COL, taskId));
+  let isService = false;
+  
+  if (!taskDoc.exists()) {
+    taskDoc = await getDoc(doc(db, "registry_services_v2", taskId));
+    if (!taskDoc.exists()) throw new Error("Task not found");
+    isService = true;
+  }
 
   const task = taskDoc.data() as Task;
   const subtasks = task.subtasks ?? [];
@@ -355,9 +403,16 @@ export async function addSubtask(taskId: string, title: string, actor: string): 
       activity: arrayUnion(entry),
       activityLogs: arrayUnion(cleanLog),
     });
-    console.log("➕ addSubtask raw:", { subtasks, actLog });
-    console.log("➕ addSubtask clean:", updates);
-    await updateDoc(doc(db, COL, taskId), updates);
+
+    if (isService) {
+      const existingActivity = task.activity || [];
+      const existingActivityLogs = task.activityLogs || [];
+      updates.activity = [...existingActivity, entry];
+      updates.activityLogs = [...existingActivityLogs, cleanLog];
+      await updateDoc(doc(db, "registry_services_v2", taskId), updates);
+    } else {
+      await updateDoc(doc(db, COL, taskId), updates);
+    }
     console.log("✅ Subtask added successfully");
   } catch (error) {
     console.error("❌ Failed to add subtask:", error);
@@ -373,8 +428,15 @@ export async function reassignTask(
   newAssignee: string,
   actor: string,
 ): Promise<void> {
-  const taskDoc = await getDoc(doc(db, COL, taskId));
-  if (!taskDoc.exists()) throw new Error("Task not found");
+  const { getDoc } = await import("firebase/firestore");
+  let taskDoc = await getDoc(doc(db, COL, taskId));
+  let isService = false;
+  
+  if (!taskDoc.exists()) {
+    taskDoc = await getDoc(doc(db, "registry_services_v2", taskId));
+    if (!taskDoc.exists()) throw new Error("Task not found");
+    isService = true;
+  }
 
   const task = taskDoc.data() as Task;
   const prevAssignee = task.assignee;
@@ -402,9 +464,19 @@ export async function reassignTask(
     activity: arrayUnion(entry),
     activityLogs: arrayUnion(cleanLog),
   });
-  console.log("👤 reassignTask raw:", { newAssignee, actLog });
-  console.log("👤 reassignTask clean:", updates);
-  await updateDoc(doc(db, COL, taskId), updates);
+
+  if (isService) {
+    updates.assignedTo = assigneeInfo.assignee;
+    updates.employeeId = newAssigneeId;
+    updates.assignedStaff = assigneeInfo.assignee;
+    const existingActivity = task.activity || [];
+    const existingActivityLogs = task.activityLogs || [];
+    updates.activity = [...existingActivity, entry];
+    updates.activityLogs = [...existingActivityLogs, cleanLog];
+    await updateDoc(doc(db, "registry_services_v2", taskId), updates);
+  } else {
+    await updateDoc(doc(db, COL, taskId), updates);
+  }
   invalidateCache();
 }
 
@@ -457,6 +529,24 @@ export function subscribeToTasks(cb: (tasks: Task[]) => void): () => void {
       const tasks = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }) as Task)
         .filter((t) => !t.isDeleted); // Hide soft-deleted tasks
+
+      // Background healing
+      tasks.forEach((t) => {
+        const uid = t.assignedEmployeeUid || t.assignee;
+        if (uid && uid.length > 15 && !t.assignedEmployeeName) {
+          resolveAssigneeIdentity(uid).then((info) => {
+            if (info.assignedEmployeeName) {
+              updateDoc(doc(db, COL, t.id), {
+                assignedEmployeeUid: info.assignedEmployeeUid,
+                assignedEmployeeId: info.assignedEmployeeId,
+                assignedEmployeeName: info.assignedEmployeeName,
+                assignedEmployeeRole: info.assignedEmployeeRole,
+              }).catch(console.error);
+            }
+          });
+        }
+      });
+
       cb(tasks);
     },
     (err) => {
@@ -515,31 +605,39 @@ export interface CreateTaskInput {
   clientName?: string;
   serviceType?: string;
   assignedEmployeeId?: string;
+  assignedEmployeeUid?: string;
   assignedEmployeeName?: string;
+  assignedEmployeeRole?: string;
   remarks?: string;
 }
 
 async function resolveAssigneeIdentity(input: string): Promise<{
   assignee: string;
   assignedEmployeeId: string;
+  assignedEmployeeUid: string;
   assignedEmployeeName: string;
+  assignedEmployeeRole: string;
 }> {
   const normalized = input?.trim() ?? "";
   if (!normalized) {
-    return { assignee: "", assignedEmployeeId: "", assignedEmployeeName: "" };
+    return { assignee: "", assignedEmployeeId: "", assignedEmployeeUid: "", assignedEmployeeName: "", assignedEmployeeRole: "" };
   }
 
+  // Check by doc ID (Firebase UID)
   const directUser = await getDoc(doc(db, "users", normalized));
   if (directUser.exists()) {
     const data = directUser.data() as any;
     const resolvedName = data.fullName || data.name || data.username || normalized;
     return {
-      assignee: resolvedName,
+      assignee: directUser.id, // Stores Firebase UID internally
       assignedEmployeeId: data.employeeId || directUser.id,
+      assignedEmployeeUid: directUser.id,
       assignedEmployeeName: resolvedName,
+      assignedEmployeeRole: data.role || "",
     };
   }
 
+  // Check by other attributes
   const usersSnap = await getDocs(collection(db, "users"));
   const match = usersSnap.docs.find((docSnap) => {
     const data = docSnap.data() as any;
@@ -550,16 +648,20 @@ async function resolveAssigneeIdentity(input: string): Promise<{
     const data = match.data() as any;
     const resolvedName = data.fullName || data.name || data.username || normalized;
     return {
-      assignee: resolvedName,
+      assignee: match.id, // Stores Firebase UID internally
       assignedEmployeeId: data.employeeId || match.id,
+      assignedEmployeeUid: match.id,
       assignedEmployeeName: resolvedName,
+      assignedEmployeeRole: data.role || "",
     };
   }
 
   return {
     assignee: normalized,
     assignedEmployeeId: normalized,
+    assignedEmployeeUid: normalized,
     assignedEmployeeName: normalized,
+    assignedEmployeeRole: "",
   };
 }
 
@@ -615,7 +717,9 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     clientName: input.clientName,
     serviceType: input.serviceName,
     assignedEmployeeId: input.assignedEmployeeId || assigneeInfo.assignedEmployeeId,
+    assignedEmployeeUid: input.assignedEmployeeUid || assigneeInfo.assignedEmployeeUid,
     assignedEmployeeName: input.assignedEmployeeName || assigneeInfo.assignedEmployeeName,
+    assignedEmployeeRole: input.assignedEmployeeRole || assigneeInfo.assignedEmployeeRole,
     createdDate: now,
     remarks: input.description ?? "",
     activityLog: [initActivity],
@@ -650,7 +754,9 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
       clientName: task.clientName,
       serviceType: task.serviceType,
       assignedEmployeeId: task.assignedEmployeeId,
+      assignedEmployeeUid: task.assignedEmployeeUid,
       assignedEmployeeName: task.assignedEmployeeName,
+      assignedEmployeeRole: task.assignedEmployeeRole,
       createdDate: task.createdDate,
       remarks: task.remarks,
       activityLog: task.activityLog,
@@ -704,9 +810,94 @@ export async function updateTask(
 ): Promise<void> {
   console.log("📝 Updating task:", taskId, "with patch:", patch);
 
+  if (patch.assignee !== undefined) {
+    const assigneeInfo = await resolveAssigneeIdentity(patch.assignee);
+    patch.assignee = assigneeInfo.assignee;
+    patch.assignedEmployeeId = assigneeInfo.assignedEmployeeId;
+    patch.assignedEmployeeUid = assigneeInfo.assignedEmployeeUid;
+    patch.assignedEmployeeName = assigneeInfo.assignedEmployeeName;
+    patch.assignedEmployeeRole = assigneeInfo.assignedEmployeeRole;
+  }
+
   const { getDoc } = await import("firebase/firestore");
   const taskDoc = await getDoc(doc(db, COL, taskId));
-  if (!taskDoc.exists()) throw new Error("Task not found");
+  
+  if (!taskDoc.exists()) {
+    // Check if it's in registry_services_v2
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      console.log("📝 Task is a service task. Updating registry_services_v2.");
+      const serviceData = serviceSnap.data() as any;
+      const updates: any = {
+        updatedAt: new Date().toISOString(),
+      };
+      if (patch.assignee !== undefined) {
+        updates.assignedTo = patch.assignee;
+        updates.assignee = patch.assignee;
+        updates.assignedStaff = patch.assignee;
+      }
+      if (patch.assignedEmployeeId !== undefined) {
+        updates.employeeId = patch.assignedEmployeeId;
+      }
+      if (patch.assignedEmployeeUid !== undefined) {
+        updates.assignedEmployeeUid = patch.assignedEmployeeUid;
+      }
+      if (patch.assignedEmployeeName !== undefined) {
+        updates.assignedEmployeeName = patch.assignedEmployeeName;
+      }
+      if (patch.assignedEmployeeRole !== undefined) {
+        updates.assignedEmployeeRole = patch.assignedEmployeeRole;
+      }
+      if (patch.status !== undefined) {
+        updates.taskStatus = patch.status;
+        updates.progress = getProgressFromStatus(patch.status as any);
+      }
+      if (patch.remarks !== undefined || patch.description !== undefined) {
+        updates.remarks = patch.remarks || patch.description || "";
+        updates.notes = patch.remarks || patch.description || "";
+      }
+      if (patch.dueDate !== undefined) {
+        updates.dueDate = patch.dueDate;
+      }
+      if (patch.serviceName !== undefined || patch.serviceType !== undefined) {
+        updates.serviceType = patch.serviceName || patch.serviceType || "";
+      }
+      if (patch.subtasks !== undefined) {
+        updates.subtasks = patch.subtasks;
+        updates.progress = calculateProgress(patch.subtasks);
+      }
+      if (patch.recordId !== undefined || patch.clientId !== undefined) {
+        updates.clientId = patch.recordId || patch.clientId || "";
+      }
+      if (patch.clientName !== undefined) {
+        updates.clientName = patch.clientName;
+      }
+      if (patch.vehicleId !== undefined) {
+        updates.vehicleId = patch.vehicleId;
+      }
+      if (patch.title !== undefined) {
+        updates.title = patch.title;
+      }
+      if (patch.priority !== undefined) {
+        updates.priority = patch.priority;
+      }
+      if (patch.reminderMinutes !== undefined) {
+        updates.reminderMinutes = patch.reminderMinutes;
+      }
+      
+      const mainEntry = activityEntry(actor, note ?? "Task updated");
+      const existingActivity = serviceData.activity || [];
+      updates.activity = [...existingActivity, mainEntry];
+
+      const cleanUpdates = removeUndefined(updates);
+      await updateDoc(serviceRef, cleanUpdates);
+      console.log("✅ Service task updated successfully in registry_services_v2");
+      invalidateCache();
+      return;
+    }
+    throw new Error("Task not found");
+  }
 
   const existing = taskDoc.data() as Task;
 
@@ -768,7 +959,23 @@ export async function updateTask(
 
 export async function setTaskDone(taskId: string, done: boolean, actor = "system"): Promise<void> {
   const taskDoc = await getDoc(doc(db, COL, taskId));
-  const taskData = taskDoc.exists() ? (taskDoc.data() as Task) : null;
+  
+  if (!taskDoc.exists()) {
+    // Check if it's in registry_services_v2
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      await updateDoc(serviceRef, {
+        taskStatus: done ? "Completed" : "Assigned",
+        updatedAt: new Date().toISOString(),
+      });
+      invalidateCache();
+      return;
+    }
+    throw new Error("Task not found");
+  }
+
+  const taskData = taskDoc.data() as Task;
 
   const entry = activityEntry(actor, done ? "Marked complete" : "Reopened");
   const actLog = createActivity(
@@ -828,6 +1035,34 @@ export async function addComment(taskId: string, author: string, text: string): 
     lastRemarkBy: author,
     lastRemarkAt: now,
   });
+
+  const taskDoc = await getDoc(doc(db, COL, taskId));
+  if (!taskDoc.exists()) {
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      const serviceData = serviceSnap.data() as any;
+      const existingComments = serviceData.comments || [];
+      const existingActivity = serviceData.activity || [];
+      const existingActivityLogs = serviceData.activityLogs || [];
+      
+      const sUpdates = removeUndefined({
+        comments: [...existingComments, comment],
+        lastUpdatedBy: author,
+        lastUpdatedAt: now,
+        activity: [...existingActivity, entry],
+        activityLogs: [...existingActivityLogs, cleanLog],
+        lastRemark: text,
+        lastRemarkBy: author,
+        lastRemarkAt: now,
+        remarks: text,
+      });
+      await updateDoc(serviceRef, sUpdates);
+      invalidateCache();
+      return;
+    }
+  }
+
   console.log("💬 addComment RAW:", { comment, actLog });
   console.log("💬 addComment CLEAN:", updates);
   await updateDoc(doc(db, COL, taskId), updates);
@@ -846,12 +1081,46 @@ export async function addAttachment(taskId: string, file: TaskAttachment): Promi
     activity: arrayUnion(entry),
     activityLogs: arrayUnion(cleanLog),
   });
+
+  const taskDoc = await getDoc(doc(db, COL, taskId));
+  if (!taskDoc.exists()) {
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      const serviceData = serviceSnap.data() as any;
+      const existingAttachments = serviceData.attachments || [];
+      const existingActivity = serviceData.activity || [];
+      const existingActivityLogs = serviceData.activityLogs || [];
+      
+      const sUpdates = removeUndefined({
+        attachments: [...existingAttachments, file],
+        lastUpdatedBy: file.addedBy,
+        lastUpdatedAt: now,
+        activity: [...existingActivity, entry],
+        activityLogs: [...existingActivityLogs, cleanLog],
+      });
+      await updateDoc(serviceRef, sUpdates);
+      invalidateCache();
+      return;
+    }
+  }
+
   console.log("📎 addAttachment RAW:", { file, actLog });
   console.log("📎 addAttachment CLEAN:", updates);
   await updateDoc(doc(db, COL, taskId), updates);
 }
 
 export async function removeTask(taskId: string): Promise<void> {
+  const taskDoc = await getDoc(doc(db, COL, taskId));
+  if (!taskDoc.exists()) {
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      await deleteDoc(serviceRef);
+      invalidateCache();
+      return;
+    }
+  }
   await deleteDoc(doc(db, COL, taskId));
   invalidateCache();
 }
@@ -873,6 +1142,25 @@ export async function softDeleteTask(
     deleteReason: reason,
     activityLogs: arrayUnion(cleanLog),
   });
+
+  const taskDoc = await getDoc(doc(db, COL, taskId));
+  if (!taskDoc.exists()) {
+    const serviceRef = doc(db, "registry_services_v2", taskId);
+    const serviceSnap = await getDoc(serviceRef);
+    if (serviceSnap.exists()) {
+      await updateDoc(serviceRef, {
+        isDeleted: true,
+        deletedAt: now,
+        deletedBy: actor,
+        deleteReason: reason,
+        taskStatus: "Deleted",
+        updatedAt: now,
+      });
+      invalidateCache();
+      return;
+    }
+  }
+
   console.log("🗑️ softDeleteTask RAW:", { isDeleted: true, deleteLog });
   console.log("🗑️ softDeleteTask CLEAN:", updates);
   await updateDoc(doc(db, COL, taskId), updates);
@@ -1015,7 +1303,7 @@ export interface TaskTemplate {
 
 const TEMPLATES_COL = "task_templates";
 
-const DEFAULT_TEMPLATES_SPEC = [
+export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "Insurance",
     serviceType: "Insurance",
@@ -1125,8 +1413,15 @@ const DEFAULT_TEMPLATES_SPEC = [
 export async function provisionDefaultTemplates(): Promise<void> {
   try {
     const colRef = collection(db, TEMPLATES_COL);
+    const metaDoc = await getDoc(doc(db, TEMPLATES_COL, "_metadata"));
+    if (metaDoc.exists() && metaDoc.data()?.provisioned) {
+      return; // Already provisioned once, do not auto-recreate if deleted
+    }
+
     const snap = await getDocs(colRef);
-    const existingNames = snap.docs.map(d => (d.data() as any).templateName);
+    const existingNames = snap.docs
+      .filter(d => d.id !== "_metadata")
+      .map(d => (d.data() as any).templateName);
 
     for (const spec of DEFAULT_TEMPLATES_SPEC) {
       if (!existingNames.includes(spec.templateName)) {
@@ -1140,6 +1435,8 @@ export async function provisionDefaultTemplates(): Promise<void> {
         });
       }
     }
+
+    await setDoc(doc(db, TEMPLATES_COL, "_metadata"), { provisioned: true });
   } catch (err) {
     console.error("[provisionDefaultTemplates] Error seeding defaults:", err);
   }
@@ -1152,7 +1449,7 @@ export function subscribeToTemplates(cb: (templates: TaskTemplate[]) => void): (
   return onSnapshot(
     collection(db, TEMPLATES_COL),
     (snap) => {
-      // If snap is empty (possibly during provisioning delay), fallback to spec
+      // If snap is empty (completely unseeded), fallback to spec
       if (snap.empty) {
         cb(DEFAULT_TEMPLATES_SPEC.map((s, i) => ({
           id: `temp-spec-${i}`,
@@ -1165,7 +1462,8 @@ export function subscribeToTemplates(cb: (templates: TaskTemplate[]) => void): (
         })));
         return;
       }
-      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TaskTemplate));
+      const docs = snap.docs.filter((d) => d.id !== "_metadata");
+      cb(docs.map((d) => ({ id: d.id, ...d.data() }) as TaskTemplate));
     },
     (err) => {
       console.error("[subscribeToTemplates] error:", err);
@@ -1249,6 +1547,62 @@ export async function deleteTemplate(templateId: string, deletedBy: string): Pro
     );
   } catch (err) {
     console.warn("Template Deleted log activity failed:", err);
+  }
+}
+
+export async function deleteAllTemplates(deletedBy: string): Promise<void> {
+  const colRef = collection(db, TEMPLATES_COL);
+  const snap = await getDocs(colRef);
+  const { writeBatch } = await import("firebase/firestore");
+  const batch = writeBatch(db);
+  let count = 0;
+  
+  snap.docs.forEach((d) => {
+    if (d.id !== "_metadata") {
+      batch.delete(d.ref);
+      count++;
+    }
+  });
+
+  if (count > 0) {
+    await batch.commit();
+  }
+
+  // Ensure the provisioned metadata document stays/exists so it doesn't re-seed on next load
+  await setDoc(doc(db, TEMPLATES_COL, "_metadata"), { provisioned: true });
+
+  try {
+    await logClientActivity(
+      "system",
+      deletedBy,
+      deletedBy,
+      `All Task Templates deleted`,
+      "template",
+      null,
+      "",
+    );
+  } catch (err) {
+    console.warn("Delete All Templates log activity failed:", err);
+  }
+}
+
+export async function restoreDefaultTemplates(actor: string): Promise<void> {
+  // Reset provisioned flag so provisionDefaultTemplates will write them
+  await setDoc(doc(db, TEMPLATES_COL, "_metadata"), { provisioned: false });
+  await provisionDefaultTemplates();
+
+  try {
+    await logClientActivity(
+      "system",
+      actor,
+      actor,
+      `Restored default task templates`,
+      "template",
+      null,
+      "",
+    );
+  } catch (err) {
+    console.warn("Restore Default Templates log activity failed:", err);
   }
 }
 

@@ -52,9 +52,10 @@ import {
   Printer,
   GripVertical,
   CheckCircle,
+  X,
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { collection, onSnapshot, doc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, doc, query, where, updateDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { getSession } from "@/lib/auth";
 import {
@@ -85,6 +86,7 @@ import {
   PRIORITY_OPTIONS,
   TASK_STATUS_OPTIONS,
   subscribeToTemplates,
+  DEFAULT_TEMPLATES_SPEC,
   type Task,
   type TaskStatus,
   type TaskPriority,
@@ -213,7 +215,32 @@ function TasksPage() {
       setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     const u6 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
-      setV2Services(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const services = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Background auto-healing
+      services.forEach((s: any) => {
+        const uid = s.assignedEmployeeUid || s.assignedTo || s.employeeId || s.assignee || s.assignedStaff;
+        if (uid && uid.length > 15 && !s.assignedEmployeeName) {
+          import("@/lib/tasks").then(({ resolveAssigneeIdentity }) => {
+            resolveAssigneeIdentity(uid).then((info) => {
+              if (info.assignedEmployeeName) {
+                updateDoc(doc(db, "registry_services_v2", s.id), {
+                  assignee: info.assignedEmployeeUid,
+                  assignedTo: info.assignedEmployeeUid,
+                  employeeId: info.assignedEmployeeUid,
+                  assignedStaff: info.assignedEmployeeUid,
+                  assignedEmployeeId: info.assignedEmployeeId,
+                  assignedEmployeeUid: info.assignedEmployeeUid,
+                  assignedEmployeeName: info.assignedEmployeeName,
+                  assignedEmployeeRole: info.assignedEmployeeRole,
+                }).catch(console.error);
+              }
+            });
+          });
+        }
+      });
+
+      setV2Services(services);
     });
     return () => {
       u1();
@@ -223,10 +250,6 @@ function TasksPage() {
       u6();
     };
   }, []);
-
-  const detailsTask = tasks.find((t) => t.id === detailsId) ?? null;
-
-
 
   const allTasks = useMemo(() => {
     // 1. Get manual tasks
@@ -242,14 +265,14 @@ function TasksPage() {
 
       return {
         id: s.id,
-        title: `${s.serviceType || "Service"} - ${vehicleNo}`,
+        title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
         serviceName: s.serviceType || "",
         description: `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
         assignee: s.assignedTo || s.employeeId || s.assignee || "",
         assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
         assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
         status: (s.taskStatus === "Completed" ? "Completed" : s.taskStatus === "In Progress" ? "In Progress" : "Assigned") as TaskStatus,
-        priority: "Medium" as TaskPriority,
+        priority: (s.priority || "Medium") as TaskPriority,
         done: s.taskStatus === "Completed",
         createdAt: s.createdAt || s.startDate || new Date().toISOString(),
         createdBy: s.createdBy || "System",
@@ -261,11 +284,14 @@ function TasksPage() {
         clientName: clientName,
         manual: false,
         progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
+        reminderMinutes: s.reminderMinutes || 0,
       };
     });
 
     return [...manualTasks, ...serviceTasks];
   }, [tasks, v2Services, vehicles, clients, leads]);
+
+  const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
 
   // Separate task lists for tab counting
   const myTasks = useMemo(() => {
@@ -302,7 +328,7 @@ function TasksPage() {
         (t) =>
           t.title.toLowerCase().includes(q) ||
           (t.description ?? "").toLowerCase().includes(q) ||
-          staffLabel(t.assignee).toLowerCase().includes(q),
+          (t.assignedEmployeeName || "Former Employee").toLowerCase().includes(q),
       );
     }
     if (statusFilter !== "all") list = list.filter((t) => t.status === statusFilter);
@@ -752,6 +778,7 @@ function TasksPage() {
           clients={clients}
           leads={leads}
           vehicles={vehicles}
+          employees={employees}
           actor={session?.username ?? "system"}
           isAdmin={!!isAdmin}
           onEdit={openEdit}
@@ -967,7 +994,7 @@ function TaskTable({
                     >
                       {info.service}
                     </td>
-                    <td className="p-3">{staffLabel(t.assignee) || t.assignee}</td>
+                    <td className="p-3">{t.assignedEmployeeName || "Former Employee"}</td>
                     <td className="p-3">
                       <span
                         className={cn(
@@ -1135,6 +1162,7 @@ function TaskFormDialog({
   const [recordId, setRecordId] = useState<string>("");
   const [vehicleId, setVehicleId] = useState<string>("");
   const [recordSearch, setRecordSearch] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
   const [dueDate, setDueDate] = useState<string>("");
   const [dueTime, setDueTime] = useState<string>("");
   const [reminderMinutes, setReminderMinutes] = useState<string>("0");
@@ -1167,6 +1195,9 @@ function TaskFormDialog({
       setAssociationType(editing.associationType);
       setRecordId(editing.recordId ?? "");
       setVehicleId(editing.vehicleId ?? "");
+      const existingName = editing.clientName ||
+        (editing.associationType === "client" ? clients : leads).find(c => c.id === editing.recordId)?.name || "";
+      setRecordSearch(existingName);
       if (editing.dueDate) {
         const d = new Date(editing.dueDate);
         setDueDate(d.toISOString().slice(0, 10));
@@ -1196,7 +1227,20 @@ function TaskFormDialog({
       setReminderMinutes("0");
       setChecklist([]);
     }
-  }, [open, editing, employees]);
+  }, [open, editing, employees, clients, leads]);
+
+  const templatesList = useMemo(() => {
+    if (dbTemplates.length > 0) return dbTemplates;
+    return DEFAULT_TEMPLATES_SPEC.map((s, i) => ({
+      id: `fallback-spec-${i}`,
+      templateName: s.templateName,
+      serviceType: s.serviceType,
+      subtasks: s.subtasks,
+      isDefault: true,
+      createdBy: "system",
+      createdAt: new Date().toISOString()
+    })) as TaskTemplate[];
+  }, [dbTemplates]);
 
   // Handle service templates lookup
   const handleServiceSelect = (val: string) => {
@@ -1204,7 +1248,7 @@ function TaskFormDialog({
     if (!title.trim()) {
       setTitle(`${val} Processing`);
     }
-    const selectedTpl = dbTemplates.find((t) => t.templateName === val);
+    const selectedTpl = templatesList.find((t) => t.templateName === val);
     if (selectedTpl && selectedTpl.subtasks) {
       const generated: TaskSubtask[] = selectedTpl.subtasks.map((sub) => ({
         id: crypto.randomUUID(),
@@ -1339,15 +1383,15 @@ function TaskFormDialog({
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
-          {/* Service Selector Dropdown */}
+          {/* Predefined Task Selector Dropdown */}
           <div className="grid gap-1.5">
-            <Label>Select Service (Pre-populates Checklist)</Label>
+            <Label>Predefined Task (Pre-populates Checklist)</Label>
             <Select value={serviceName} onValueChange={handleServiceSelect}>
               <SelectTrigger>
-                <SelectValue placeholder="Choose service type..." />
+                <SelectValue placeholder="Choose predefined task..." />
               </SelectTrigger>
               <SelectContent>
-                {dbTemplates.map((tpl) => (
+                {templatesList.map((tpl) => (
                   <SelectItem key={tpl.id} value={tpl.templateName}>
                     {tpl.templateName}
                   </SelectItem>
@@ -1397,33 +1441,80 @@ function TaskFormDialog({
               </Select>
             </div>
 
-            <div className="grid gap-1.5">
+            <div className="grid gap-1.5 relative">
               <Label>Search & select {associationType} *</Label>
-              <div className="space-y-1">
+              <div className="relative">
                 <Input
                   placeholder="Type to search registry…"
                   value={recordSearch}
-                  onChange={(e) => setRecordSearch(e.target.value)}
-                />
-                <Select
-                  value={recordId}
-                  onValueChange={(val) => {
-                    setRecordId(val);
-                    setVehicleId("");
+                  onChange={(e) => {
+                    setRecordSearch(e.target.value);
+                    setShowDropdown(true);
+                    if (recordId) {
+                      setRecordId("");
+                      setVehicleId("");
+                    }
                   }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={`Select a ${associationType}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {recordOptions.map((o) => (
-                      <SelectItem key={o.id} value={o.id}>
-                        {o.name} {o.mvNo ? `(${o.mvNo})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => {
+                    setTimeout(() => setShowDropdown(false), 200);
+                  }}
+                  className="pr-8"
+                />
+                {recordSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecordSearch("");
+                      setRecordId("");
+                      setVehicleId("");
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 size-4 flex items-center justify-center rounded-full hover:bg-slate-100 transition"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
               </div>
+
+              {showDropdown && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl divide-y divide-slate-50">
+                  {recordOptions.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                      }}
+                      onClick={() => {
+                        setRecordId(o.id);
+                        setRecordSearch(o.name);
+                        setVehicleId("");
+                        setShowDropdown(false);
+                      }}
+                      className={`w-full text-left px-3.5 py-2.5 text-xs hover:bg-slate-50 transition flex flex-col gap-0.5 ${
+                        recordId === o.id ? "bg-slate-50 font-semibold" : "text-gray-700"
+                      }`}
+                    >
+                      <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                        {o.name}
+                        {recordId === o.id && (
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-green-100 text-green-800">
+                            Selected
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {o.mvNo ? `🚘 ${o.mvNo}` : ""} {o.work ? `• ⚙️ ${o.work}` : ""}
+                      </span>
+                    </button>
+                  ))}
+                  {recordOptions.length === 0 && (
+                    <div className="p-3 text-center text-xs text-muted-foreground italic">
+                      No matching {associationType}s found
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1606,10 +1697,11 @@ function TaskFormDialog({
 function TaskDetailsSheet({
   open,
   onClose,
-  task,
+  task: initialTask,
   clients,
   leads,
   vehicles,
+  employees,
   actor,
   isAdmin,
   onEdit,
@@ -1620,6 +1712,7 @@ function TaskDetailsSheet({
   clients: RegistryRecord[];
   leads: RegistryRecord[];
   vehicles: any[];
+  employees: any[];
   actor: string;
   isAdmin: boolean;
   onEdit: (t: Task) => void;
@@ -1627,23 +1720,96 @@ function TaskDetailsSheet({
   const [comment, setComment] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const [liveTask, setLiveTask] = useState<Task | null>(null);
+
+
+
+  const assignedEmp = useMemo(() => {
+    if (!liveTask && !initialTask.assignee) return null;
+    const currentAssignee = liveTask?.assignee || initialTask.assignee;
+    return employees.find(
+      (e) =>
+        e.id === currentAssignee ||
+        e.uid === currentAssignee ||
+        e.employeeId === currentAssignee ||
+        e.username === currentAssignee
+    );
+  }, [liveTask, initialTask.assignee, employees]);
+
+  useEffect(() => {
+    if (!open || !initialTask.id) return;
+    setLiveTask(null);
+
+    // Subscribe to registry_tasks
+    const unsubTasks = onSnapshot(doc(db, "registry_tasks", initialTask.id), (snap) => {
+      if (snap.exists()) {
+        setLiveTask({ id: snap.id, ...snap.data() } as Task);
+      } else {
+        // Fallback: Subscribe to registry_services_v2
+        const unsubServices = onSnapshot(doc(db, "registry_services_v2", initialTask.id), (sSnap) => {
+          if (sSnap.exists()) {
+            const s = sSnap.data() as any;
+            const vehicle = vehicles.find((v) => v.id === s.vehicleId);
+            const vehicleNo = vehicle?.vehicleNumber || "—";
+            const clientId = vehicle?.clientId || s.clientId || "";
+            const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
+            const clientName = client?.name || s.clientName || "Unknown Client";
+
+            setLiveTask({
+              id: sSnap.id,
+              title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
+              serviceName: s.serviceType || "",
+              description: s.remarks || s.notes || `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
+              assignee: s.assignedTo || s.employeeId || s.assignee || "",
+              assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
+              assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
+              status: (s.taskStatus === "Completed" ? "Completed" : s.taskStatus === "In Progress" ? "In Progress" : "Assigned") as TaskStatus,
+              priority: (s.priority || "Medium") as TaskPriority,
+              done: s.taskStatus === "Completed",
+              createdAt: s.createdAt || s.startDate || new Date().toISOString(),
+              createdBy: s.createdBy || "System",
+              dueDate: s.dueDate || s.startDate || "",
+              associationType: (client?.isDeleted ? "lead" : "client") as AssociationType,
+              bucket: client?.isDeleted ? "leads" : "clients",
+              recordId: clientId,
+              clientId: clientId,
+              clientName: clientName,
+              manual: false,
+              progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
+              reminderMinutes: s.reminderMinutes || 0,
+              subtasks: s.subtasks || [],
+              comments: s.comments || [],
+              activity: s.activity || [],
+              activityLogs: s.activityLogs || [],
+              attachments: s.attachments || [],
+            } as Task);
+          }
+        });
+        return () => unsubServices();
+      }
+    });
+
+    return () => unsubTasks();
+  }, [open, initialTask.id, clients, leads, vehicles]);
+
+  const activeTask = liveTask || initialTask;
 
   const linked = useMemo(() => {
-    if (!task.recordId) return null;
-    const src = task.bucket === "leads" ? leads : clients;
-    return src.find((r) => r.id === task.recordId) ?? null;
-  }, [task, clients, leads]);
+    if (!activeTask.recordId) return null;
+    const src = activeTask.bucket === "leads" ? leads : clients;
+    return src.find((r) => r.id === activeTask.recordId) ?? null;
+  }, [activeTask, clients, leads]);
 
   const linkedVehicle = useMemo(() => {
-    if (!task.vehicleId) return null;
-    return vehicles.find((v) => v.id === task.vehicleId) ?? null;
-  }, [task, vehicles]);
+    if (!activeTask.vehicleId) return null;
+    return vehicles.find((v) => v.id === activeTask.vehicleId) ?? null;
+  }, [activeTask, vehicles]);
 
   const sortedComments = useMemo(() => {
-    return [...(task.comments ?? [])].sort(
+    return [...(activeTask.comments ?? [])].sort(
       (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
     );
-  }, [task.comments]);
+  }, [activeTask.comments]);
 
   const MAX_ATTACH_MB = 10;
   const onFile = (file: File) => {
@@ -1653,7 +1819,7 @@ function TaskDetailsSheet({
     }
     setUploading(true);
     setUploadPct(0);
-    const storageKey = `tasks/${task.id}/${crypto.randomUUID()}-${file.name}`;
+    const storageKey = `tasks/${activeTask.id}/${crypto.randomUUID()}-${file.name}`;
     const fileRef = ref(storage, storageKey);
     const uploadTask = uploadBytesResumable(fileRef, file);
 
@@ -1680,7 +1846,7 @@ function TaskDetailsSheet({
           addedAt: new Date().toISOString(),
           addedBy: actor,
         };
-        await addAttachment(task.id, attachment);
+        await addAttachment(activeTask.id, attachment);
         setUploading(false);
       },
     );
@@ -1690,21 +1856,21 @@ function TaskDetailsSheet({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="pr-8">{task.title}</SheetTitle>
+          <SheetTitle className="pr-8">{activeTask.title}</SheetTitle>
           <div className="text-xs text-muted-foreground flex flex-wrap gap-1.5 pt-1">
-            <Badge variant="outline" className={cn("border", priorityBadgeClass(task.priority))}>
-              {task.priority}
+            <Badge variant="outline" className={cn("border", priorityBadgeClass(activeTask.priority))}>
+              {activeTask.priority}
             </Badge>
-            <Badge variant="outline" className={cn("border", statusBadgeClass(task.status))}>
-              {task.status}
+            <Badge variant="outline" className={cn("border", statusBadgeClass(activeTask.status))}>
+              {activeTask.status}
             </Badge>
-            {task.recordId && (
+            {activeTask.recordId && (
               <Badge
                 variant="outline"
                 className="border bg-primary/10 text-primary border-primary/20"
               >
                 <Link2 className="size-3 mr-1" />
-                {task.bucket}
+                {activeTask.bucket}
               </Badge>
             )}
             {linkedVehicle && (
@@ -1720,7 +1886,7 @@ function TaskDetailsSheet({
         </SheetHeader>
 
         <div className="flex gap-2 mt-4 mb-4">
-          <Button variant="outline" size="sm" onClick={() => generateTaskPDF(task)}>
+          <Button variant="outline" size="sm" onClick={() => generateTaskPDF(activeTask)}>
             <Download className="size-4 mr-1" />
             Export PDF
           </Button>
@@ -1735,16 +1901,16 @@ function TaskDetailsSheet({
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <Select
-                value={task.status}
+                value={activeTask.status}
                 onValueChange={(v) => {
                   const s = v as TaskStatus;
                   updateTask(
-                    task.id,
+                    activeTask.id,
                     { status: s, done: s === "Completed" },
                     actor,
                     `Status → ${s}`,
                   );
-                  if (s === "Completed") setTaskDone(task.id, true, actor);
+                  if (s === "Completed") setTaskDone(activeTask.id, true, actor);
                 }}
               >
                 <SelectTrigger className="w-44">
@@ -1761,7 +1927,7 @@ function TaskDetailsSheet({
               {(() => {
                 const canEdit = true;
                 return canEdit && (
-                  <Button variant="outline" size="sm" onClick={() => onEdit(task)}>
+                  <Button variant="outline" size="sm" onClick={() => onEdit(activeTask)}>
                     <Pencil className="size-4 mr-1" />
                     Edit
                   </Button>
@@ -1769,63 +1935,69 @@ function TaskDetailsSheet({
               })()}
             </div>
 
-            {isAdmin && <ReassignmentSection task={task} actor={actor} />}
+            {isAdmin && <ReassignmentSection task={activeTask} actor={actor} />}
           </div>
 
           <Section title="Description">
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-              {task.description?.trim() ? task.description : "No description."}
+              {activeTask.description?.trim() ? activeTask.description : "No description."}
             </p>
           </Section>
 
           {/* Subtasks checklist progress details */}
-          <SubtasksSection task={task} actor={actor} />
+          <SubtasksSection task={activeTask} actor={actor} employees={employees} />
 
           <Section title="Details">
             <dl className="grid grid-cols-2 gap-3 text-sm">
-              <Meta label="Assigned to" value={staffLabel(task.assignee) || task.assignee} />
-              <Meta label="Created by" value={task.createdBy} />
-              <Meta label="Due" value={task.dueDate ? formatDate(task.dueDate) : "—"} />
+              <Meta label="Assigned to" value={activeTask.assignedEmployeeName || "Former Employee"} />
+              {assignedEmp && (
+                <>
+                  <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
+                  <Meta label="Email" value={assignedEmp.email || "—"} />
+                </>
+              )}
+              <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
+              <Meta label="Due" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
               <Meta
                 label="Reminder"
-                value={task.reminderMinutes ? `${task.reminderMinutes} min before` : "None"}
+                value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
               />
-              <Meta label="Created" value={new Date(task.createdAt).toLocaleString()} />
-              <Meta label="Type" value={task.manual ? "Manual" : "Auto from record"} />
-              {task.readBy && (
+              <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
+              <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
+              {activeTask.readBy && (
                 <>
-                  <Meta label="Read By" value={staffLabel(task.readBy) || task.readBy} />
+                  <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
                   <Meta
                     label="Read On"
-                    value={task.readAt ? new Date(task.readAt).toLocaleString() : "—"}
+                    value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
                   />
                 </>
               )}
-              {task.lastUpdatedBy && task.lastUpdatedAt && (
+              {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
                 <>
                   <Meta
                     label="Last Updated By"
-                    value={staffLabel(task.lastUpdatedBy) || task.lastUpdatedBy}
+                    value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
                   />
                   <Meta
                     label="Last Updated At"
-                    value={new Date(task.lastUpdatedAt).toLocaleString()}
+                    value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
                   />
                 </>
               )}
             </dl>
           </Section>
 
-          {task.recordId && (
-            <ClientRelationshipPanel clientId={task.recordId} />
+          {activeTask.recordId && (
+            <ClientRelationshipPanel clientId={activeTask.recordId} />
           )}
 
           <Section title="Attachments">
             <div className="space-y-2">
-              {(task.attachments ?? []).length === 0 && (
+              {(activeTask.attachments ?? []).length === 0 && (
                 <p className="text-sm text-muted-foreground">No attachments yet.</p>
               )}
-              {(task.attachments ?? []).map((a) => (
+              {(activeTask.attachments ?? []).map((a) => (
                 <a
                   key={a.id}
                   href={a.downloadUrl}
@@ -1888,7 +2060,7 @@ function TaskDetailsSheet({
                 placeholder="Add a note…"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && comment.trim()) {
-                    addComment(task.id, actor, comment.trim());
+                    addComment(activeTask.id, actor, comment.trim());
                     setComment("");
                   }
                 }}
@@ -1897,7 +2069,7 @@ function TaskDetailsSheet({
                 size="sm"
                 onClick={() => {
                   if (comment.trim()) {
-                    addComment(task.id, actor, comment.trim());
+                    addComment(activeTask.id, actor, comment.trim());
                     setComment("");
                   }
                 }}
@@ -1944,8 +2116,8 @@ function TaskDetailsSheet({
 
           <Section title="Activity timeline">
             <ol className="relative border-l pl-4 space-y-3">
-              {(task.activityLogs ?? []).length > 0
-                ? (task.activityLogs ?? []).map((log) => (
+              {(activeTask.activityLogs ?? []).length > 0
+                ? (activeTask.activityLogs ?? []).map((log) => (
                     <li key={log.id} className="text-sm">
                       <span className="absolute -left-1.5 mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
                       <div className="font-medium">{log.action}</div>
@@ -1959,7 +2131,7 @@ function TaskDetailsSheet({
                       </div>
                     </li>
                   ))
-                : (task.activity ?? []).map((a) => (
+                : (activeTask.activity ?? []).map((a) => (
                     <li key={a.id} className="text-sm">
                       <span className="absolute -left-1.5 mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
                       <div>{a.message}</div>
@@ -2031,6 +2203,8 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
       setEmployees(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
     });
   }, []);
+
+
 
   const calculateProgress = (subs: any[]) => {
     if (!subs.length) return 0;

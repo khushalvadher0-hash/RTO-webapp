@@ -64,10 +64,6 @@ export function InvoiceDocument({ invoice }: InvoiceDocumentProps) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4 text-sm text-slate-700">
           <div>
-            <p className="font-medium text-slate-700">GST Number:</p>
-            <p>{GST_NUMBER}</p>
-          </div>
-          <div>
             <p className="font-medium text-slate-700">Contact:</p>
             <p>{CONTACT_NUMBER}</p>
           </div>
@@ -126,7 +122,7 @@ export function InvoiceDocument({ invoice }: InvoiceDocumentProps) {
                 <th className="px-4 py-2 text-center font-bold">Qty</th>
                 <th className="px-4 py-2 text-right font-bold">Unit Price</th>
                 <th className="px-4 py-2 text-right font-bold">Amount</th>
-                <th className="px-4 py-2 text-right font-bold">Tax</th>
+                {invoice.totalTax > 0 && <th className="px-4 py-2 text-right font-bold">Tax</th>}
                 <th className="px-4 py-2 text-right font-bold">Total</th>
               </tr>
             </thead>
@@ -138,7 +134,7 @@ export function InvoiceDocument({ invoice }: InvoiceDocumentProps) {
                   <td className="px-4 py-2 text-center">{service.quantity}</td>
                   <td className="px-4 py-2 text-right">{formatCurrency(service.unitPrice)}</td>
                   <td className="px-4 py-2 text-right">{formatCurrency(service.amount)}</td>
-                  <td className="px-4 py-2 text-right">{formatCurrency(service.tax)}</td>
+                  {invoice.totalTax > 0 && <td className="px-4 py-2 text-right">{formatCurrency(service.tax)}</td>}
                   <td className="px-4 py-2 text-right font-medium">
                     {formatCurrency(service.total)}
                   </td>
@@ -155,10 +151,12 @@ export function InvoiceDocument({ invoice }: InvoiceDocumentProps) {
             <span className="text-slate-700">Subtotal:</span>
             <span className="font-medium">{formatCurrency(invoice.subtotal)}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-700">Tax (18%):</span>
-            <span className="font-medium">{formatCurrency(invoice.totalTax)}</span>
-          </div>
+          {invoice.totalTax > 0 && (
+            <div className="flex justify-between">
+              <span className="text-slate-700">Tax (18%):</span>
+              <span className="font-medium">{formatCurrency(invoice.totalTax)}</span>
+            </div>
+          )}
           <div className="flex justify-between bg-blue-50 p-2 rounded font-bold text-lg text-slate-900">
             <span>TOTAL:</span>
             <span className="text-blue-600">{formatCurrency(invoice.totalAmount)}</span>

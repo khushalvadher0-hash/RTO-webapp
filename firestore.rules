@@ -44,6 +44,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Task Templates ────────────────────────────────────────────────────────
+    match /task_templates/{id} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
     // ── Customer profiles ─────────────────────────────────────────────────────
     match /registry_customers/{id} {
       allow read: if isAuth();

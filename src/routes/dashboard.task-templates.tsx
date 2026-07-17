@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Copy,
   Eye,
+  RotateCcw,
 } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  deleteAllTemplates,
+  restoreDefaultTemplates,
   type TaskTemplate,
 } from "@/lib/tasks";
 import { verifyAdminPin } from "@/lib/adminSecurity";
@@ -178,7 +181,6 @@ function TaskTemplatesPage() {
 
   const handleDelete = async (tpl: TaskTemplate) => {
     if (!isAdmin) return toast.error("Only admins can delete templates.");
-    if (tpl.isDefault) return toast.error("Default templates cannot be deleted.");
 
     const pin = prompt(`Enter Admin PIN to delete template "${tpl.templateName}":`);
     if (!pin) return;
@@ -191,6 +193,58 @@ function TaskTemplatesPage() {
       toast.success("Template deleted successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to delete template");
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!isAdmin) return toast.error("Only admins can delete templates.");
+    if (templates.length === 0) return toast.error("No templates to delete.");
+
+    const confirmed = window.confirm(
+      "Warning: This will permanently delete ALL task templates. Are you sure you want to proceed?"
+    );
+    if (!confirmed) {
+      return toast.info("Deletion cancelled.");
+    }
+
+    const pin = prompt("Enter Admin PIN to confirm deletion of all templates:");
+    if (pin === null) {
+      return toast.info("Deletion cancelled.");
+    }
+
+    const ok = await verifyAdminPin(pin);
+    if (!ok) return toast.error("Invalid Admin PIN");
+
+    try {
+      await deleteAllTemplates(actor);
+      toast.success("All templates deleted successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete templates");
+    }
+  };
+
+  const handleRestoreDefaults = async () => {
+    if (!isAdmin) return toast.error("Only admins can restore templates.");
+    const confirmed = window.confirm(
+      "Are you sure you want to restore the default task templates? This will add back all initial templates."
+    );
+    if (!confirmed) {
+      return toast.info("Operation cancelled.");
+    }
+
+    const pin = prompt("Enter Admin PIN to confirm restoring default templates:");
+    if (pin === null) {
+      return toast.info("Operation cancelled.");
+    }
+
+    const ok = await verifyAdminPin(pin);
+    if (!ok) return toast.error("Invalid Admin PIN");
+
+    try {
+      await restoreDefaultTemplates(actor);
+      toast.success("Default templates restored successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to restore default templates");
     }
   };
 
@@ -208,9 +262,28 @@ function TaskTemplatesPage() {
         </div>
 
         {isAdmin && (
-          <Button onClick={handleOpenCreate} size="sm" className="gap-1.5 shrink-0">
-            <Plus className="size-4" /> Create Template
-          </Button>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              onClick={handleRestoreDefaults}
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+            >
+              <RotateCcw className="size-4" /> Restore Defaults
+            </Button>
+            <Button
+              onClick={handleDeleteAll}
+              variant="destructive"
+              size="sm"
+              className="gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
+              disabled={templates.length === 0}
+            >
+              <Trash2 className="size-4" /> Delete All
+            </Button>
+            <Button onClick={handleOpenCreate} size="sm" className="gap-1.5">
+              <Plus className="size-4" /> Create Template
+            </Button>
+          </div>
         )}
       </div>
 
@@ -279,10 +352,9 @@ function TaskTemplatesPage() {
                               </Button>
                               <Button
                                 onClick={() => handleDelete(tpl)}
-                                disabled={tpl.isDefault}
                                 variant="ghost"
                                 size="icon"
-                                className="size-7 hover:bg-rose-50 text-rose-600 disabled:opacity-30"
+                                className="size-7 hover:bg-rose-50 text-rose-600"
                                 title="Delete"
                               >
                                 <Trash2 className="size-3.5" />

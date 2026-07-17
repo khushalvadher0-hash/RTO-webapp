@@ -202,10 +202,9 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
     setLoading(true);
     setError(null);
     setSuccess(null);
-
     const services: InvoiceServiceItem[] = breakdown.map((item) => {
       const price = item.amount;
-      const tax = price * 0.18;
+      const tax = 0;
       return {
         serviceId:
           item.serviceId ||
@@ -216,10 +215,9 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
         unitPrice: price,
         amount: price,
         tax,
-        total: price + tax,
+        total: price,
       };
     });
-
     console.log({
       step: "INVOICE_PAYLOAD_PREPARED",
       selectedClientId: selectedClient.id,
@@ -459,20 +457,7 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
               value={unitPrice ? `₹${Number(unitPrice).toLocaleString("en-IN")}` : "₹0"}
               className="mt-1 bg-muted font-bold text-foreground cursor-not-allowed"
             />
-            {unitPrice && Number(unitPrice) > 0 && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Tax (18%): ₹
-                {(Number(unitPrice) * 0.18).toLocaleString("en-IN", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{" "}
-                | Total: ₹
-                {(Number(unitPrice) * 1.18).toLocaleString("en-IN", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </p>
-            )}
+
           </div>
 
           {/* Collection Date & Ask Bhaylubha Checkbox */}

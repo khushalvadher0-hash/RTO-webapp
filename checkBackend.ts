@@ -4,9 +4,19 @@ import { collection, getDocs } from "firebase/firestore";
 
 async function checkBackend() {
   try {
-    const colRef = collection(db, "registry_clients_v2");
-    const snapshot = await getDocs(colRef);
-    console.log("✅ Backend reachable. Document count:", snapshot.size);
+    console.log("--- REGISTRY_SERVICES_V2 ---");
+    const sCol = collection(db, "registry_services_v2");
+    const sSnap = await getDocs(sCol);
+    sSnap.docs.forEach((doc) => {
+      console.log(`ID: ${doc.id}, ServiceType: ${doc.data().serviceType || doc.data().serviceName}, VehicleId: ${doc.data().vehicleId}`);
+    });
+
+    console.log("--- REGISTRY_TASKS ---");
+    const tCol = collection(db, "registry_tasks");
+    const tSnap = await getDocs(tCol);
+    tSnap.docs.forEach((doc) => {
+      console.log(`ID: ${doc.id}, Title: ${doc.data().title}`);
+    });
   } catch (err) {
     console.error("❌ Backend connection error:", err);
   }

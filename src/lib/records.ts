@@ -313,8 +313,26 @@ export const STAFF_USERS: { username: string; name: string }[] = [
   { username: "rahul", name: "Rahul Verma" },
 ];
 
-export const staffLabel = (username?: string) =>
-  STAFF_USERS.find((s) => s.username === username)?.name ?? "";
+let employeesCache: any[] = [];
+// Subscribe to users collection to dynamically maintain cache of names
+onSnapshot(collection(db, "users"), (snap) => {
+  employeesCache = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+});
+
+export const staffLabel = (username?: string) => {
+  if (!username) return "";
+  const found = employeesCache.find(
+    (e) =>
+      e.uid === username ||
+      e.employeeId === username ||
+      e.username === username ||
+      e.fullName === username ||
+      e.name === username
+  );
+  if (found) return found.fullName || found.name || found.username || username;
+
+  return STAFF_USERS.find((s) => s.username === username)?.name ?? username;
+};
 
 // ─── Service helpers ──────────────────────────────────────────────────────────
 

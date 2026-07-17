@@ -643,15 +643,18 @@ export function subscribeToInvoicePayments(
   const q = query(
     collection(db, BILLING_INVOICE_PAYMENTS_COL),
     where("invoiceId", "==", invoiceId),
-    orderBy("createdAt", "desc"),
   );
 
   return onSnapshot(
     q,
     (snap) => {
-      callback(
-        snap.docs.map((d) => ({ id: d.id, ...(d.data() as InvoicePayment) }) as InvoicePayment),
-      );
+      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as InvoicePayment) }) as InvoicePayment);
+      list.sort((a, b) => {
+        const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
+        const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
+        return dateB - dateA;
+      });
+      callback(list);
     },
     (error) => {
       handleFirestoreError(error, "subscribeToInvoicePayments");
@@ -664,12 +667,17 @@ export async function getInvoicePayments(invoiceId: string): Promise<InvoicePaym
   const q = query(
     collection(db, BILLING_INVOICE_PAYMENTS_COL),
     where("invoiceId", "==", invoiceId),
-    orderBy("createdAt", "desc"),
   );
   const snap = await getDocs(q);
-  return snap.docs.map(
+  const list = snap.docs.map(
     (docSnap) => ({ id: docSnap.id, ...(docSnap.data() as InvoicePayment) }) as InvoicePayment,
   );
+  list.sort((a, b) => {
+    const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
+    const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
+    return dateB - dateA;
+  });
+  return list;
 }
 
 export async function calculateBillingMetrics(): Promise<BillingMetrics> {
