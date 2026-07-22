@@ -238,17 +238,32 @@ export async function updateSubtasks(
   const progress = calculateProgress(subtasks);
   const isCompleted = progress === 100 && subtasks.length > 0;
 
-  const entry = activityEntry(actor, "Updated subtasks");
-  const actLog = createActivity(actor, "Updated subtasks");
-
   const now = new Date().toISOString();
+  
+  // Create default activity entry
+  let entry = activityEntry(actor, "Updated subtasks");
+  let actLog = createActivity(actor, "Updated subtasks");
+  
+  if (isCompleted && task.status !== "Completed") {
+    entry = activityEntry(actor, "Task automatically completed because all subtasks are finished");
+    actLog = createActivity(actor, "Task automatically completed because all subtasks are finished", "status", task.status || "Assigned", "Completed");
+  }
+
   const cleanLog = removeUndefined(actLog);
   const updates = removeUndefined({
     subtasks,
     progress,
     lastUpdatedBy: actor,
     lastUpdatedAt: now,
-    ...(isCompleted ? { status: "Completed", done: true } : { done: false }),
+    ...(isCompleted ? { 
+      status: "Completed", 
+      done: true,
+      completedAt: now,
+      completedOn: now,
+      completedBy: actor
+    } : { 
+      done: false 
+    }),
     activity: arrayUnion(entry),
     activityLogs: arrayUnion(cleanLog),
   });
@@ -920,6 +935,11 @@ export async function updateTask(
   const mainEntry = activityEntry(actor, note ?? "Task updated");
 
   const now = new Date().toISOString();
+  if (patch.remarks !== undefined) {
+    patch.lastRemark = patch.remarks;
+    patch.lastRemarkBy = actor;
+    patch.lastRemarkAt = now;
+  }
   const updates: any = {
     ...patch,
     lastUpdatedBy: actor,
@@ -1034,6 +1054,7 @@ export async function addComment(taskId: string, author: string, text: string): 
     lastRemark: text,
     lastRemarkBy: author,
     lastRemarkAt: now,
+    remarks: text,
   });
 
   const taskDoc = await getDoc(doc(db, COL, taskId));

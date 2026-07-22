@@ -338,7 +338,8 @@ export function subscribeToAllClients(callback: (clients: AggregatedClient[]) =>
       let pendingServices = 0;
       let completedServices = 0;
       let totalRevenue = 0;
-      let totalReceived = 0;
+      let hasAllocatedAdvance = clientServices.some((s) => s.invoiceId === `advance_${client.id}`);
+      let totalReceived = hasAllocatedAdvance ? 0 : (Number((client as any).advancePayment) || 0);
       let lastActivityDate: string | undefined;
 
       const allServices: ClientService[] = clientServices.map((service) => {

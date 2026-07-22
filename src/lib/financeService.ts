@@ -102,6 +102,7 @@ export interface LedgerEntry {
   balance: number;
   referenceId: string; // Payment ID or Invoice ID
   remarks: string;
+  clientId?: string;
 }
 
 export interface FinanceAuditLog {
@@ -408,6 +409,7 @@ export async function recordPaymentEntry(
     account: payment.accountName,
     referenceId: payDocRef.id,
     remarks: `Payment for Service/Invoice ${invoiceNumber}. Recv by ${payment.receivedBy}`,
+    clientId,
   });
 
   await logFinanceAction(
@@ -475,6 +477,7 @@ export async function recordMultiInvoicePayment(
       account: payment.accountName,
       referenceId: payDocRef.id,
       remarks: `Payment allocation for Invoice ${iData.invoiceNumber}. Recv by ${payment.receivedBy}`,
+      clientId,
     });
   }
 
@@ -542,6 +545,7 @@ export async function recordDirectPayment(
     account: payment.accountName,
     referenceId: payDocRef.id,
     remarks: `Direct Payment from ${clientName}. Recv by ${payment.receivedBy}`,
+    clientId,
   });
 
   await logFinanceAction(
@@ -759,5 +763,176 @@ export function subscribeAndSyncFinance(cb: (records: FinanceRecord[]) => void) 
     });
     cb(list);
   });
+}
+
+/**
+ * Synchronize client advance payment: creates/updates/deletes placeholder invoice,
+ * payment history, and ledger records based on client's advance payment value.
+ */
+export async function syncClientAdvancePayment(
+  clientId: string,
+  advancePayment: number,
+  clientName: string,
+  clientMobile: string,
+  clientAddress: string,
+  createdBy: string = "System"
+): Promise<void> {
+  const invoiceId = `advance_${clientId}`;
+  const paymentId = `pay_advance_${clientId}`;
+  const ledgerId = `ledger_advance_${clientId}`;
+
+  const invoiceRef = doc(db, INVOICES_COL, invoiceId);
+  const paymentRef = doc(db, PAYMENTS_COL, paymentId);
+  const ledgerRef = doc(db, LEDGER_COL, ledgerId);
+
+  const now = new Date().toISOString();
+
+  if (advancePayment > 0) {
+    // 1. Check if invoice placeholder already exists
+    const invSnap = await getDoc(invoiceRef);
+    if (invSnap.exists()) {
+      const invData = invSnap.data() as any;
+      // If it is the placeholder, update it. If it is already a real invoice (has services), we update the totalPaid
+      if (invData.invoiceNumber === "Temporary Invoice" || !invData.services || invData.services.length === 0) {
+        await setDoc(invoiceRef, {
+          id: invoiceId,
+          invoiceNumber: "Temporary Invoice",
+          clientId,
+          clientName,
+          clientMobile: clientMobile || null,
+          clientAddress: clientAddress || null,
+          subtotal: 0,
+          totalTax: 0,
+          totalAmount: 0,
+          totalPaid: advancePayment,
+          invoiceDate: invData.invoiceDate || now,
+          createdBy: invData.createdBy || createdBy,
+          createdAt: invData.createdAt || now,
+          status: "Paid",
+          services: [],
+          pdfUrl: null,
+          collectionDate: invData.collectionDate || now.slice(0, 10),
+          askBhaylubha: invData.askBhaylubha || false,
+        }, { merge: true });
+      } else {
+        // Real invoice exists at this ID. Update its totalPaid
+        const newTotalPaid = advancePayment;
+        const newStatus = newTotalPaid >= invData.totalAmount ? "Paid" : newTotalPaid > 0 ? "Partially Paid" : "Pending";
+        await updateDoc(invoiceRef, {
+          totalPaid: newTotalPaid,
+          status: newStatus,
+          clientName,
+          clientMobile: clientMobile || null,
+          clientAddress: clientAddress || null,
+          updatedAt: now,
+        });
+
+        // Also update the services proportionally in registry_services_v2
+        if (invData.services && invData.services.length > 0) {
+          for (const sItem of invData.services) {
+            const sId = sItem.serviceId;
+            if (!sId) continue;
+            const innerSRef = doc(db, "registry_services_v2", sId);
+            const innerSSnap = await getDoc(innerSRef);
+            if (innerSSnap.exists()) {
+              const innerSData = innerSSnap.data() as any;
+              const serviceRatio = invData.totalAmount > 0 ? (sItem.total / invData.totalAmount) : 0;
+              const allocatedAmount = Math.round(newTotalPaid * serviceRatio);
+              const newSReceived = Math.min(sItem.total, allocatedAmount);
+              const newSPending = Math.max(0, sItem.total - newSReceived);
+              await updateDoc(innerSRef, {
+                amountReceived: newSReceived,
+                pendingAmount: newSPending,
+                taskStatus: newSPending === 0 ? "Completed" : innerSData.taskStatus,
+              });
+            }
+          }
+        }
+      }
+    } else {
+      // Create new placeholder invoice
+      await setDoc(invoiceRef, {
+        id: invoiceId,
+        invoiceNumber: "Temporary Invoice",
+        clientId,
+        clientName,
+        clientMobile: clientMobile || null,
+        clientAddress: clientAddress || null,
+        subtotal: 0,
+        totalTax: 0,
+        totalAmount: 0,
+        totalPaid: advancePayment,
+        invoiceDate: now,
+        createdBy,
+        createdAt: now,
+        status: "Paid",
+        services: [],
+        pdfUrl: null,
+        collectionDate: now.slice(0, 10),
+        askBhaylubha: false,
+      });
+    }
+
+    // Get active invoice number for allocations
+    let activeInvoiceNumber = "Temporary Invoice";
+    const invSnapCheck = await getDoc(invoiceRef);
+    if (invSnapCheck.exists()) {
+      const invCheckData = invSnapCheck.data() as any;
+      if (invCheckData.invoiceNumber && invCheckData.invoiceNumber !== "Temporary Invoice") {
+        activeInvoiceNumber = invCheckData.invoiceNumber;
+      }
+    }
+
+    // 2. Set or Update Payment history record
+    await setDoc(paymentRef, {
+      paymentId: "PAY-ADV",
+      clientId,
+      clientName,
+      financeRecordId: invoiceId,
+      invoiceId: invoiceId,
+      amount: advancePayment,
+      method: "Cash",
+      receivedBy: createdBy,
+      receivedAt: now,
+      accountName: "Cash Account",
+      remarks: "Client Advance Payment",
+      referenceNumber: null,
+      allocations: [{
+        invoiceId: invoiceId,
+        invoiceNumber: activeInvoiceNumber,
+        allocatedAmount: advancePayment,
+      }],
+    });
+
+    // 3. Set or Update Ledger entry
+    await setDoc(ledgerRef, {
+      timestamp: now,
+      type: "Debit",
+      amount: advancePayment,
+      account: "Cash Account",
+      referenceId: paymentId,
+      remarks: `Advance Payment for client ${clientName}`,
+      balance: advancePayment,
+      clientId,
+    });
+
+  } else {
+    // If advance payment is 0 or less, delete the placeholder records if they exist
+    const invSnap = await getDoc(invoiceRef);
+    if (invSnap.exists()) {
+      const invData = invSnap.data() as any;
+      if (invData.invoiceNumber === "Temporary Invoice" || !invData.services || invData.services.length === 0) {
+        await deleteDoc(invoiceRef);
+      } else {
+        await updateDoc(invoiceRef, {
+          totalPaid: 0,
+          status: "Pending",
+          updatedAt: now,
+        });
+      }
+    }
+    await deleteDoc(paymentRef);
+    await deleteDoc(ledgerRef);
+  }
 }
 

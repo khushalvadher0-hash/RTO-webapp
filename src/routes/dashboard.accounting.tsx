@@ -275,9 +275,67 @@ function AccountingDashboardPage() {
   }, [v2Services]);
 
   // Filtered lists
+
   const allAccountingRows = useMemo(() => {
     const rows: any[] = [];
     const clientsWithServices = new Set<string>();
+
+    // Map of clientId -> array of uninvoiced services
+    const uninvoicedServicesMap = new Map<string, any[]>();
+    // Map of clientId -> set of invoiceIds
+    const clientInvoiceIds = new Map<string, Set<string>>();
+
+    v2Services.forEach((s) => {
+      const clientId = s.clientId || v2Vehicles.find((v) => v.id === s.vehicleId)?.clientId || "";
+      if (!clientId) return;
+
+      if (!clientInvoiceIds.has(clientId)) {
+        clientInvoiceIds.set(clientId, new Set());
+      }
+      if (s.invoiceId && s.invoiceId !== "none") {
+        clientInvoiceIds.get(clientId)!.add(s.invoiceId);
+      }
+
+      const isPending = !s.invoiceNumber || s.invoiceNumber === "Pending Invoice" || !s.invoiceId || s.invoiceId === "none";
+      if (isPending) {
+        if (!uninvoicedServicesMap.has(clientId)) {
+          uninvoicedServicesMap.set(clientId, []);
+        }
+        uninvoicedServicesMap.get(clientId)!.push(s);
+      }
+    });
+
+    // Map of serviceId -> dynamically allocated advance payment
+    const dynamicAllocations = new Map<string, number>();
+
+    v2Clients.forEach((c) => {
+      const adv = Number(c.advancePayment) || 0;
+      if (adv <= 0) return;
+
+      const invoiceIds = clientInvoiceIds.get(c.id);
+      const isAllocated = invoiceIds && invoiceIds.has(`advance_${c.id}`);
+      if (isAllocated) return; // Already allocated to an invoice in database
+
+      const uninvoiced = uninvoicedServicesMap.get(c.id) || [];
+      if (uninvoiced.length === 0) return;
+
+      const totalUninvoicedAmt = uninvoiced.reduce((sum, s) => sum + (s.serviceAmount || 0), 0);
+      if (totalUninvoicedAmt <= 0) return;
+
+      let remainingAdv = adv;
+      uninvoiced.forEach((s, idx) => {
+        const amt = s.serviceAmount || 0;
+        let allocated = 0;
+        if (idx === uninvoiced.length - 1) {
+          allocated = Math.min(amt, remainingAdv);
+        } else {
+          const ratio = amt / totalUninvoicedAmt;
+          allocated = Math.min(amt, Math.round(adv * ratio));
+        }
+        dynamicAllocations.set(s.id, allocated);
+        remainingAdv -= allocated;
+      });
+    });
 
     v2Services.forEach((s) => {
       const vehicle = v2Vehicles.find((v) => v.id === s.vehicleId);
@@ -292,7 +350,9 @@ function AccountingDashboardPage() {
       const clientMobile = client?.mobile || client?.mo || s.clientMobile || "";
 
       const invoiceAmount = s.serviceAmount || 0;
-      const receivedAmount = s.amountReceived || 0;
+      const dbReceived = s.amountReceived || 0;
+      const dynamicAlloc = dynamicAllocations.get(s.id) || 0;
+      const receivedAmount = dbReceived + dynamicAlloc;
       const balanceAmount = Math.max(0, invoiceAmount - receivedAmount);
       const paymentStatus = balanceAmount === 0 ? "Paid" : receivedAmount > 0 ? "Partially Paid" : "Pending";
       const colDate = s.collectionDate || s.dueDate || "";
@@ -309,7 +369,7 @@ function AccountingDashboardPage() {
       }
 
       rows.push({
-        id: s.id, // The service ID itself is the row ID
+        id: s.id,
         clientId: clientId,
         clientName: clientName,
         clientMobile: clientMobile,
@@ -329,29 +389,30 @@ function AccountingDashboardPage() {
       });
     });
 
-    // Add clients with no services as Pending Invoice fallback
+    // Add clients with no services as Pending Invoice fallback / Temporary Invoice if advancePayment exists
     v2Clients.forEach((c) => {
       if (!clientsWithServices.has(c.id)) {
         const clientVehicles = v2Vehicles.filter((v) => v.clientId === c.id);
         const vehicleNum = c.mvNo || clientVehicles.map((v) => v.vehicleNumber).join(", ") || "—";
+        const hasAdv = (c.advancePayment || 0) > 0;
         rows.push({
           id: `no-service-${c.id}`,
           clientId: c.id,
           clientName: c.name || "Unknown Client",
           clientMobile: c.mo || c.mobile || "",
           vehicleNumber: vehicleNum,
-          invoiceId: "none",
-          invoiceNumber: "Pending Invoice",
-          invoiceAmount: 0,
-          receivedAmount: 0,
+          invoiceId: hasAdv ? `advance_${c.id}` : "none",
+          invoiceNumber: hasAdv ? "Temporary Invoice" : "Pending Invoice",
+          invoiceAmount: c.advancePayment || 0,
+          receivedAmount: c.advancePayment || 0,
           balanceAmount: 0,
-          collectionDate: "",
-          paymentStatus: "Pending Invoice",
+          collectionDate: hasAdv ? new Date().toISOString().slice(0, 10) : "",
+          paymentStatus: hasAdv ? "Paid" : "Pending Invoice",
           askBhaylubha: false,
           assignedEmployee: c.assignee || "—",
           daysOverdue: 0,
           services: "—",
-          hasInvoice: false,
+          hasInvoice: hasAdv,
         });
       }
     });
@@ -484,13 +545,73 @@ function AccountingDashboardPage() {
   const metrics = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     
+    // First, calculate the dynamic allocations for uninvoiced services (same logic as in allAccountingRows)
+    const uninvoicedServicesMap = new Map<string, any[]>();
+    const clientInvoiceIds = new Map<string, Set<string>>();
+    const clientsWithServices = new Set<string>();
+
+    v2Services.forEach((s) => {
+      const clientId = s.clientId || v2Vehicles.find((v) => v.id === s.vehicleId)?.clientId || "";
+      if (!clientId) return;
+
+      clientsWithServices.add(clientId);
+
+      if (!clientInvoiceIds.has(clientId)) {
+        clientInvoiceIds.set(clientId, new Set());
+      }
+      if (s.invoiceId && s.invoiceId !== "none") {
+        clientInvoiceIds.get(clientId)!.add(s.invoiceId);
+      }
+
+      const isPending = !s.invoiceNumber || s.invoiceNumber === "Pending Invoice" || !s.invoiceId || s.invoiceId === "none";
+      if (isPending) {
+        if (!uninvoicedServicesMap.has(clientId)) {
+          uninvoicedServicesMap.set(clientId, []);
+        }
+        uninvoicedServicesMap.get(clientId)!.push(s);
+      }
+    });
+
+    const dynamicAllocations = new Map<string, number>();
+
+    v2Clients.forEach((c) => {
+      const adv = Number(c.advancePayment) || 0;
+      if (adv <= 0) return;
+
+      const invoiceIds = clientInvoiceIds.get(c.id);
+      const isAllocated = invoiceIds && invoiceIds.has(`advance_${c.id}`);
+      if (isAllocated) return;
+
+      const uninvoiced = uninvoicedServicesMap.get(c.id) || [];
+      if (uninvoiced.length === 0) return;
+
+      const totalUninvoicedAmt = uninvoiced.reduce((sum, s) => sum + (s.serviceAmount || 0), 0);
+      if (totalUninvoicedAmt <= 0) return;
+
+      let remainingAdv = adv;
+      uninvoiced.forEach((s, idx) => {
+        const amt = s.serviceAmount || 0;
+        let allocated = 0;
+        if (idx === uninvoiced.length - 1) {
+          allocated = Math.min(amt, remainingAdv);
+        } else {
+          const ratio = amt / totalUninvoicedAmt;
+          allocated = Math.min(amt, Math.round(adv * ratio));
+        }
+        dynamicAllocations.set(s.id, allocated);
+        remainingAdv -= allocated;
+      });
+    });
+
     let totalReceivable = 0;
     let totalReceived = 0;
     let overdueCollections = 0;
 
     v2Services.forEach((s) => {
       const amt = s.serviceAmount || 0;
-      const rec = s.amountReceived || 0;
+      const dbRec = s.amountReceived || 0;
+      const dynamicAlloc = dynamicAllocations.get(s.id) || 0;
+      const rec = dbRec + dynamicAlloc;
       const pending = Math.max(0, amt - rec);
 
       totalReceivable += amt;
@@ -499,6 +620,17 @@ function AccountingDashboardPage() {
       const colDate = s.collectionDate || s.dueDate || "";
       if (pending > 0 && colDate && colDate < todayStr) {
         overdueCollections += pending;
+      }
+    });
+
+    // Add unallocated advance payments for clients without services
+    v2Clients.forEach((c) => {
+      if (!clientsWithServices.has(c.id)) {
+        const adv = Number(c.advancePayment) || 0;
+        if (adv > 0) {
+          totalReceivable += adv;
+          totalReceived += adv;
+        }
       }
     });
 
@@ -518,7 +650,7 @@ function AccountingDashboardPage() {
       todayCollections,
       overdueCollections,
     };
-  }, [v2Services, paymentEntries]);
+  }, [v2Services, paymentEntries, v2Clients, v2Vehicles]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {

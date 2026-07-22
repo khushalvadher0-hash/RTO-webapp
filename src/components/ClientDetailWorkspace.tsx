@@ -61,7 +61,8 @@ import { generatePDF } from "@/lib/pdfGenerator";
 import { toast } from "sonner";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import { storage, auth } from "@/lib/firebase";
+import { storage, auth, db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { getSession } from "@/lib/auth";
 import { subscribeStaffPermissions, type RolePermissions } from "@/lib/permissions";
 import { secureDelete } from "@/lib/secureDelete";
@@ -143,6 +144,8 @@ export function ClientDetailWorkspace({
     null,
   );
   const [zoom, setZoom] = useState(1);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [ledgerEntries, setLedgerEntries] = useState<any[]>([]);
 
   const [rolePermissions, setRolePermissions] = useState<any>(null);
   const session = getSession();
@@ -175,6 +178,29 @@ export function ClientDetailWorkspace({
       setLoading(false);
     });
     return unsub;
+  }, [clientId]);
+
+  // Load real-time client payments and ledger entries
+  useEffect(() => {
+    if (!clientId) return;
+    const qPayments = query(collection(db, "payment_history"), where("clientId", "==", clientId));
+    const unsubPayments = onSnapshot(qPayments, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => (b.receivedAt || "").localeCompare(a.receivedAt || ""));
+      setPayments(list);
+    });
+
+    const qLedger = query(collection(db, "accounts_ledger"), where("clientId", "==", clientId));
+    const unsubLedger = onSnapshot(qLedger, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+      setLedgerEntries(list);
+    });
+
+    return () => {
+      unsubPayments();
+      unsubLedger();
+    };
   }, [clientId]);
 
   // Handle Client Save
@@ -757,13 +783,24 @@ export function ClientDetailWorkspace({
 
               {/* Accounting Summary */}
               <Card className="md:col-span-2 border shadow-sm bg-muted/10">
-                <CardHeader className="pb-2">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-xs uppercase font-bold tracking-wide text-muted-foreground">
-                    Accounting Aggregates
+                    Accounting & Finance
                   </CardTitle>
+                  <Badge variant="outline" className="capitalize text-[10px]">
+                    Status: {details.accounting.pendingAmount === 0 ? "Paid" : details.accounting.amountReceived > 0 ? "Partially Paid" : "Pending"}
+                  </Badge>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-2">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="p-3 border rounded-xl bg-background shadow-sm">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">
+                        Advance Payment
+                      </span>
+                      <p className="text-xl font-bold mt-1 text-foreground">
+                        ₹{(details.advancePayment || 0).toLocaleString("en-IN")}
+                      </p>
+                    </div>
                     <div className="p-3 border rounded-xl bg-background shadow-sm">
                       <span className="text-[10px] text-muted-foreground uppercase font-bold">
                         Total Bill
@@ -827,6 +864,59 @@ export function ClientDetailWorkspace({
                       </div>
                     </div>
                   )}
+
+                  {/* Collection History */}
+                  <div className="border-t pt-3 space-y-2">
+                    <p className="text-[10px] uppercase font-bold tracking-wide text-muted-foreground">
+                      Collection History (Payments)
+                    </p>
+                    {payments.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">No payments recorded.</p>
+                    ) : (
+                      <div className="space-y-1 max-h-[150px] overflow-y-auto">
+                        {payments.map((p: any) => (
+                          <div key={p.id} className="p-2 border rounded-lg bg-background text-[11px] flex justify-between items-center font-mono">
+                            <div>
+                              <span className="font-semibold text-foreground">{p.paymentId || "PAYMENT"}</span>
+                              <span className="text-muted-foreground ml-2">({p.method} - {p.accountName})</span>
+                              {p.remarks && <span className="text-muted-foreground block text-[10px] font-sans italic">{p.remarks}</span>}
+                            </div>
+                            <div className="text-right">
+                              <span className="font-bold text-green-600 block">₹{p.amount.toLocaleString("en-IN")}</span>
+                              <span className="text-[10px] text-muted-foreground">{(p.receivedAt || "").slice(0, 10)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ledger Entries */}
+                  <div className="border-t pt-3 space-y-2">
+                    <p className="text-[10px] uppercase font-bold tracking-wide text-muted-foreground">
+                      Ledger Entries
+                    </p>
+                    {ledgerEntries.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">No ledger entries.</p>
+                    ) : (
+                      <div className="space-y-1 max-h-[150px] overflow-y-auto">
+                        {ledgerEntries.map((l: any) => (
+                          <div key={l.id} className="p-2 border rounded-lg bg-background text-[11px] flex justify-between items-center font-mono">
+                            <div>
+                              <span className="font-semibold text-foreground">{l.remarks}</span>
+                              <span className="text-muted-foreground block text-[10px]">{l.account}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className={`font-bold block ${l.type === "Debit" ? "text-green-600" : "text-red-600"}`}>
+                                {l.type === "Debit" ? "+" : "-"}₹{l.amount.toLocaleString("en-IN")}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground block">Bal: ₹{l.balance.toLocaleString("en-IN")}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -1561,6 +1651,15 @@ export function ClientDetailWorkspace({
                   <SelectItem value="lead">Lead</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold uppercase">Advance Payment (₹)</Label>
+              <Input
+                type="number"
+                value={clientForm.advancePayment || ""}
+                onChange={(e) => setClientForm({ ...clientForm, advancePayment: Number(e.target.value) || 0 })}
+                placeholder="e.g. 1000"
+              />
             </div>
           </div>
           <DialogFooter>

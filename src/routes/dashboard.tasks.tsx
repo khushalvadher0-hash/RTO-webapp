@@ -35,6 +35,8 @@ import {
   Plus,
   Link2,
   Search,
+  LayoutGrid,
+  List,
   Pencil,
   CheckCircle2,
   Eye,
@@ -170,6 +172,7 @@ function TasksPage() {
     const isAd = sess?.role === "admin" || sess?.role === "manager";
     return isAd ? "all" : "my";
   });
+  const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -273,7 +276,7 @@ function TasksPage() {
         assignee: s.assignedTo || s.employeeId || s.assignee || "",
         assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
         assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
-        status: (s.taskStatus === "Completed" ? "Completed" : s.taskStatus === "In Progress" ? "In Progress" : "Assigned") as TaskStatus,
+        status: (s.taskStatus || s.status || "Assigned") as TaskStatus,
         priority: (s.priority || "Medium") as TaskPriority,
         done: s.taskStatus === "Completed",
         createdAt: s.createdAt || s.startDate || new Date().toISOString(),
@@ -287,6 +290,7 @@ function TasksPage() {
         manual: false,
         progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
         reminderMinutes: s.reminderMinutes || 0,
+        remarks: s.remarks || "",
       };
     });
 
@@ -387,16 +391,19 @@ function TasksPage() {
   ]);
 
   const stats = useMemo(
-    () => ({
-      my: myTasks.length,
-      all: allTasks.length,
-      visible: visible.length,
-      pending: visible.filter((t) => !t.done).length,
-      overdue: visible.filter(isOverdue).length,
-      completed: visible.filter((t) => t.done).length,
-      statusCounts: getStatusCounts(visible),
-    }),
-    [visible, myTasks, allTasks],
+    () => {
+      const tabTasks = viewTab === "my" ? myTasks : allTasks;
+      return {
+        my: myTasks.length,
+        all: allTasks.length,
+        visible: visible.length,
+        pending: tabTasks.filter((t) => !t.done).length,
+        overdue: tabTasks.filter(isOverdue).length,
+        completed: tabTasks.filter((t) => t.done).length,
+        statusCounts: getStatusCounts(tabTasks),
+      };
+    },
+    [visible, myTasks, allTasks, viewTab],
   );
 
   const openCreate = () => {
@@ -460,14 +467,34 @@ function TasksPage() {
             {stats.completed} done
           </p>
         </div>
-        {isAdmin && (
-          <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex border rounded-lg overflow-hidden bg-slate-50">
+            <Button
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              size="sm"
+              className={`rounded-none px-3 h-9 ${viewMode === "table" ? "bg-white border shadow-sm font-semibold text-primary" : ""}`}
+              onClick={() => setViewMode("table")}
+              title="Table View"
+            >
+              <List className="size-4 mr-1" /> Table
+            </Button>
+            <Button
+              variant={viewMode === "card" ? "secondary" : "ghost"}
+              size="sm"
+              className={`rounded-none px-3 h-9 ${viewMode === "card" ? "bg-white border shadow-sm font-semibold text-primary" : ""}`}
+              onClick={() => setViewMode("card")}
+              title="Card View"
+            >
+              <LayoutGrid className="size-4 mr-1" /> Cards
+            </Button>
+          </div>
+          {isAdmin && (
             <Button onClick={openCreate}>
               <Plus className="size-4 mr-1" />
               Add task
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Tab Navigation */}
@@ -524,11 +551,13 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All staff</SelectItem>
-                  {employees.map((s) => (
-                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
-                      {s.fullName || s.name || s.username}
-                    </SelectItem>
-                  ))}
+                  {employees
+                    .filter((e) => e.status === "active" && !e.isDeleted)
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.fullName || s.name || s.username}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <Select value={associationFilter} onValueChange={setAssociationFilter}>
@@ -603,25 +632,46 @@ function TasksPage() {
             </div>
           </div>
 
-          {/* Task Grid Table */}
-          <TaskTable
-            tasks={visible}
-            clients={clients}
-            leads={leads}
-            vehicles={vehicles}
-            isAdmin={!!isAdmin}
-            session={session}
-            onView={(t) => setDetailsId(t.id)}
-            onEdit={openEdit}
-            onDelete={(t) => {
-              setTaskToDelete(t);
-              setDeleteOpen(true);
-            }}
-            onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
-            onAddRemark={(t) => setRemarkTaskId(t.id)}
-            onChangeStatus={handleQuickChangeStatus}
-            onDuplicate={handleDuplicateTask}
-          />
+          {/* Task Grid Table or Card View */}
+          {viewMode === "card" ? (
+            <TaskCards
+              tasks={visible}
+              clients={clients}
+              leads={leads}
+              vehicles={vehicles}
+              isAdmin={!!isAdmin}
+              session={session}
+              onView={(t) => setDetailsId(t.id)}
+              onEdit={openEdit}
+              onDelete={(t) => {
+                setTaskToDelete(t);
+                setDeleteOpen(true);
+              }}
+              onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
+              onAddRemark={(t) => setRemarkTaskId(t.id)}
+              onChangeStatus={handleQuickChangeStatus}
+              onDuplicate={handleDuplicateTask}
+            />
+          ) : (
+            <TaskTable
+              tasks={visible}
+              clients={clients}
+              leads={leads}
+              vehicles={vehicles}
+              isAdmin={!!isAdmin}
+              session={session}
+              onView={(t) => setDetailsId(t.id)}
+              onEdit={openEdit}
+              onDelete={(t) => {
+                setTaskToDelete(t);
+                setDeleteOpen(true);
+              }}
+              onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
+              onAddRemark={(t) => setRemarkTaskId(t.id)}
+              onChangeStatus={handleQuickChangeStatus}
+              onDuplicate={handleDuplicateTask}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="all" className="space-y-3">
@@ -669,11 +719,13 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All staff</SelectItem>
-                  {employees.map((s) => (
-                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
-                      {s.fullName || s.name || s.username}
-                    </SelectItem>
-                  ))}
+                  {employees
+                    .filter((e) => e.status === "active" && !e.isDeleted)
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.fullName || s.name || s.username}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <Select value={associationFilter} onValueChange={setAssociationFilter}>
@@ -748,25 +800,46 @@ function TasksPage() {
             </div>
           </div>
 
-          {/* Task Grid Table */}
-          <TaskTable
-            tasks={visible}
-            clients={clients}
-            leads={leads}
-            vehicles={vehicles}
-            isAdmin={!!isAdmin}
-            session={session}
-            onView={(t) => setDetailsId(t.id)}
-            onEdit={openEdit}
-            onDelete={(t) => {
-              setTaskToDelete(t);
-              setDeleteOpen(true);
-            }}
-            onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
-            onAddRemark={(t) => setRemarkTaskId(t.id)}
-            onChangeStatus={handleQuickChangeStatus}
-            onDuplicate={handleDuplicateTask}
-          />
+          {/* Task Grid Table or Card View */}
+          {viewMode === "card" ? (
+            <TaskCards
+              tasks={visible}
+              clients={clients}
+              leads={leads}
+              vehicles={vehicles}
+              isAdmin={!!isAdmin}
+              session={session}
+              onView={(t) => setDetailsId(t.id)}
+              onEdit={openEdit}
+              onDelete={(t) => {
+                setTaskToDelete(t);
+                setDeleteOpen(true);
+              }}
+              onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
+              onAddRemark={(t) => setRemarkTaskId(t.id)}
+              onChangeStatus={handleQuickChangeStatus}
+              onDuplicate={handleDuplicateTask}
+            />
+          ) : (
+            <TaskTable
+              tasks={visible}
+              clients={clients}
+              leads={leads}
+              vehicles={vehicles}
+              isAdmin={!!isAdmin}
+              session={session}
+              onView={(t) => setDetailsId(t.id)}
+              onEdit={openEdit}
+              onDelete={(t) => {
+                setTaskToDelete(t);
+                setDeleteOpen(true);
+              }}
+              onToggleDone={(t, v) => setTaskDone(t.id, v, session?.username ?? "system")}
+              onAddRemark={(t) => setRemarkTaskId(t.id)}
+              onChangeStatus={handleQuickChangeStatus}
+              onDuplicate={handleDuplicateTask}
+            />
+          )}
         </TabsContent>
       </Tabs>
 
@@ -856,6 +929,57 @@ function TasksPage() {
   );
 }
 
+function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRecord[], vehicles: any[]) {
+  let clientName = t.clientName || "Standalone";
+  const targetId = t.clientId || t.recordId;
+  if (targetId) {
+    const foundClient = clients.find((c) => c.id === targetId);
+    if (foundClient) {
+      clientName = foundClient.name;
+    } else {
+      const foundLead = leads.find((l) => l.id === targetId);
+      if (foundLead) {
+        clientName = foundLead.name;
+      }
+    }
+  }
+
+  let taskName = t.title || "General Follow Up";
+  let service = t.serviceName || "";
+
+  if (
+    taskName.startsWith("Client:") ||
+    taskName.startsWith("Lead:") ||
+    taskName.startsWith("Customer:")
+  ) {
+    const parts = taskName.split("—");
+    if (parts.length > 1) {
+      const extracted = parts[parts.length - 1].trim();
+      taskName = extracted;
+      if (!service) {
+        service = extracted;
+      }
+    } else {
+      taskName = "General Follow Up";
+    }
+  }
+
+  if (!service) {
+    service = t.description || "Follow Up";
+  }
+
+  // Resolve vehicle details if linked
+  let vehicleNum = "";
+  if (t.vehicleId) {
+    const found = vehicles.find((v) => v.id === t.vehicleId);
+    if (found) {
+      vehicleNum = found.vehicleNumber || "";
+    }
+  }
+
+  return { taskName, clientName, service, vehicleNum };
+}
+
 // ─── Professional Task Table Component ──────────────────────────────────────
 function TaskTable({
   tasks,
@@ -896,54 +1020,7 @@ function TaskTable({
   }, [tasks, currentPage]);
 
   const getTaskInfo = (t: Task) => {
-    let clientName = t.clientName || "Standalone";
-    const targetId = t.clientId || t.recordId;
-    if (targetId) {
-      const foundClient = clients.find((c) => c.id === targetId);
-      if (foundClient) {
-        clientName = foundClient.name;
-      } else {
-        const foundLead = leads.find((l) => l.id === targetId);
-        if (foundLead) {
-          clientName = foundLead.name;
-        }
-      }
-    }
-
-    let taskName = t.title || "General Follow Up";
-    let service = t.serviceName || "";
-
-    if (
-      taskName.startsWith("Client:") ||
-      taskName.startsWith("Lead:") ||
-      taskName.startsWith("Customer:")
-    ) {
-      const parts = taskName.split("—");
-      if (parts.length > 1) {
-        const extracted = parts[parts.length - 1].trim();
-        taskName = extracted;
-        if (!service) {
-          service = extracted;
-        }
-      } else {
-        taskName = "General Follow Up";
-      }
-    }
-
-    if (!service) {
-      service = t.description || "Follow Up";
-    }
-
-    // Resolve vehicle details if linked
-    let vehicleNum = "";
-    if (t.vehicleId) {
-      const found = vehicles.find((v) => v.id === t.vehicleId);
-      if (found) {
-        vehicleNum = found.vehicleNumber || "";
-      }
-    }
-
-    return { taskName, clientName, service, vehicleNum };
+    return getTaskInfoHelper(t, clients, leads, vehicles);
   };
 
   const getSubtasksProgress = (t: Task) => {
@@ -970,7 +1047,7 @@ function TaskTable({
                 <th className="p-3">Due Date</th>
                 <th className="p-3">Status</th>
                 <th className="p-3">Progress</th>
-                <th className="p-3">Last Remark</th>
+                <th className="p-3">Remarks</th>
                 <th className="p-3">Last Updated By</th>
                 <th className="p-3">Last Updated On</th>
                 <th className="p-3 text-center">Actions</th>
@@ -1040,10 +1117,10 @@ function TaskTable({
                     </td>
                     <td className="p-3 font-mono text-[10px]">{getSubtasksProgress(t) || "—"}</td>
                     <td
-                      className="p-3 max-w-[180px] truncate text-gray-600 italic"
-                      title={t.lastRemark || "No remarks"}
+                      className="p-3 max-w-[180px] truncate text-gray-600 italic cursor-help"
+                      title={t.remarks || "No Remarks"}
                     >
-                      {t.lastRemark || "No remarks"}
+                      {t.remarks ? (t.remarks.length > 70 ? t.remarks.slice(0, 70) + "..." : t.remarks) : "No Remarks"}
                     </td>
                     <td className="p-3 text-gray-500">
                       {t.lastRemarkBy
@@ -1151,6 +1228,183 @@ function TaskTable({
   );
 }
 
+// ─── Professional Task Cards Component ──────────────────────────────────────
+function TaskCards({
+  tasks,
+  clients,
+  leads,
+  vehicles,
+  isAdmin,
+  session,
+  onView,
+  onEdit,
+  onDelete,
+  onToggleDone,
+  onAddRemark,
+  onChangeStatus,
+  onDuplicate,
+}: {
+  tasks: Task[];
+  clients: RegistryRecord[];
+  leads: RegistryRecord[];
+  vehicles: any[];
+  isAdmin: boolean;
+  session: any;
+  onView: (t: Task) => void;
+  onEdit: (t: Task) => void;
+  onDelete: (t: Task) => void;
+  onToggleDone: (t: Task, v: boolean) => void;
+  onAddRemark: (t: Task) => void;
+  onChangeStatus: (t: Task, s: TaskStatus) => void;
+  onDuplicate: (t: Task) => void;
+}) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 9; // 3 columns * 3 rows looks best
+
+  const totalPages = Math.ceil(tasks.length / pageSize);
+  const paginatedTasks = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return tasks.slice(start, start + pageSize);
+  }, [tasks, currentPage]);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {paginatedTasks.map((t) => {
+          const info = getTaskInfoHelper(t, clients, leads, vehicles);
+          const latestRemark = t.remarks || "No Remarks";
+          const displayRemark = latestRemark.length > 70 ? latestRemark.slice(0, 70) + "..." : latestRemark;
+          
+          return (
+            <div key={t.id} className="border rounded-xl bg-white p-4 shadow-sm hover:shadow-md transition flex flex-col justify-between gap-3 min-h-[220px]">
+              <div className="space-y-2">
+                {/* Header status and priority badges */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold border", priorityBadgeClass(t.priority))}>
+                    {t.priority}
+                  </span>
+                  <select
+                    value={t.status}
+                    onChange={(e) => onChangeStatus(t, e.target.value as TaskStatus)}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded text-[10px] font-bold border bg-transparent cursor-pointer",
+                      statusBadgeClass(t.status),
+                    )}
+                  >
+                    {TASK_STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Task Name */}
+                <h4 className="font-semibold text-gray-900 text-sm truncate" title={info.taskName}>
+                  {info.taskName}
+                </h4>
+
+                {/* Details list */}
+                <div className="text-xs space-y-1 text-gray-600">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Client:</span>
+                    <span className="font-bold text-primary max-w-[150px] truncate" title={info.clientName}>{info.clientName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Service:</span>
+                    <span className="font-semibold truncate max-w-[150px]" title={info.service}>{info.service}</span>
+                  </div>
+                  {info.vehicleNum && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Vehicle:</span>
+                      <span className="font-mono text-[10px]">{info.vehicleNum}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Assignee:</span>
+                    <span>{t.assignedEmployeeName || "Former Employee"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Due Date:</span>
+                    <span className="font-mono">{t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN") : "—"}</span>
+                  </div>
+                </div>
+
+                {/* Remarks section */}
+                <div className="border-t pt-2 mt-2">
+                  <div className="text-[10px] uppercase font-bold text-gray-400">Remarks</div>
+                  <p className="text-xs text-gray-600 italic mt-0.5 cursor-help" title={latestRemark}>
+                    {displayRemark}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="border-t pt-2 flex items-center justify-between gap-1 mt-auto">
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onView(t)} title="View Detail">
+                    <Eye className="size-3.5" />
+                  </Button>
+                  {(() => {
+                    const canEdit = true;
+                    return canEdit && (
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onEdit(t)} title="Edit Task">
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    );
+                  })()}
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50" onClick={() => onDuplicate(t)} title="Duplicate Task">
+                    <Copy className="size-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onAddRemark(t)} title="Add Remark">
+                    <MessageSquare className="size-3.5" />
+                  </Button>
+                </div>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50" onClick={() => onDelete(t)} title="Delete Task">
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {paginatedTasks.length === 0 && (
+        <div className="p-6 text-center text-muted-foreground border rounded-xl bg-white shadow-sm">
+          No tasks match the active filters.
+        </div>
+      )}
+
+      {/* Pagination controls */}
+      {totalPages > 1 && (
+        <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between text-xs text-muted-foreground select-none">
+          <span>
+            Page {currentPage} of {totalPages} ({tasks.length} total tasks)
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage(currentPage - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(currentPage + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Task Form Dialog ────────────────────────────────────────────────────────
 function TaskFormDialog({
   open,
@@ -1190,6 +1444,7 @@ function TaskFormDialog({
   const [dueTime, setDueTime] = useState<string>("");
   const [reminderMinutes, setReminderMinutes] = useState<string>("0");
   const [saving, setSaving] = useState(false);
+  const [remarks, setRemarks] = useState("");
 
   // Subtasks and Templates
   const [checklist, setChecklist] = useState<TaskSubtask[]>([]);
@@ -1210,9 +1465,17 @@ function TaskFormDialog({
       setTitle(editing.title);
       setServiceName(editing.serviceName ?? "");
       setDescription(editing.description ?? "");
-      setAssignee(editing.assignee);
-      setAssignedEmployeeId(editing.assignedEmployeeId ?? "");
-      setAssignedEmployeeName(editing.assignedEmployeeName ?? "");
+      setRemarks(editing.remarks ?? "");
+      const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
+      const matchedEmp = activeEmployees.find(e =>
+        e.id === editing.assignee ||
+        e.employeeId === editing.assignee ||
+        e.username === editing.assignee ||
+        e.fullName === editing.assignee
+      );
+      setAssignee(matchedEmp?.id || editing.assignee || "");
+      setAssignedEmployeeId(matchedEmp?.employeeId || editing.assignedEmployeeId || matchedEmp?.id || "");
+      setAssignedEmployeeName(matchedEmp?.fullName || matchedEmp?.name || matchedEmp?.username || editing.assignedEmployeeName || "");
       setPriority(editing.priority);
       setStatus(editing.status);
       setAssociationType(editing.associationType);
@@ -1235,10 +1498,12 @@ function TaskFormDialog({
       setTitle("");
       setServiceName("");
       setDescription("");
-      const defaultEmp = employees[0];
-      setAssignee(defaultEmp?.id || defaultEmp?.username || STAFF_USERS[0]?.username || "");
-      setAssignedEmployeeId(defaultEmp?.id || defaultEmp?.employeeId || "");
-      setAssignedEmployeeName(defaultEmp?.fullName || defaultEmp?.username || "");
+      setRemarks("");
+      const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
+      const defaultEmp = activeEmployees.find((e) => e.role === "admin" || e.username === "admin") || activeEmployees[0];
+      setAssignee(defaultEmp?.id || "");
+      setAssignedEmployeeId(defaultEmp?.employeeId || defaultEmp?.id || "");
+      setAssignedEmployeeName(defaultEmp?.fullName || defaultEmp?.name || defaultEmp?.username || "");
       setPriority("Medium");
       setStatus("Assigned");
       setAssociationType("client");
@@ -1354,7 +1619,7 @@ function TaskFormDialog({
             assignedEmployeeName,
             clientName: activeClientName,
             serviceType: serviceName.trim(),
-            remarks: description,
+            remarks: remarks.trim(),
           },
           actor,
           "Task edited",
@@ -1380,7 +1645,7 @@ function TaskFormDialog({
           clientId: rec,
           clientName: activeClientName,
           serviceType: serviceName.trim(),
-          remarks: description,
+          remarks: remarks.trim(),
         });
       }
       onClose();
@@ -1439,6 +1704,15 @@ function TaskFormDialog({
               placeholder="Details of the job…"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Remarks</Label>
+            <Textarea
+              placeholder="Remarks or latest status updates..."
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
             />
           </div>
 
@@ -1616,21 +1890,24 @@ function TaskFormDialog({
               <Label>Assignee *</Label>
               <Select value={assignee} onValueChange={(val) => {
                 setAssignee(val);
-                const emp = employees.find(e => e.employeeId === val || e.id === val || e.username === val || e.fullName === val);
+                const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
+                const emp = activeEmployees.find(e => e.id === val);
                 if (emp) {
                   setAssignedEmployeeId(emp.employeeId || emp.id || "");
-                  setAssignedEmployeeName(emp.fullName || emp.username || "");
+                  setAssignedEmployeeName(emp.fullName || emp.name || emp.username || "");
                 }
               }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select assignee..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {employees.map((s) => (
-                    <SelectItem key={s.id || s.username} value={s.employeeId || s.id || s.username}>
-                      {s.fullName || s.name || s.username}
-                    </SelectItem>
-                  ))}
+                  {employees
+                    .filter((e) => e.status === "active" && !e.isDeleted)
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.fullName || s.name || s.username}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1744,8 +2021,10 @@ function TaskDetailsSheet({
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [liveTask, setLiveTask] = useState<Task | null>(null);
-
-
+  
+  const [expectedDate, setExpectedDate] = useState("");
+  const [remarkInput, setRemarkInput] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<TaskStatus>("Assigned");
 
   const assignedEmp = useMemo(() => {
     if (!liveTask && !initialTask.assignee) return null;
@@ -1762,11 +2041,26 @@ function TaskDetailsSheet({
   useEffect(() => {
     if (!open || !initialTask.id) return;
     setLiveTask(null);
+    setRemarkInput("");
+    
+    setSelectedStatus(initialTask.status || "Assigned");
+    if (initialTask.dueDate) {
+      setExpectedDate(new Date(initialTask.dueDate).toISOString().slice(0, 10));
+    } else {
+      setExpectedDate("");
+    }
 
     // Subscribe to registry_tasks
     const unsubTasks = onSnapshot(doc(db, "registry_tasks", initialTask.id), (snap) => {
       if (snap.exists()) {
-        setLiveTask({ id: snap.id, ...snap.data() } as Task);
+        const t = { id: snap.id, ...snap.data() } as Task;
+        setLiveTask(t);
+        setSelectedStatus(t.status || "Assigned");
+        if (t.dueDate) {
+          setExpectedDate(new Date(t.dueDate).toISOString().slice(0, 10));
+        } else {
+          setExpectedDate("");
+        }
       } else {
         // Fallback: Subscribe to registry_services_v2
         const unsubServices = onSnapshot(doc(db, "registry_services_v2", initialTask.id), (sSnap) => {
@@ -1778,7 +2072,7 @@ function TaskDetailsSheet({
             const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
             const clientName = client?.name || s.clientName || "Unknown Client";
 
-            setLiveTask({
+            const resolvedTask = {
               id: sSnap.id,
               title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
               serviceName: s.serviceType || "",
@@ -1786,7 +2080,7 @@ function TaskDetailsSheet({
               assignee: s.assignedTo || s.employeeId || s.assignee || "",
               assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
               assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
-              status: (s.taskStatus === "Completed" ? "Completed" : s.taskStatus === "In Progress" ? "In Progress" : "Assigned") as TaskStatus,
+              status: (s.taskStatus || s.status || "Assigned") as TaskStatus,
               priority: (s.priority || "Medium") as TaskPriority,
               done: s.taskStatus === "Completed",
               createdAt: s.createdAt || s.startDate || new Date().toISOString(),
@@ -1805,7 +2099,15 @@ function TaskDetailsSheet({
               activity: s.activity || [],
               activityLogs: s.activityLogs || [],
               attachments: s.attachments || [],
-            } as Task);
+            } as Task;
+
+            setLiveTask(resolvedTask);
+            setSelectedStatus(resolvedTask.status || "Assigned");
+            if (resolvedTask.dueDate) {
+              setExpectedDate(new Date(resolvedTask.dueDate).toISOString().slice(0, 10));
+            } else {
+              setExpectedDate("");
+            }
           }
         });
         return () => unsubServices();
@@ -1816,6 +2118,57 @@ function TaskDetailsSheet({
   }, [open, initialTask.id, clients, leads, vehicles]);
 
   const activeTask = liveTask || initialTask;
+
+  const handleSaveProgress = async () => {
+    try {
+      const updates: any = {
+        status: selectedStatus,
+        done: selectedStatus === "Completed",
+      };
+      if (expectedDate) {
+        updates.dueDate = new Date(expectedDate).toISOString();
+      }
+      if (selectedStatus === "Completed") {
+        const now = new Date().toISOString();
+        updates.completedAt = now;
+        updates.completedOn = now;
+        updates.completedBy = actor;
+      }
+      
+      if (remarkInput.trim()) {
+        await addComment(activeTask.id, actor, remarkInput.trim());
+        setRemarkInput("");
+      }
+      
+      await updateTask(activeTask.id, updates, actor, "Progress updated");
+      toast.success("Progress saved successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save progress");
+    }
+  };
+
+  const handleMarkCompleted = async () => {
+    try {
+      const now = new Date().toISOString();
+      const updates = {
+        status: "Completed" as TaskStatus,
+        done: true,
+        completedAt: now,
+        completedOn: now,
+        completedBy: actor,
+      };
+      
+      if (remarkInput.trim()) {
+        await addComment(activeTask.id, actor, remarkInput.trim());
+        setRemarkInput("");
+      }
+      
+      await updateTask(activeTask.id, updates, actor, "Marked task as completed");
+      toast.success("Task marked as completed!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to mark completed");
+    }
+  };
 
   const linked = useMemo(() => {
     if (!activeTask.recordId) return null;
@@ -1961,155 +2314,202 @@ function TaskDetailsSheet({
             {isAdmin && <ReassignmentSection task={activeTask} actor={actor} />}
           </div>
 
-          <Section title="Description">
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-              {activeTask.description?.trim() ? activeTask.description : "No description."}
-            </p>
-          </Section>
+          {/* Task Information Section */}
+          <CollapsibleSection title="Task Information" defaultOpen={true}>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs uppercase font-bold text-gray-400">Description</Label>
+                <p className="text-sm text-gray-700 bg-slate-50 p-3 rounded-lg border whitespace-pre-wrap mt-1">
+                  {activeTask.description?.trim() ? activeTask.description : "No description."}
+                </p>
+              </div>
 
-          {/* Subtasks checklist progress details */}
-          <SubtasksSection task={activeTask} actor={actor} employees={employees} />
-
-          <Section title="Details">
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <Meta label="Assigned to" value={activeTask.assignedEmployeeName || "Former Employee"} />
-              {assignedEmp && (
-                <>
-                  <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
-                  <Meta label="Email" value={assignedEmp.email || "—"} />
-                </>
-              )}
-              <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
-              <Meta label="Due" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
-              <Meta
-                label="Reminder"
-                value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
-              />
-              <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
-              <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
-              {activeTask.readBy && (
-                <>
-                  <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
+              <div>
+                <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
+                <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
+                  <Meta label="Assigned to" value={activeTask.assignedEmployeeName || "Former Employee"} />
+                  {assignedEmp && (
+                    <>
+                      <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
+                      <Meta label="Email" value={assignedEmp.email || "—"} />
+                    </>
+                  )}
+                  <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
+                  <Meta label="Due" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
                   <Meta
-                    label="Read On"
-                    value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
+                    label="Reminder"
+                    value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
                   />
-                </>
-              )}
-              {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
-                <>
-                  <Meta
-                    label="Last Updated By"
-                    value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
-                  />
-                  <Meta
-                    label="Last Updated At"
-                    value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
-                  />
-                </>
-              )}
-            </dl>
-          </Section>
+                  <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
+                  <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
+                  {activeTask.readBy && (
+                    <>
+                      <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
+                      <Meta
+                        label="Read On"
+                        value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
+                      />
+                    </>
+                  )}
+                  {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
+                    <>
+                      <Meta
+                        label="Last Updated By"
+                        value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
+                      />
+                      <Meta
+                        label="Last Updated At"
+                        value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
+                      />
+                    </>
+                  )}
+                </dl>
+              </div>
 
-          {activeTask.recordId && (
-            <ClientRelationshipPanel clientId={activeTask.recordId} />
-          )}
-
-          <Section title="Attachments">
-            <div className="space-y-2">
-              {(activeTask.attachments ?? []).length === 0 && (
-                <p className="text-sm text-muted-foreground">No attachments yet.</p>
+              {activeTask.recordId && (
+                <ClientRelationshipPanel clientId={activeTask.recordId} />
               )}
-              {(activeTask.attachments ?? []).map((a) => (
-                <a
-                  key={a.id}
-                  href={a.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-primary hover:underline"
-                >
-                  <Paperclip className="size-4" />
-                  {a.name}
-                  <span className="text-muted-foreground text-xs">
-                    ({Math.round(a.size / 1024)} KB)
-                  </span>
-                  <ExternalLink className="size-3" />
-                </a>
-              ))}
+            </div>
+          </CollapsibleSection>
 
-              {uploading && (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="size-3 animate-spin" />
-                    Uploading… {uploadPct}%
-                  </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all"
-                      style={{ width: `${uploadPct}%` }}
-                    />
+          {/* Task Progress Section (No Subtasks) */}
+          {(!activeTask.subtasks || activeTask.subtasks.length === 0) && (
+            <CollapsibleSection title="Task Progress" defaultOpen={true}>
+              <div className="space-y-4">
+                {/* Status Selection Buttons */}
+                <div>
+                  <Label className="text-xs uppercase font-bold text-gray-400 block mb-2">Status Stages</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {TASK_STATUS_OPTIONS.map((statusOption) => {
+                      const isSelected = selectedStatus === statusOption;
+                      return (
+                        <button
+                          key={statusOption}
+                          type="button"
+                          onClick={() => setSelectedStatus(statusOption)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-bold border transition",
+                            isSelected 
+                              ? "bg-primary text-white border-primary shadow-sm"
+                              : "bg-white text-gray-600 border-gray-200 hover:bg-slate-50"
+                          )}
+                        >
+                          {statusOption}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
 
-              <label
-                className={cn(
-                  "inline-flex items-center gap-2 text-sm cursor-pointer text-primary",
-                  uploading && "opacity-50 pointer-events-none",
-                )}
-              >
-                <Paperclip className="size-4" />
-                Attach file (max {MAX_ATTACH_MB} MB)
-                <input
-                  type="file"
-                  className="hidden"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) onFile(f);
-                    e.currentTarget.value = "";
+                {/* Expected Completion Date */}
+                <div className="grid gap-1.5">
+                  <Label className="text-xs uppercase font-bold text-gray-400">Expected Completion Date</Label>
+                  <Input
+                    type="date"
+                    value={expectedDate}
+                    onChange={(e) => setExpectedDate(e.target.value)}
+                  />
+                </div>
+
+                {/* Remarks Field */}
+                <div className="grid gap-1.5">
+                  <Label className="text-xs uppercase font-bold text-gray-400">Add Remark / Update Progress</Label>
+                  <Textarea
+                    placeholder="Enter latest status update remarks..."
+                    value={remarkInput}
+                    onChange={(e) => setRemarkInput(e.target.value)}
+                  />
+                </div>
+
+                {/* Save & Complete Buttons */}
+                <div className="flex gap-2 border-t pt-3">
+                  <Button type="button" onClick={handleSaveProgress} className="flex-1">
+                    Save Progress
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={handleMarkCompleted} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+                    Mark Completed
+                  </Button>
+                </div>
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Subtasks Collapsible Section */}
+          {activeTask.subtasks && activeTask.subtasks.length > 0 && (
+            <CollapsibleSection title="Subtasks checklist" defaultOpen={true}>
+              <div className="space-y-4">
+                {/* Progress bar character blocks tracker */}
+                {(() => {
+                  const items = activeTask.subtasks ?? [];
+                  const completedCount = items.filter((s) => s.completed).length;
+                  const remainingCount = items.length - completedCount;
+                  const pct = items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
+                  const blockCount = Math.round(pct / 10);
+                  const blockString = "█".repeat(blockCount) + "░".repeat(10 - blockCount);
+                  
+                  return (
+                    <div className="bg-slate-50 p-4 rounded-xl border grid grid-cols-2 gap-4 text-xs font-semibold text-gray-600">
+                      <div>
+                        <span className="text-muted-foreground uppercase text-[10px] block">Overall Status</span>
+                        <span className="text-sm font-bold text-gray-800">{activeTask.status}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground uppercase text-[10px] block">Progress</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-primary">{pct}%</span>
+                          <span className="font-mono text-gray-400">{blockString}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground uppercase text-[10px] block">Completed</span>
+                        <span className="text-sm font-bold text-emerald-600">{completedCount} / {items.length}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground uppercase text-[10px] block">Remaining</span>
+                        <span className="text-sm font-bold text-amber-600">{remainingCount}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <SubtasksSection task={activeTask} actor={actor} isAdmin={isAdmin} />
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Remarks collapsible section */}
+          <CollapsibleSection title="Remarks & Note History" defaultOpen={false}>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Input
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Add a note…"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && comment.trim()) {
+                      addComment(activeTask.id, actor, comment.trim());
+                      setComment("");
+                    }
                   }}
                 />
-              </label>
-            </div>
-          </Section>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (comment.trim()) {
+                      addComment(activeTask.id, actor, comment.trim());
+                      setComment("");
+                    }
+                  }}
+                >
+                  <Send className="size-4" />
+                </Button>
+              </div>
 
-          {/* Remarks input comments */}
-          <Section title="Add Remark / Note">
-            <div className="flex gap-2">
-              <Input
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Add a note…"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && comment.trim()) {
-                    addComment(activeTask.id, actor, comment.trim());
-                    setComment("");
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (comment.trim()) {
-                    addComment(activeTask.id, actor, comment.trim());
-                    setComment("");
-                  }
-                }}
-              >
-                <Send className="size-4" />
-              </Button>
-            </div>
-          </Section>
-
-          {/* Remark History sorted latest first */}
-          <Section title="Remark History">
-            <div className="space-y-4">
-              {sortedComments.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No remarks yet.</p>
-              ) : (
-                <div className="space-y-3 divide-y divide-dashed">
-                  {sortedComments.map((c, i) => (
+              <div className="space-y-3 divide-y divide-dashed">
+                {sortedComments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">No remarks yet.</p>
+                ) : (
+                  sortedComments.map((c, i) => (
                     <div
                       key={c.id}
                       className={cn(
@@ -2131,51 +2531,132 @@ function TaskDetailsSheet({
                         </span>
                       </div>
                     </div>
-                  ))}
+                  ))
+                )}
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Attachments collapsible section */}
+          <CollapsibleSection title="Attachments" defaultOpen={false}>
+            <div className="space-y-3">
+              {(activeTask.attachments ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground">No attachments yet.</p>
+              )}
+              {(activeTask.attachments ?? []).map((a) => (
+                <a
+                  key={a.id}
+                  href={a.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-primary hover:underline border bg-slate-50 p-2.5 rounded-lg"
+                >
+                  <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-xs font-bold text-gray-700">{a.name}</p>
+                    <span className="text-[10px] text-muted-foreground block font-medium">
+                      {Math.round(a.size / 1024)} KB • {a.addedBy ? staffLabel(a.addedBy) : "System"}
+                    </span>
+                  </div>
+                  <ExternalLink className="size-3.5 text-muted-foreground shrink-0" />
+                </a>
+              ))}
+
+              {uploading && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    Uploading… {uploadPct}%
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{ width: `${uploadPct}%` }}
+                    />
+                  </div>
                 </div>
               )}
-            </div>
-          </Section>
 
-          <Section title="Activity timeline">
-            <ol className="relative border-l pl-4 space-y-3">
+              <label
+                className={cn(
+                  "inline-flex items-center gap-2 text-sm cursor-pointer text-primary border border-dashed rounded-lg p-3 hover:bg-slate-50/50 justify-center w-full mt-1.5",
+                  uploading && "opacity-50 pointer-events-none",
+                )}
+              >
+                <Paperclip className="size-4 text-muted-foreground" />
+                <span className="text-xs font-bold text-gray-600">Attach file (max {MAX_ATTACH_MB} MB)</span>
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) onFile(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            </div>
+          </CollapsibleSection>
+
+          {/* Timeline / Activity Log collapsible section */}
+          <CollapsibleSection title="Timeline & Activity Log" defaultOpen={false}>
+            <ol className="relative border-l pl-4 space-y-4">
               {(activeTask.activityLogs ?? []).length > 0
                 ? (activeTask.activityLogs ?? []).map((log) => (
-                    <li key={log.id} className="text-sm">
-                      <span className="absolute -left-1.5 mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
-                      <div className="font-medium">{log.action}</div>
+                    <li key={log.id} className="text-sm relative">
+                      <span className="absolute -left-[21px] mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
+                      <div className="font-semibold text-gray-800 leading-tight">{log.action}</div>
                       {log.field && (log.oldValue !== undefined || log.newValue !== undefined) && (
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground mt-0.5 font-medium">
                           {log.field}: {log.oldValue || "—"} → {log.newValue || "—"}
                         </div>
                       )}
-                      <div className="text-xs text-muted-foreground">
-                        {staffLabel(log.actor) || log.actor} • {new Date(log.timestamp).toLocaleString()}
+                      <div className="text-[10px] text-gray-400 font-bold mt-1">
+                        {staffLabel(log.actor) || log.actor} • {new Date(log.timestamp).toLocaleString("en-IN")}
                       </div>
                     </li>
                   ))
                 : (activeTask.activity ?? []).map((a) => (
-                    <li key={a.id} className="text-sm">
-                      <span className="absolute -left-1.5 mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
-                      <div>{a.message}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {staffLabel(a.actor) || a.actor} • {new Date(a.at).toLocaleString()}
+                    <li key={a.id} className="text-sm relative">
+                      <span className="absolute -left-[21px] mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
+                      <div className="text-gray-800 leading-tight">{a.message}</div>
+                      <div className="text-[10px] text-gray-400 font-bold mt-1">
+                        {staffLabel(a.actor) || a.actor} • {new Date(a.at).toLocaleString("en-IN")}
                       </div>
                     </li>
                   ))}
             </ol>
-          </Section>
+          </CollapsibleSection>
         </div>
       </SheetContent>
     </Sheet>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function CollapsibleSection({
+  title,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
-    <div className="space-y-2 border-t pt-4">
-      <h4 className="text-xs uppercase font-bold text-gray-500 tracking-wide">{title}</h4>
-      {children}
+    <div className="border rounded-xl bg-white shadow-sm overflow-hidden mb-3">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3.5 bg-slate-50/50 hover:bg-slate-50 transition border-b"
+      >
+        <span className="font-semibold text-xs text-gray-500 uppercase tracking-wider">{title}</span>
+        <span className="text-gray-400 text-xs transition-transform duration-200" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+          ▶
+        </span>
+      </button>
+      {isOpen && <div className="p-4 space-y-4">{children}</div>}
     </div>
   );
 }
@@ -2202,23 +2683,25 @@ function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
     <div className="flex items-center gap-2 border bg-slate-50 p-2.5 rounded-lg max-w-sm">
       <Users className="size-4 text-muted-foreground shrink-0" />
       <div className="flex-1 text-xs font-semibold">Assignee</div>
-      <Select value={task.assignedEmployeeId || task.assignee} onValueChange={(v) => reassignTask(task.id, v, actor)}>
+      <Select value={task.assignee} onValueChange={(v) => reassignTask(task.id, v, actor)}>
         <SelectTrigger className="w-36 h-8 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {employees.map((s) => (
-            <SelectItem key={s.id || s.username} value={s.employeeId || s.id || s.username} className="text-xs">
-              {s.fullName || s.name || s.username}
-            </SelectItem>
-          ))}
+          {employees
+            .filter((e) => e.status === "active" && !e.isDeleted)
+            .map((s) => (
+              <SelectItem key={s.id} value={s.id} className="text-xs">
+                {s.fullName || s.name || s.username}
+              </SelectItem>
+            ))}
         </SelectContent>
       </Select>
     </div>
   );
 }
 
-function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
+function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; isAdmin: boolean }) {
   const [employees, setEmployees] = useState<any[]>([]);
 
   useEffect(() => {
@@ -2261,6 +2744,27 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
     if (percent <= 50) return "text-orange-500 bg-orange-500";
     if (percent <= 75) return "text-blue-500 bg-blue-500";
     return "text-green-500 bg-green-500";
+  };
+
+  const handleStatusChange = async (sub: TaskSubtask, nextStatus: "Pending" | "In Progress" | "Completed") => {
+    const nextCompleted = nextStatus === "Completed";
+    const updated = items.map((s) => {
+      if (s.id === sub.id) {
+        return {
+          ...s,
+          status: nextStatus,
+          completed: nextCompleted,
+          completedBy: nextCompleted ? actor : undefined,
+          completedOn: nextCompleted ? new Date().toISOString() : undefined,
+          completedAt: nextCompleted ? new Date().toISOString() : undefined,
+          updatedBy: actor,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+    await updateSubtasks(task.id, updated, actor);
+    toast.success(`Subtask status updated to ${nextStatus}!`);
   };
 
   // Add Subtask
@@ -2418,63 +2922,53 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-2.5 flex-1 min-w-0">
                     <Checkbox
-                      checked={st.completed}
-                      onCheckedChange={() => handleToggle(st)}
+                      checked={st.status === "Completed" || st.completed}
+                      onCheckedChange={(checked) => handleStatusChange(st, checked ? "Completed" : "Pending")}
                       className="mt-1 size-4.5 rounded cursor-pointer"
                     />
                     <div className="flex-1 min-w-0 space-y-1">
                       <p
                         className={cn(
                           "text-xs font-bold text-gray-800 leading-tight truncate",
-                          st.completed && "line-through text-muted-foreground",
+                          (st.status === "Completed" || st.completed) && "line-through text-muted-foreground",
                         )}
                       >
                         {index + 1}. {st.title}
                       </p>
 
                       {/* Professional metadata tracker */}
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-500 font-semibold mt-1">
-                        {!st.completed ? (
-                          <>
-                            <span>
-                              Assigned:{" "}
-                              <strong className="text-gray-700">
-                                {st.assignedTo ? staffLabel(st.assignedTo) : "Unassigned"}
-                              </strong>
-                            </span>
-                            {st.dueDate && (
-                              <span>
-                                Due:{" "}
-                                <strong className="text-amber-700">
-                                  {new Date(st.dueDate).toLocaleDateString("en-IN")}
-                                </strong>
-                              </span>
-                            )}
-                            <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/50">
-                              Status: Pending
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span>
-                              Completed By:{" "}
-                              <strong className="text-emerald-700">
-                                {st.completedBy ? staffLabel(st.completedBy) : "System"}
-                              </strong>
-                            </span>
-                            {st.completedOn && (
-                              <span>
-                                Completed On:{" "}
-                                <strong className="text-emerald-700">
-                                  {new Date(st.completedOn).toLocaleDateString("en-IN")}
-                                </strong>
-                              </span>
-                            )}
-                            <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/50">
-                              Status: Completed
-                            </span>
-                          </>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-gray-500 font-semibold mt-1 items-center">
+                        <span>
+                          Assigned:{" "}
+                          <strong className="text-gray-700">
+                            {st.assignedTo ? staffLabel(st.assignedTo) : "Unassigned"}
+                          </strong>
+                        </span>
+                        {st.dueDate && (
+                          <span>
+                            Due:{" "}
+                            <strong className="text-amber-700">
+                              {new Date(st.dueDate).toLocaleDateString("en-IN")}
+                            </strong>
+                          </span>
                         )}
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-500">Status:</span>
+                          <select
+                            value={st.status || (st.completed ? "Completed" : "Pending")}
+                            onChange={(e) => handleStatusChange(st, e.target.value as any)}
+                            className={cn(
+                              "px-1.5 py-0.5 rounded text-[10px] font-bold border bg-transparent cursor-pointer",
+                              (st.status === "Completed" || st.completed) && "text-emerald-700 bg-emerald-50 border-emerald-200",
+                              st.status === "In Progress" && "text-indigo-700 bg-indigo-50 border-indigo-200",
+                              (st.status === "Pending" || (!st.status && !st.completed)) && "text-amber-700 bg-amber-50 border-amber-200"
+                            )}
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Completed">Completed</option>
+                          </select>
+                        </div>
                       </div>
 
                       {/* Subtask Remarks History Timeline inside Row */}
@@ -2512,108 +3006,116 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => {
-                        setEditingSub(st);
-                        setEditTitle(st.title);
-                        setEditAssignedTo(st.assignedTo || "");
-                        setEditDueDate(st.dueDate || "");
-                      }}
-                      className="text-gray-400 hover:text-primary p-1 rounded hover:bg-slate-100"
-                      title="Edit Subtask"
-                    >
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setRemarkingSub(st)}
                       className="text-gray-400 hover:text-primary p-1 rounded hover:bg-slate-100"
                       title="Add Remark"
                     >
                       <MessageSquare className="size-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={() => handleMove(index, "up")}
-                      className="text-gray-400 hover:text-gray-800 disabled:opacity-30 p-1 rounded hover:bg-slate-100"
-                      title="Move Up"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === items.length - 1}
-                      onClick={() => handleMove(index, "down")}
-                      className="text-gray-400 hover:text-gray-800 disabled:opacity-30 p-1 rounded hover:bg-slate-100"
-                      title="Move Down"
-                    >
-                      ▼
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(st.id)}
-                      className="text-red-400 hover:text-red-700 p-1 rounded hover:bg-red-50"
-                      title="Delete Subtask"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {isAdmin && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSub(st);
+                            setEditTitle(st.title);
+                            setEditAssignedTo(st.assignedTo || "");
+                            setEditDueDate(st.dueDate || "");
+                          }}
+                          className="text-gray-400 hover:text-primary p-1 rounded hover:bg-slate-100"
+                          title="Edit Subtask"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => handleMove(index, "up")}
+                          className="text-gray-400 hover:text-gray-800 disabled:opacity-30 p-1 rounded hover:bg-slate-100"
+                          title="Move Up"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === items.length - 1}
+                          onClick={() => handleMove(index, "down")}
+                          className="text-gray-400 hover:text-gray-800 disabled:opacity-30 p-1 rounded hover:bg-slate-100"
+                          title="Move Down"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(st.id)}
+                          className="text-red-400 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                          title="Delete Subtask"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
             );
           })}
           {items.length === 0 && (
-            <div className="text-center py-10 border border-dashed rounded-xl bg-slate-50/50">
+            <div className="text-center py-10 border border-dashed rounded-xl bg-slate-50/50 p-4">
               <CheckCircle className="size-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-xs text-slate-400 italic">
-                No checklist workflow subtasks configured yet.
+              <p className="text-xs text-slate-500 italic font-medium">
+                No subtasks have been created for this task. You can complete this task directly using the Task Progress section below.
               </p>
             </div>
           )}
         </div>
 
         {/* Add Subtask Form */}
-        <form onSubmit={handleAdd} className="border-t pt-3.5 space-y-2">
-          <span className="text-[10px] uppercase font-bold text-gray-500 block">
-            Add New Checklist Item
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div className="sm:col-span-3">
-              <Input
-                required
-                placeholder="Enter subtask workflow name (e.g. Collect RC Copy)"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-              />
+        {isAdmin && (
+          <form onSubmit={handleAdd} className="border-t pt-3.5 space-y-2">
+            <span className="text-[10px] uppercase font-bold text-gray-500 block">
+              Add New Checklist Item
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="sm:col-span-3">
+                <Input
+                  required
+                  placeholder="Enter subtask workflow name (e.g. Collect RC Copy)"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                />
+              </div>
+              <div>
+                <Select value={newAssignedTo} onValueChange={setNewAssignedTo}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Assign Employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Unassigned</SelectItem>
+                    {employees
+                      .filter((e) => e.status === "active" && !e.isDeleted)
+                      .map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.fullName || s.name || s.username}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Input
+                  type="date"
+                  className="h-9 text-xs"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                />
+              </div>
+              <Button type="submit" size="sm" className="h-9 gap-1 text-xs">
+                <Plus className="size-3.5" /> Add Subtask
+              </Button>
             </div>
-            <div>
-              <Select value={newAssignedTo} onValueChange={setNewAssignedTo}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Assign Employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unassigned</SelectItem>
-                  {employees.map((s) => (
-                    <SelectItem key={s.id || s.username} value={s.id || s.username}>
-                      {s.fullName || s.name || s.username}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Input
-                type="date"
-                className="h-9 text-xs"
-                value={newDueDate}
-                onChange={(e) => setNewDueDate(e.target.value)}
-              />
-            </div>
-            <Button type="submit" size="sm" className="h-9 gap-1 text-xs">
-              <Plus className="size-3.5" /> Add Subtask
-            </Button>
-          </div>
-        </form>
+          </form>
+        )}
       </div>
 
       {/* Edit Subtask Modal Dialog */}
@@ -2653,11 +3155,13 @@ function SubtasksSection({ task, actor }: { task: Task; actor: string }) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {employees.map((s) => (
-                      <SelectItem key={s.id || s.username} value={s.id || s.username}>
-                        {s.fullName || s.name || s.username}
-                      </SelectItem>
-                    ))}
+                    {employees
+                      .filter((e) => e.status === "active" && !e.isDeleted)
+                      .map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.fullName || s.name || s.username}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

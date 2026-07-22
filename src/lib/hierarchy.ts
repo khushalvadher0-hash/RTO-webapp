@@ -16,6 +16,7 @@ import { db } from "./firebase";
 import { removeUndefined, type ServiceType } from "./records";
 import { getSession } from "./auth";
 import { invalidateCache } from "./cacheInvalidator";
+import { syncClientAdvancePayment } from "./financeService";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ export interface Client {
   createdById?: string;
   updatedBy?: string;
   updatedById?: string;
+  advancePayment?: number;
 }
 
 export interface VehicleDocument {
@@ -255,7 +257,6 @@ export async function saveClient(
       }
     }
     await logActivity(id, "Created Client", null, null, null, actorOverride);
-  } else if (existing) {
     // Compare fields
     const fieldsToTrack: (keyof Client)[] = [
       "name",
@@ -264,6 +265,7 @@ export async function saveClient(
       "companyName",
       "gstNumber",
       "notes",
+      "advancePayment",
     ];
     for (const f of fieldsToTrack) {
       const oldVal = existing[f] || "";
@@ -273,6 +275,11 @@ export async function saveClient(
       }
     }
   }
+
+  // Sync advance payment details
+  const advancePayment = Number(client.advancePayment) || 0;
+  await syncClientAdvancePayment(id, advancePayment, client.name, client.mobile, client.address, actorName);
+
   invalidateCache();
 }
 
@@ -315,6 +322,8 @@ export async function deleteClient(id: string): Promise<void> {
     query(collection(db, "registry_customer_docs"), where("customerId", "==", id)),
     query(collection(db, "registry_vehicles_v2"), where("clientId", "==", id)),
     query(collection(db, "accounts_ledger"), where("referenceId", "==", id)),
+    query(collection(db, "accounts_ledger"), where("clientId", "==", id)),
+    query(collection(db, "registry_services_v2"), where("clientId", "==", id)),
   ];
 
   const vehicleIds: string[] = [];
@@ -773,12 +782,21 @@ export function subscribeToClientDetails(
     // Calculate aggregated accounting
     let totalAmount = 0;
     let amountReceived = 0;
+    let hasAllocatedAdvance = false;
     for (const v of detailedVehicles) {
       for (const s of v.services) {
         totalAmount += s.serviceAmount ?? 0;
         amountReceived += s.amountReceived ?? 0;
+        if (s.invoiceId === `advance_${client.id}`) {
+          hasAllocatedAdvance = true;
+        }
       }
     }
+
+    if (!hasAllocatedAdvance) {
+      amountReceived += client.advancePayment ?? 0;
+    }
+
 
     const accounting: ClientAccounting = {
       totalAmount,

@@ -135,6 +135,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
       companyName: "",
       gstNumber: "",
       notes: "",
+      advancePayment: 0,
       type,
     });
     setFormOpen(true);
@@ -439,6 +440,15 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
                 value={clientForm.notes || ""}
                 onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
                 placeholder="Internal notes..."
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold uppercase">Advance Payment (₹)</Label>
+              <Input
+                type="number"
+                value={clientForm.advancePayment || ""}
+                onChange={(e) => setClientForm({ ...clientForm, advancePayment: Number(e.target.value) || 0 })}
+                placeholder="e.g. 1000"
               />
             </div>
           </div>
