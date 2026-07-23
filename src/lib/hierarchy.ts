@@ -16,7 +16,7 @@ import { db } from "./firebase";
 import { removeUndefined, type ServiceType } from "./records";
 import { getSession } from "./auth";
 import { invalidateCache } from "./cacheInvalidator";
-import { syncClientAdvancePayment } from "./financeService";
+import { invalidateCache } from "./cacheInvalidator";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -26,7 +26,6 @@ export interface Client {
   mobile: string;
   address: string;
   companyName: string;
-  gstNumber: string;
   notes: string;
   type: "client" | "lead";
   createdAt?: string;
@@ -35,7 +34,6 @@ export interface Client {
   createdById?: string;
   updatedBy?: string;
   updatedById?: string;
-  advancePayment?: number;
 }
 
 export interface VehicleDocument {
@@ -77,7 +75,8 @@ export interface Service {
   dueDate: string;
   serviceAmount: number;
   amountReceived: number;
-  pendingAmount: number; // serviceAmount - amountReceived
+  advancePayment?: number;
+  pendingAmount: number; // serviceAmount - amountReceived - advancePayment
   assignedStaff: string;
   taskStatus: ServiceTaskStatus;
   progress: number; // mapped from taskStatus
@@ -263,9 +262,7 @@ export async function saveClient(
       "mobile",
       "address",
       "companyName",
-      "gstNumber",
       "notes",
-      "advancePayment",
     ];
     for (const f of fieldsToTrack) {
       const oldVal = existing[f] || "";
@@ -275,10 +272,6 @@ export async function saveClient(
       }
     }
   }
-
-  // Sync advance payment details
-  const advancePayment = Number(client.advancePayment) || 0;
-  await syncClientAdvancePayment(id, advancePayment, client.name, client.mobile, client.address, actorName);
 
   invalidateCache();
 }
@@ -600,7 +593,8 @@ export async function saveService(
   const docRef = doc(db, SERVICES_COL, id);
   const serviceAmount = data.serviceAmount ?? 0;
   const amountReceived = data.amountReceived ?? 0;
-  const pendingAmount = Math.max(0, serviceAmount - amountReceived);
+  const advancePayment = data.advancePayment ?? 0;
+  const pendingAmount = Math.max(0, serviceAmount - amountReceived - advancePayment);
   const progress = getProgressFromStatus(data.taskStatus);
 
   const existingSnap = await getDoc(docRef);
@@ -670,6 +664,46 @@ export async function saveService(
       }
     }
   }
+
+  // Sync payment history / ledger entries for this service advance payment
+  if (clientId) {
+    try {
+      const clientRef = doc(db, CLIENTS_COL, clientId);
+      const clientSnap = await getDoc(clientRef);
+      if (clientSnap.exists()) {
+        const clientData = clientSnap.data() as Client;
+        const { syncServiceAdvancePayment } = await import("./financeService");
+        await syncServiceAdvancePayment(
+          { id, ...cleanData },
+          clientId,
+          clientData.name,
+          clientData.mobile,
+          clientData.address,
+          actorOverride?.name || "System"
+        );
+      }
+    } catch (err) {
+      console.error("Failed to sync service advance payment:", err);
+    }
+  }
+
+  // Sync invoice totals
+  if (cleanData.invoiceId && cleanData.invoiceId !== "none") {
+    try {
+      const { syncInvoiceWithServices } = await import("./financeService");
+      await syncInvoiceWithServices(cleanData.invoiceId);
+    } catch (err) {
+      console.error("Failed to sync invoice with services:", err);
+    }
+  }
+  if (existing?.invoiceId && existing.invoiceId !== "none" && existing.invoiceId !== cleanData.invoiceId) {
+    try {
+      const { syncInvoiceWithServices } = await import("./financeService");
+      await syncInvoiceWithServices(existing.invoiceId);
+    } catch (err) {
+      console.error("Failed to sync old invoice with services:", err);
+    }
+  }
 }
 
 /** Delete a service doc and cascade delete its billing invoices, payments, and ledger entries. */
@@ -702,54 +736,37 @@ export async function deleteService(
 
     const batch = writeBatch(db);
 
-    // 1. Find and delete invoices containing this serviceId
+    // 1. Delete payment and ledger entries associated with this service advance
+    const paymentId = `pay_service_${id}`;
+    const ledgerId = `ledger_service_${id}`;
+    batch.delete(doc(db, "payment_history", paymentId));
+    batch.delete(doc(db, "accounts_ledger", ledgerId));
+
+    // 2. Find invoices containing this serviceId to sync them later
     const invoicesSnap = await getDocs(collection(db, "billing_invoices"));
-    const deletedInvoiceIds: string[] = [];
+    const invoiceIdsToSync: string[] = [];
     invoicesSnap.forEach((d) => {
       const inv = d.data() as any;
       if (inv.services?.some((s: any) => s.serviceId === id)) {
-        batch.delete(d.ref);
-        deletedInvoiceIds.push(d.id);
+        invoiceIdsToSync.push(inv.id || d.id);
       }
     });
 
-    // 2. Delete payment history and ledger entries associated with those invoices
-    for (const invId of deletedInvoiceIds) {
-      const paymentsSnap = await getDocs(collection(db, "payment_history"));
-      const deletedPaymentIds: string[] = [];
-      paymentsSnap.forEach((d) => {
-        const data = d.data();
-        if (data.invoiceId === invId) {
-          batch.delete(d.ref);
-          deletedPaymentIds.push(d.id || d.ref.id);
-        } else if (data.allocations?.some((alloc: any) => alloc.invoiceId === invId)) {
-          const updatedAllocations = data.allocations.filter((alloc: any) => alloc.invoiceId !== invId);
-          const newAmount = updatedAllocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
-          if (updatedAllocations.length === 0) {
-            batch.delete(d.ref);
-            deletedPaymentIds.push(d.id || d.ref.id);
-          } else {
-            batch.update(d.ref, {
-              amount: newAmount,
-              allocations: updatedAllocations
-            });
-          }
-        }
-      });
+    await batch.commit();
+    await deleteDoc(doc(db, SERVICES_COL, id));
 
-      for (const pid of deletedPaymentIds) {
-        const ledgerSnap = await getDocs(
-          query(collection(db, "accounts_ledger"), where("referenceId", "==", pid))
-        );
-        ledgerSnap.forEach((d) => {
-          batch.delete(d.ref);
-        });
+    // Sync remaining invoices
+    if (invoiceIdsToSync.length > 0) {
+      try {
+        const { syncInvoiceWithServices } = await import("./financeService");
+        for (const invId of invoiceIdsToSync) {
+          await syncInvoiceWithServices(invId);
+        }
+      } catch (err) {
+        console.error("Failed to sync invoices after service deletion:", err);
       }
     }
-
-    await batch.commit();
   }
-  await deleteDoc(doc(db, SERVICES_COL, id));
 }
 
 // ─── Hierarchical Client Details ──────────────────────────────────────────────

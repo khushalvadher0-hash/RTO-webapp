@@ -409,20 +409,18 @@ export async function createInvoice(
   const formattedStart = formatBillingDate(billingPeriodStart);
   const formattedEnd = formatBillingDate(billingPeriodEnd);
 
-  // Check if advance payment placeholder invoice exists
-  const advanceInvoiceRef = doc(db, BILLING_INVOICES_COL, `advance_${client.id}`);
-  const advanceInvoiceSnap = await getDoc(advanceInvoiceRef);
   let docRef;
   let finalTotalPaid = 0;
-  
-  if (advanceInvoiceSnap.exists()) {
-    const advanceData = advanceInvoiceSnap.data() as any;
-    finalTotalPaid = advanceData.totalPaid || 0;
-  } else {
-    const clientRef = doc(db, "registry_clients_v2", client.id);
-    const clientSnap = await getDoc(clientRef);
-    if (clientSnap.exists()) {
-      finalTotalPaid = clientSnap.data().advancePayment || 0;
+
+  // Calculate finalTotalPaid by summing up all service advance payments
+  for (const item of services) {
+    const sId = item.serviceId;
+    if (!sId) continue;
+    const sRef = doc(db, "registry_services_v2", sId);
+    const sSnap = await getDoc(sRef);
+    if (sSnap.exists()) {
+      const sData = sSnap.data() as any;
+      finalTotalPaid += (Number(sData.amountReceived) || 0) + (Number(sData.advancePayment) || 0);
     }
   }
 
@@ -452,30 +450,9 @@ export async function createInvoice(
     askBhaylubha: askBhaylubha || false,
   };
 
-  if (advanceInvoiceSnap.exists()) {
-    await setDoc(advanceInvoiceRef, { ...invoicePayload, id: `advance_${client.id}` });
-    docRef = advanceInvoiceRef;
+  docRef = await addDoc(collection(db, BILLING_INVOICES_COL), invoicePayload as any);
 
-    const paymentRef = doc(db, "payment_history", `pay_advance_${client.id}`);
-    const paymentSnap = await getDoc(paymentRef);
-    if (paymentSnap.exists()) {
-      await updateDoc(paymentRef, {
-        allocations: [{
-          invoiceId: `advance_${client.id}`,
-          invoiceNumber: invoiceNumber,
-          allocatedAmount: finalTotalPaid,
-        }],
-      });
-    }
-  } else {
-    if (finalTotalPaid > 0) {
-      await setDoc(advanceInvoiceRef, { ...invoicePayload, id: `advance_${client.id}` });
-      docRef = advanceInvoiceRef;
-    } else {
-      docRef = await addDoc(collection(db, BILLING_INVOICES_COL), invoicePayload as any);
-    }
-  }
-  // Update corresponding registry_services_v2 documents with the invoice info and allocate the paid amount
+  // Update corresponding registry_services_v2 documents with the invoice info
   for (const item of services) {
     const sId = item.serviceId;
     if (!sId) continue;
@@ -483,21 +460,30 @@ export async function createInvoice(
     const sSnap = await getDoc(sRef);
     if (sSnap.exists()) {
       const sData = sSnap.data() as any;
-      const serviceRatio = totalAmount > 0 ? (item.total / totalAmount) : 0;
-      const allocatedAmount = Math.round(finalTotalPaid * serviceRatio);
-      const newSReceived = Math.min(item.total, (sData.amountReceived || 0) + allocatedAmount);
-      const newSPending = Math.max(0, item.total - newSReceived);
-      
       await updateDoc(sRef, {
         invoiceId: docRef.id,
         invoiceNumber: invoiceNumber,
         collectionDate: collectionDate || null,
         askBhaylubha: askBhaylubha || false,
-        amountReceived: newSReceived,
-        pendingAmount: newSPending,
-        taskStatus: newSPending === 0 ? "Completed" : sData.taskStatus,
         updatedAt: new Date().toISOString(),
       });
+
+      // Also update the payment history entry for this service advance if it exists
+      if ((sData.advancePayment || 0) > 0) {
+        const paymentRef = doc(db, "payment_history", `pay_service_${sId}`);
+        const paymentSnap = await getDoc(paymentRef);
+        if (paymentSnap.exists()) {
+          await updateDoc(paymentRef, {
+            financeRecordId: docRef.id,
+            invoiceId: docRef.id,
+            allocations: [{
+              invoiceId: docRef.id,
+              invoiceNumber: invoiceNumber,
+              allocatedAmount: sData.advancePayment,
+            }],
+          });
+        }
+      }
     }
   }
   try {

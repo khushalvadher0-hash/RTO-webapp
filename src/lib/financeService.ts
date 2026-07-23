@@ -13,6 +13,7 @@ import {
   orderBy,
   onSnapshot,
   writeBatch,
+  deleteDoc,
 } from "firebase/firestore";
 import { verifyAdminPin } from "./adminSecurity";
 import { subscribeToAllInvoices } from "./billing";
@@ -769,170 +770,120 @@ export function subscribeAndSyncFinance(cb: (records: FinanceRecord[]) => void) 
  * Synchronize client advance payment: creates/updates/deletes placeholder invoice,
  * payment history, and ledger records based on client's advance payment value.
  */
-export async function syncClientAdvancePayment(
+/**
+ * Synchronize service advance payment: creates/updates/deletes payment history
+ * and ledger records based on service's advance payment value.
+ */
+export async function syncServiceAdvancePayment(
+  service: any,
   clientId: string,
-  advancePayment: number,
   clientName: string,
   clientMobile: string,
   clientAddress: string,
-  createdBy: string = "System"
+  actorName: string = "System"
 ): Promise<void> {
-  const invoiceId = `advance_${clientId}`;
-  const paymentId = `pay_advance_${clientId}`;
-  const ledgerId = `ledger_advance_${clientId}`;
+  const invoiceId = service.invoiceId || service.id;
+  const invoiceNumber = service.invoiceNumber || "Pending Invoice";
+  
+  const paymentId = `pay_service_${service.id}`;
+  const ledgerId = `ledger_service_${service.id}`;
 
-  const invoiceRef = doc(db, INVOICES_COL, invoiceId);
   const paymentRef = doc(db, PAYMENTS_COL, paymentId);
   const ledgerRef = doc(db, LEDGER_COL, ledgerId);
 
   const now = new Date().toISOString();
+  const advancePayment = Number(service.advancePayment) || 0;
 
   if (advancePayment > 0) {
-    // 1. Check if invoice placeholder already exists
-    const invSnap = await getDoc(invoiceRef);
-    if (invSnap.exists()) {
-      const invData = invSnap.data() as any;
-      // If it is the placeholder, update it. If it is already a real invoice (has services), we update the totalPaid
-      if (invData.invoiceNumber === "Temporary Invoice" || !invData.services || invData.services.length === 0) {
-        await setDoc(invoiceRef, {
-          id: invoiceId,
-          invoiceNumber: "Temporary Invoice",
-          clientId,
-          clientName,
-          clientMobile: clientMobile || null,
-          clientAddress: clientAddress || null,
-          subtotal: 0,
-          totalTax: 0,
-          totalAmount: 0,
-          totalPaid: advancePayment,
-          invoiceDate: invData.invoiceDate || now,
-          createdBy: invData.createdBy || createdBy,
-          createdAt: invData.createdAt || now,
-          status: "Paid",
-          services: [],
-          pdfUrl: null,
-          collectionDate: invData.collectionDate || now.slice(0, 10),
-          askBhaylubha: invData.askBhaylubha || false,
-        }, { merge: true });
-      } else {
-        // Real invoice exists at this ID. Update its totalPaid
-        const newTotalPaid = advancePayment;
-        const newStatus = newTotalPaid >= invData.totalAmount ? "Paid" : newTotalPaid > 0 ? "Partially Paid" : "Pending";
-        await updateDoc(invoiceRef, {
-          totalPaid: newTotalPaid,
-          status: newStatus,
-          clientName,
-          clientMobile: clientMobile || null,
-          clientAddress: clientAddress || null,
-          updatedAt: now,
-        });
-
-        // Also update the services proportionally in registry_services_v2
-        if (invData.services && invData.services.length > 0) {
-          for (const sItem of invData.services) {
-            const sId = sItem.serviceId;
-            if (!sId) continue;
-            const innerSRef = doc(db, "registry_services_v2", sId);
-            const innerSSnap = await getDoc(innerSRef);
-            if (innerSSnap.exists()) {
-              const innerSData = innerSSnap.data() as any;
-              const serviceRatio = invData.totalAmount > 0 ? (sItem.total / invData.totalAmount) : 0;
-              const allocatedAmount = Math.round(newTotalPaid * serviceRatio);
-              const newSReceived = Math.min(sItem.total, allocatedAmount);
-              const newSPending = Math.max(0, sItem.total - newSReceived);
-              await updateDoc(innerSRef, {
-                amountReceived: newSReceived,
-                pendingAmount: newSPending,
-                taskStatus: newSPending === 0 ? "Completed" : innerSData.taskStatus,
-              });
-            }
-          }
-        }
-      }
-    } else {
-      // Create new placeholder invoice
-      await setDoc(invoiceRef, {
-        id: invoiceId,
-        invoiceNumber: "Temporary Invoice",
-        clientId,
-        clientName,
-        clientMobile: clientMobile || null,
-        clientAddress: clientAddress || null,
-        subtotal: 0,
-        totalTax: 0,
-        totalAmount: 0,
-        totalPaid: advancePayment,
-        invoiceDate: now,
-        createdBy,
-        createdAt: now,
-        status: "Paid",
-        services: [],
-        pdfUrl: null,
-        collectionDate: now.slice(0, 10),
-        askBhaylubha: false,
-      });
-    }
-
-    // Get active invoice number for allocations
-    let activeInvoiceNumber = "Temporary Invoice";
-    const invSnapCheck = await getDoc(invoiceRef);
-    if (invSnapCheck.exists()) {
-      const invCheckData = invSnapCheck.data() as any;
-      if (invCheckData.invoiceNumber && invCheckData.invoiceNumber !== "Temporary Invoice") {
-        activeInvoiceNumber = invCheckData.invoiceNumber;
-      }
-    }
-
-    // 2. Set or Update Payment history record
+    // 1. Create or update payment history record
     await setDoc(paymentRef, {
-      paymentId: "PAY-ADV",
+      paymentId: `PAY-${service.id.slice(-6).toUpperCase()}`,
       clientId,
       clientName,
       financeRecordId: invoiceId,
       invoiceId: invoiceId,
       amount: advancePayment,
-      method: "Cash",
-      receivedBy: createdBy,
-      receivedAt: now,
+      method: service.paymentMethod || "Cash",
+      receivedBy: actorName,
+      receivedAt: service.paymentDate || now,
       accountName: "Cash Account",
-      remarks: "Client Advance Payment",
-      referenceNumber: null,
+      remarks: service.remarks || `${service.serviceType} Service Advance Payment`,
+      referenceNumber: service.receiptNumber || null,
       allocations: [{
         invoiceId: invoiceId,
-        invoiceNumber: activeInvoiceNumber,
+        invoiceNumber: invoiceNumber,
         allocatedAmount: advancePayment,
       }],
     });
 
-    // 3. Set or Update Ledger entry
+    // 2. Create or update Ledger entry
     await setDoc(ledgerRef, {
-      timestamp: now,
+      timestamp: service.paymentDate || now,
       type: "Debit",
       amount: advancePayment,
       account: "Cash Account",
       referenceId: paymentId,
-      remarks: `Advance Payment for client ${clientName}`,
+      remarks: service.remarks || `Advance Payment for ${service.serviceType} - Client: ${clientName}`,
       balance: advancePayment,
       clientId,
     });
-
   } else {
-    // If advance payment is 0 or less, delete the placeholder records if they exist
-    const invSnap = await getDoc(invoiceRef);
-    if (invSnap.exists()) {
-      const invData = invSnap.data() as any;
-      if (invData.invoiceNumber === "Temporary Invoice" || !invData.services || invData.services.length === 0) {
-        await deleteDoc(invoiceRef);
-      } else {
-        await updateDoc(invoiceRef, {
-          totalPaid: 0,
-          status: "Pending",
-          updatedAt: now,
-        });
-      }
-    }
+    // If advance payment is 0, delete the payment and ledger entries if they exist
     await deleteDoc(paymentRef);
     await deleteDoc(ledgerRef);
   }
+}
+
+/**
+ * Recalculates subtotal, totalPaid, and status of an invoice based on its linked services.
+ * Deletes the invoice if no services remain.
+ */
+export async function syncInvoiceWithServices(invoiceId: string): Promise<void> {
+  if (!invoiceId || invoiceId === "none" || invoiceId.startsWith("advance_")) return;
+  const invoiceRef = doc(db, INVOICES_COL, invoiceId);
+  const invoiceSnap = await getDoc(invoiceRef);
+  if (!invoiceSnap.exists()) return;
+
+  const invoiceData = invoiceSnap.data() as any;
+
+  // Fetch all services linked to this invoice
+  const qServices = query(
+    collection(db, "registry_services_v2"),
+    where("invoiceId", "==", invoiceId)
+  );
+  const servicesSnap = await getDocs(qServices);
+  const servicesList = servicesSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as any);
+
+  if (servicesList.length === 0) {
+    // If no services left on this invoice, delete the invoice completely
+    await deleteDoc(invoiceRef);
+    return;
+  }
+
+  // Recalculate totals
+  const subtotal = servicesList.reduce((sum, s) => sum + (s.serviceAmount || 0), 0);
+  const totalPaid = servicesList.reduce((sum, s) => sum + (s.amountReceived || 0) + (s.advancePayment || 0), 0);
+  const tax = invoiceData.totalTax || 0;
+  const finalTotalAmount = subtotal + tax;
+
+  const status = totalPaid >= finalTotalAmount ? "Paid" : totalPaid > 0 ? "Partially Paid" : "Pending";
+
+  const updatedInvoiceServices = servicesList.map((s) => ({
+    serviceId: s.id,
+    serviceName: s.serviceType,
+    quantity: 1,
+    unitPrice: s.serviceAmount || 0,
+    amount: s.serviceAmount || 0,
+    tax: 0,
+    total: s.serviceAmount || 0,
+  }));
+
+  await updateDoc(invoiceRef, {
+    subtotal,
+    totalAmount: finalTotalAmount,
+    totalPaid,
+    status,
+    services: updatedInvoiceServices,
+  });
 }
 

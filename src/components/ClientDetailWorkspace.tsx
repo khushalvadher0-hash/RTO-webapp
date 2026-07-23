@@ -317,8 +317,9 @@ export function ClientDetailWorkspace({
         vehicleId,
         serviceType: "Insurance",
         dueDate: "",
-        serviceAmount: 0,
-        amountReceived: 0,
+        serviceAmount: undefined,
+        amountReceived: undefined,
+        advancePayment: undefined,
         assignedStaff: "",
         taskStatus: "Not Started",
         notes: "",
@@ -326,10 +327,17 @@ export function ClientDetailWorkspace({
     }
     setServiceModalOpen(true);
   };
-
   const handleSaveService = async () => {
-    if (!canEdit) {
-      toast.error("You do not have permission to edit clients");
+    if (!serviceForm.serviceAmount || serviceForm.serviceAmount <= 0) {
+      toast.error("Total Amount is required and must be greater than 0");
+      return;
+    }
+    if ((serviceForm.amountReceived ?? 0) < 0) {
+      toast.error("Advance Payment cannot be negative");
+      return;
+    }
+    if ((serviceForm.amountReceived ?? 0) > serviceForm.serviceAmount) {
+      toast.error("Advance Payment cannot exceed Total Amount");
       return;
     }
     try {
@@ -758,12 +766,7 @@ export function ClientDetailWorkspace({
                       <span>{details.companyName}</span>
                     </div>
                   )}
-                  {details.gstNumber && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-bold text-muted-foreground uppercase">GST:</span>
-                      <span className="font-mono">{details.gstNumber}</span>
-                    </div>
-                  )}
+
                   {details.address && (
                     <div className="flex items-start gap-2">
                       <MapPin className="size-4 text-muted-foreground flex-shrink-0 mt-0.5" />
@@ -1616,13 +1619,7 @@ export function ClientDetailWorkspace({
                 onChange={(e) => setClientForm({ ...clientForm, companyName: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-bold uppercase">GST Number</Label>
-              <Input
-                value={clientForm.gstNumber || ""}
-                onChange={(e) => setClientForm({ ...clientForm, gstNumber: e.target.value })}
-              />
-            </div>
+
             <div className="space-y-1">
               <Label className="text-xs font-bold uppercase">C/O Address</Label>
               <Textarea
@@ -1652,15 +1649,7 @@ export function ClientDetailWorkspace({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-bold uppercase">Advance Payment (₹)</Label>
-              <Input
-                type="number"
-                value={clientForm.advancePayment || ""}
-                onChange={(e) => setClientForm({ ...clientForm, advancePayment: Number(e.target.value) || 0 })}
-                placeholder="e.g. 1000"
-              />
-            </div>
+
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditClientOpen(false)}>
@@ -1787,8 +1776,9 @@ export function ClientDetailWorkspace({
                   type="number"
                   value={serviceForm.serviceAmount ?? ""}
                   onChange={(e) =>
-                    setServiceForm({ ...serviceForm, serviceAmount: Number(e.target.value) })
+                    setServiceForm({ ...serviceForm, serviceAmount: e.target.value === "" ? undefined : Number(e.target.value) })
                   }
+                  onWheel={(e) => e.currentTarget.blur()}
                 />
               </div>
               <div className="space-y-1">
@@ -1797,8 +1787,24 @@ export function ClientDetailWorkspace({
                   type="number"
                   value={serviceForm.amountReceived ?? ""}
                   onChange={(e) =>
-                    setServiceForm({ ...serviceForm, amountReceived: Number(e.target.value) })
+                    setServiceForm({ ...serviceForm, amountReceived: e.target.value === "" ? undefined : Number(e.target.value) })
                   }
+                  onWheel={(e) => e.currentTarget.blur()}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div />
+              <div className="space-y-1">
+                <Label className="text-xs font-bold uppercase">Advance Payment (₹)</Label>
+                <Input
+                  type="number"
+                  value={serviceForm.advancePayment ?? ""}
+                  onChange={(e) =>
+                    setServiceForm({ ...serviceForm, advancePayment: e.target.value === "" ? undefined : Number(e.target.value) })
+                  }
+                  onWheel={(e) => e.currentTarget.blur()}
                 />
               </div>
             </div>

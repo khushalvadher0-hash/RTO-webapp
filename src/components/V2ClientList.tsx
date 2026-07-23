@@ -133,9 +133,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
       mobile: "",
       address: "",
       companyName: "",
-      gstNumber: "",
       notes: "",
-      advancePayment: 0,
       type,
     });
     setFormOpen(true);
@@ -236,7 +234,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
         <div className="grid grid-cols-[2fr_2fr_2fr_1fr_auto] gap-4 px-4 py-3 bg-muted/50 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <div>Name</div>
           <div>Contact</div>
-          <div>Company & GST</div>
+          <div>Company Name</div>
           <div>Notes Summary</div>
           <div className="text-right">Actions</div>
         </div>
@@ -283,12 +281,8 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
                 <div className="font-medium">{c.mobile}</div>
               </div>
 
-              {/* Company & GST */}
               <div className="min-w-0 text-xs">
                 <div className="font-medium text-foreground">{c.companyName || "—"}</div>
-                {c.gstNumber && (
-                  <div className="text-muted-foreground mt-0.5">GST: {c.gstNumber}</div>
-                )}
               </div>
 
               {/* Notes */}
@@ -418,14 +412,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
                 placeholder="Company / Group"
               />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-bold uppercase">GST Number</Label>
-              <Input
-                value={clientForm.gstNumber || ""}
-                onChange={(e) => setClientForm({ ...clientForm, gstNumber: e.target.value })}
-                placeholder="GSTIN"
-              />
-            </div>
+
             <div className="space-y-1">
               <Label className="text-xs font-bold uppercase">C/O Address</Label>
               <Textarea
@@ -442,15 +429,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
                 placeholder="Internal notes..."
               />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-bold uppercase">Advance Payment (₹)</Label>
-              <Input
-                type="number"
-                value={clientForm.advancePayment || ""}
-                onChange={(e) => setClientForm({ ...clientForm, advancePayment: Number(e.target.value) || 0 })}
-                placeholder="e.g. 1000"
-              />
-            </div>
+
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>
