@@ -15,7 +15,6 @@ const COLLECTIONS_TO_DELETE = [
   // Core operational
   "registry_clients_v2",
   "registry_leads_v2", 
-  "registry_customers",
   "registry_vehicles_v2",
   "registry_services_v2",
 
@@ -35,17 +34,13 @@ const COLLECTIONS_TO_DELETE = [
   "accounting",
 
   // Documents
-  "client_documents",
-  "vehicle_documents",
-  "customer_documents",
-  "documents",
+  "registry_client_docs",
 
   // Logging & Analytics
   "client_activity_logs",
   "activity_logs",
   "activityLogs",
   "notifications",
-  "reports",
   "analytics",
   "deletion_audit_logs",
 
@@ -67,7 +62,6 @@ const COLLECTIONS_TO_DELETE = [
   // V2 Collections
   "clients_v2",
   "leads_v2",
-  "customers_v2",
   "vehicles_v2",
   "services_v2",
 
@@ -76,7 +70,6 @@ const COLLECTIONS_TO_DELETE = [
   "registry_leads",
   "registry_applications",
   "registry_tasks",
-  "registry_documents",
   "registry_insurance",
 ];
 

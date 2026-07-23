@@ -11,7 +11,7 @@ import {
   Users,
   Eye,
 } from "lucide-react";
-import { addDoc as addCustomerDoc, deleteDoc as deleteCustomerDoc } from "@/lib/customerDocs";
+import { addDoc as addClientDoc, deleteDoc as deleteClientDoc } from "@/lib/clientDocs";
 import {
   subscribeToRecords,
   saveRecord,
@@ -234,20 +234,20 @@ export function RecordTable({ bucket, title, description }: Props) {
     setAttachmentError(null);
 
     try {
-      // Delegate upload to customerDocs.addDoc which uses the canonical
-      // storage path: customers/{customerId}/attachments/{fileName}
-      console.error("[Attachment Upload] Delegating upload to addDoc for customer:", editing.id);
-      const docEntry = await addCustomerDoc(editing.id, file.name, file.type, file, (pct) =>
+      // Delegate upload to clientDocs.addDoc which uses the canonical
+      // storage path: clients/{clientId}/attachments/{fileName}
+      console.error("[Attachment Upload] Delegating upload to addDoc for client:", editing.id);
+      const docEntry = await addClientDoc(editing.id, file.name, file.type, file, (pct) =>
         setUploadPct(pct),
       );
 
-      // Map CustomerDoc -> RecordAttachment shape
+      // Map ClientDoc -> RecordAttachment shape
       const attachment: RecordAttachment = {
         id: docEntry.id,
         name: docEntry.name,
         type: docEntry.mimeType || file.type,
         size: docEntry.fileSize || file.size,
-        storagePath: docEntry.storagePath || `customers/${editing.id}/attachments/${file.name}`,
+        storagePath: docEntry.storagePath || `clients/${editing.id}/attachments/${file.name}`,
         downloadUrl: (docEntry.downloadURL as string) || "",
         uploadedAt: docEntry.addedAt,
         uploadedBy: username,
@@ -340,11 +340,11 @@ export function RecordTable({ bucket, title, description }: Props) {
     setEditing({ ...editing, attachments: updatedAttachments });
 
     try {
-      // Remove storage + customerDocs entry if present
+      // Remove storage + clientDocs entry if present
       try {
-        await deleteCustomerDoc(attachmentId, toRemove.storagePath);
+        await deleteClientDoc(attachmentId, toRemove.storagePath);
       } catch (err) {
-        console.warn("[handleRemoveAttachment] deleteCustomerDoc failed; continuing:", err);
+        console.warn("[handleRemoveAttachment] deleteClientDoc failed; continuing:", err);
       }
 
       // Persist change to the registry record

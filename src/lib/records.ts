@@ -23,7 +23,7 @@ import { isLicenseRenewal } from "./documentTypes";
 
 export type RecordStatus = "Pending" | "In Progress" | "Completed" | "On Hold";
 
-export type DeleteReason = "Duplicate Entry" | "Wrong Customer" | "Testing Data" | "Other";
+export type DeleteReason = "Duplicate Entry" | "Wrong Client" | "Testing Data" | "Other";
 
 export interface RecordAttachment {
   id: string;
@@ -173,7 +173,7 @@ export interface RegistryRecord {
   fitness: string;
   tax: string;
   co: string;
-  groupName?: string; // Customer group/company
+  groupName?: string; // Client group/company
   assignee?: string; // staff username
   createdAt?: string;
   createdBy?: string;
@@ -303,7 +303,7 @@ export function getRecordServiceDetails(record: RegistryRecord): ServiceDetail[]
   return [];
 }
 
-export type Bucket = "clients" | "leads" | "customers";
+export type Bucket = "clients" | "leads";
 
 // ─── Staff users (shared across auth + tasks) ─────────────────────────────────
 
@@ -841,10 +841,10 @@ export async function saveRecord(
         activities.push(
           createActivity(actor, `Deleted document: ${oldA.name}`, "document", oldA.name, ""),
         );
-        // Call backend deleteDoc from customerDocs
+        // Call backend deleteDoc from clientDocs
         try {
-          const { deleteDoc: deleteCustomerDoc } = await import("./customerDocs");
-          await deleteCustomerDoc(oldA.id, oldA.storagePath);
+          const { deleteDoc: deleteClientDoc } = await import("./clientDocs");
+          await deleteClientDoc(oldA.id, oldA.storagePath);
           console.log(`[saveRecord] Successfully cleaned up deleted attachment: ${oldA.name}`);
         } catch (err) {
           console.error(`[saveRecord] Error cleaning up deleted attachment: ${oldA.name}`, err);

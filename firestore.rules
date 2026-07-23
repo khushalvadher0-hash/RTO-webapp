@@ -50,14 +50,8 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ── Customer profiles ─────────────────────────────────────────────────────
-    match /registry_customers/{id} {
-      allow read: if isAuth();
-      allow write: if isAuth();
-    }
-
-    // ── Customer documents metadata ───────────────────────────────────────────
-    match /registry_customer_docs/{id} {
+    // ── Client documents metadata ─────────────────────────────────────────────
+    match /registry_client_docs/{id} {
       allow read: if isAuth();
       allow create: if isAuth();
       allow delete: if isAdmin();

@@ -16,11 +16,8 @@ import { Route as DashboardTasksRouteImport } from './routes/dashboard.tasks'
 import { Route as DashboardTaskTemplatesRouteImport } from './routes/dashboard.task-templates'
 import { Route as DashboardTargetsRouteImport } from './routes/dashboard.targets'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
-import { Route as DashboardReportsRouteImport } from './routes/dashboard.reports'
 import { Route as DashboardLeadsRouteImport } from './routes/dashboard.leads'
 import { Route as DashboardEmployeesRouteImport } from './routes/dashboard.employees'
-import { Route as DashboardDocumentsRouteImport } from './routes/dashboard.documents'
-import { Route as DashboardCustomersRouteImport } from './routes/dashboard.customers'
 import { Route as DashboardClientsRouteImport } from './routes/dashboard.clients'
 import { Route as DashboardClientAnalyticsRouteImport } from './routes/dashboard.client-analytics'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard.billing'
@@ -65,11 +62,6 @@ const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardReportsRoute = DashboardReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => DashboardRoute,
-} as any)
 const DashboardLeadsRoute = DashboardLeadsRouteImport.update({
   id: '/leads',
   path: '/leads',
@@ -78,16 +70,6 @@ const DashboardLeadsRoute = DashboardLeadsRouteImport.update({
 const DashboardEmployeesRoute = DashboardEmployeesRouteImport.update({
   id: '/employees',
   path: '/employees',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardDocumentsRoute = DashboardDocumentsRouteImport.update({
-  id: '/documents',
-  path: '/documents',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardCustomersRoute = DashboardCustomersRouteImport.update({
-  id: '/customers',
-  path: '/customers',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardClientsRoute = DashboardClientsRouteImport.update({
@@ -143,11 +125,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
-  '/dashboard/customers': typeof DashboardCustomersRoute
-  '/dashboard/documents': typeof DashboardDocumentsRoute
   '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
-  '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRouteWithChildren
   '/dashboard/targets': typeof DashboardTargetsRoute
   '/dashboard/task-templates': typeof DashboardTaskTemplatesRoute
@@ -164,11 +143,8 @@ export interface FileRoutesByTo {
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
-  '/dashboard/customers': typeof DashboardCustomersRoute
-  '/dashboard/documents': typeof DashboardDocumentsRoute
   '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
-  '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRouteWithChildren
   '/dashboard/targets': typeof DashboardTargetsRoute
   '/dashboard/task-templates': typeof DashboardTaskTemplatesRoute
@@ -187,11 +163,8 @@ export interface FileRoutesById {
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
-  '/dashboard/customers': typeof DashboardCustomersRoute
-  '/dashboard/documents': typeof DashboardDocumentsRoute
   '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
-  '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRouteWithChildren
   '/dashboard/targets': typeof DashboardTargetsRoute
   '/dashboard/task-templates': typeof DashboardTaskTemplatesRoute
@@ -211,11 +184,8 @@ export interface FileRouteTypes {
     | '/dashboard/billing'
     | '/dashboard/client-analytics'
     | '/dashboard/clients'
-    | '/dashboard/customers'
-    | '/dashboard/documents'
     | '/dashboard/employees'
     | '/dashboard/leads'
-    | '/dashboard/reports'
     | '/dashboard/settings'
     | '/dashboard/targets'
     | '/dashboard/task-templates'
@@ -232,11 +202,8 @@ export interface FileRouteTypes {
     | '/dashboard/billing'
     | '/dashboard/client-analytics'
     | '/dashboard/clients'
-    | '/dashboard/customers'
-    | '/dashboard/documents'
     | '/dashboard/employees'
     | '/dashboard/leads'
-    | '/dashboard/reports'
     | '/dashboard/settings'
     | '/dashboard/targets'
     | '/dashboard/task-templates'
@@ -254,11 +221,8 @@ export interface FileRouteTypes {
     | '/dashboard/billing'
     | '/dashboard/client-analytics'
     | '/dashboard/clients'
-    | '/dashboard/customers'
-    | '/dashboard/documents'
     | '/dashboard/employees'
     | '/dashboard/leads'
-    | '/dashboard/reports'
     | '/dashboard/settings'
     | '/dashboard/targets'
     | '/dashboard/task-templates'
@@ -325,13 +289,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSettingsRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/reports': {
-      id: '/dashboard/reports'
-      path: '/reports'
-      fullPath: '/dashboard/reports'
-      preLoaderRoute: typeof DashboardReportsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/leads': {
       id: '/dashboard/leads'
       path: '/leads'
@@ -344,20 +301,6 @@ declare module '@tanstack/react-router' {
       path: '/employees'
       fullPath: '/dashboard/employees'
       preLoaderRoute: typeof DashboardEmployeesRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/documents': {
-      id: '/dashboard/documents'
-      path: '/documents'
-      fullPath: '/dashboard/documents'
-      preLoaderRoute: typeof DashboardDocumentsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/customers': {
-      id: '/dashboard/customers'
-      path: '/customers'
-      fullPath: '/dashboard/customers'
-      preLoaderRoute: typeof DashboardCustomersRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/clients': {
@@ -451,11 +394,8 @@ interface DashboardRouteChildren {
   DashboardBillingRoute: typeof DashboardBillingRoute
   DashboardClientAnalyticsRoute: typeof DashboardClientAnalyticsRoute
   DashboardClientsRoute: typeof DashboardClientsRoute
-  DashboardCustomersRoute: typeof DashboardCustomersRoute
-  DashboardDocumentsRoute: typeof DashboardDocumentsRoute
   DashboardEmployeesRoute: typeof DashboardEmployeesRoute
   DashboardLeadsRoute: typeof DashboardLeadsRoute
-  DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRouteWithChildren
   DashboardTargetsRoute: typeof DashboardTargetsRoute
   DashboardTaskTemplatesRoute: typeof DashboardTaskTemplatesRoute
@@ -470,11 +410,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardBillingRoute: DashboardBillingRoute,
   DashboardClientAnalyticsRoute: DashboardClientAnalyticsRoute,
   DashboardClientsRoute: DashboardClientsRoute,
-  DashboardCustomersRoute: DashboardCustomersRoute,
-  DashboardDocumentsRoute: DashboardDocumentsRoute,
   DashboardEmployeesRoute: DashboardEmployeesRoute,
   DashboardLeadsRoute: DashboardLeadsRoute,
-  DashboardReportsRoute: DashboardReportsRoute,
   DashboardSettingsRoute: DashboardSettingsRouteWithChildren,
   DashboardTargetsRoute: DashboardTargetsRoute,
   DashboardTaskTemplatesRoute: DashboardTaskTemplatesRoute,

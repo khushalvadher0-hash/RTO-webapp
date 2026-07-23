@@ -86,9 +86,6 @@ const GROUPS: NavGroup[] = [
     heading: "Database",
     items: [
       { to: "/dashboard/all-clients", label: "All Clients", icon: Users2 },
-      { to: "/dashboard/customers", label: "Customers", icon: UserCircle },
-      { to: "/dashboard/documents", label: "Documents", icon: FileText },
-      { to: "/dashboard/reports", label: "Reports", icon: BarChart3 },
     ],
   },
   {
@@ -245,7 +242,6 @@ function DashboardLayout() {
             if (isEmployee) {
               filteredItems = filteredItems.filter(
                 (item) =>
-                  item.to !== "/dashboard/reports" &&
                   item.to !== "/dashboard/settings"
               );
             }

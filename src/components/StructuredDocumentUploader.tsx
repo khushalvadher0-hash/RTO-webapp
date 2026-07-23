@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Upload, RotateCcw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { addDoc, subscribeToDocsFor, type CustomerDoc, updateDoc } from "@/lib/customerDocs";
+import { addDoc, subscribeToDocsFor, type ClientDoc, updateDoc } from "@/lib/clientDocs";
 import {
   ALL_CLIENT_DOCUMENT_TYPES,
   ALL_VEHICLE_DOCUMENT_TYPES,
   getServiceSpecificDocumentTypes,
+  type DocumentCategory,
 } from "@/lib/documentTypes";
 import type { ServiceDetail } from "@/lib/records";
 
 interface Props {
-  customerId: string;
+  clientId: string;
   services?: ServiceDetail[];
   application?: string;
   work?: string;
@@ -42,18 +43,18 @@ function getServiceDocumentTypes(services?: ServiceDetail[], application?: strin
   return Array.from(new Set(types));
 }
 
-function sortDocsByType(docs: CustomerDoc[]) {
+function sortDocsByType(docs: ClientDoc[]) {
   return [...docs].sort((a, b) => a.type.localeCompare(b.type));
 }
 
-export function StructuredDocumentUploader({ customerId, services, application, work }: Props) {
-  const [docs, setDocs] = useState<CustomerDoc[]>([]);
+export function StructuredDocumentUploader({ clientId, services, application, work }: Props) {
+  const [docs, setDocs] = useState<ClientDoc[]>([]);
   const [uploadState, setUploadState] = useState<Record<string, UploadState>>({});
 
   useEffect(() => {
-    const unsub = subscribeToDocsFor(customerId, setDocs);
+    const unsub = subscribeToDocsFor(clientId, setDocs);
     return unsub;
-  }, [customerId]);
+  }, [clientId]);
 
   const serviceDocTypes = useMemo(
     () => getServiceDocumentTypes(services, application, work),
@@ -61,7 +62,7 @@ export function StructuredDocumentUploader({ customerId, services, application, 
   );
 
   const docsByType = useMemo(() => {
-    const map = new Map<string, CustomerDoc[]>();
+    const map = new Map<string, ClientDoc[]>();
     docs.forEach((doc) => {
       const existing = map.get(doc.type) ?? [];
       existing.push(doc);
@@ -88,10 +89,10 @@ export function StructuredDocumentUploader({ customerId, services, application, 
 
     try {
       const updated = existingDoc
-        ? await updateDoc(existingDoc.id, customerId, targetName, type, file, (pct) =>
+        ? await updateDoc(existingDoc.id, clientId, targetName, type, file, (pct) =>
             setState(type, { pct }),
           )
-        : await addDoc(customerId, targetName, type, file, (pct) => setState(type, { pct }));
+        : await addDoc(clientId, targetName, type, file, (pct) => setState(type, { pct }));
 
       setDocs((current) => {
         const updatedMap = new Map(current.map((doc) => [doc.id, doc]));

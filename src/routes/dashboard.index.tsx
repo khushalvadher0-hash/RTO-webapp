@@ -45,7 +45,6 @@ function Overview() {
   const session = useMemo(() => getSession(), []);
   const [clients, setClients] = useState<RegistryRecord[]>([]);
   const [leads, setLeads] = useState<RegistryRecord[]>([]);
-  const [customers, setCustomers] = useState<RegistryRecord[]>([]);
   const [allPayments, setAllPayments] = useState<ClientPayment[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [targets, setTargets] = useState<TargetMetrics[]>([]);
@@ -304,7 +303,6 @@ function Overview() {
       }));
       setClients(parsedClients as any);
       setLeads(parsedLeads as any);
-      setCustomers([]);
       clientsLoaded = true;
       checkLoaded();
     });
@@ -369,9 +367,9 @@ function Overview() {
   // Compute follow-ups in real-time from all registry buckets
   const [followups, setFollowups] = useState<any>(null);
   useEffect(() => {
-    const all = [...clients, ...leads, ...customers];
+    const all = [...clients, ...leads];
     setFollowups(computeFollowUps(all));
-  }, [clients, leads, customers]);
+  }, [clients, leads]);
 
   const completed = clients.filter((c) => c.status === "Completed").length;
   const inProgress = [...clients, ...leads].filter((c) => c.status === "In Progress").length;

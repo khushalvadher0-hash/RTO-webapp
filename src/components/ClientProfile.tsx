@@ -485,7 +485,7 @@ export function ClientProfile({
                 Documents
               </h4>
               <StructuredDocumentUploader
-                customerId={record.id}
+                clientId={record.id}
                 services={serviceDetails}
                 application={record.application}
                 work={record.work}
@@ -709,7 +709,7 @@ export function ClientProfile({
             <h4 className="text-sm font-semibold border-b pb-1">Documents</h4>
             <div className="mt-2">
               <StructuredDocumentUploader
-                customerId={record.id}
+                clientId={record.id}
                 services={serviceDetails}
                 application={record.application}
                 work={record.work}

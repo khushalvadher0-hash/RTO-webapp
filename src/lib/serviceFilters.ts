@@ -176,11 +176,10 @@ export function subscribeToServiceRecords(
   serviceType: ServiceType,
   callback: (records: RegistryRecord[]) => void,
 ): () => void {
-  const buckets: Bucket[] = ["clients", "leads", "customers"];
+  const buckets: Bucket[] = ["clients", "leads"];
   const recordsByBucket: { [key in Bucket]: RegistryRecord[] } = {
     clients: [],
     leads: [],
-    customers: [],
   };
 
   const unsubscribers: Array<() => void> = [];

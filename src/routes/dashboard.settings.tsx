@@ -25,17 +25,10 @@ interface Settings {
 const KEY = "registry-settings";
 const DEFAULTS: Settings = { officeName: "Registry Pro", branch: "Branch 042", contact: "" };
 
-// Default staff permission fallback to prevent null crashes
 const defaultPermissions = {
   createClients: false,
   editClients: false,
   deleteClients: false,
-  createTasks: false,
-  editTasks: false,
-  deleteTasks: false,
-  financeAccess: false,
-  reportsAccess: false,
-  settingsAccess: false,
 };
 
 export const Route = createFileRoute("/dashboard/settings")({ component: SettingsPage });

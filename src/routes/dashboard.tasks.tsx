@@ -949,8 +949,7 @@ function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRe
 
   if (
     taskName.startsWith("Client:") ||
-    taskName.startsWith("Lead:") ||
-    taskName.startsWith("Customer:")
+    taskName.startsWith("Lead:")
   ) {
     const parts = taskName.split("—");
     if (parts.length > 1) {
@@ -3273,7 +3272,7 @@ function ClientRelationshipPanel({ clientId }: { clientId: string }) {
     );
 
     const unsubDocs = onSnapshot(
-      query(collection(db, "registry_customer_docs"), where("customerId", "==", clientId)),
+      query(collection(db, "registry_client_docs"), where("clientId", "==", clientId)),
       (snap: any) => {
         const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
         setDocuments(list);

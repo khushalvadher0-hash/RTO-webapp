@@ -43,12 +43,11 @@ function AccountingMigration() {
 
   // Subscribe to all records
   useEffect(() => {
-    const buckets: Bucket[] = ["clients", "leads", "customers"];
+    const buckets: Bucket[] = ["clients", "leads"];
     const unsubscribers: Array<() => void> = [];
     const recordsByBucket: { [key in Bucket]: RegistryRecord[] } = {
       clients: [],
       leads: [],
-      customers: [],
     };
 
     buckets.forEach((bucket) => {
@@ -120,7 +119,6 @@ function AccountingMigration() {
         const bucket = (Object.entries({
           clients: allRecords.filter((r) => r.id === record.id),
           leads: allRecords.filter((r) => r.id === record.id),
-          customers: allRecords.filter((r) => r.id === record.id),
         }).find(([, records]) => records.length > 0)?.[0] || "clients") as Bucket;
 
         await saveRecord(bucket, updatedRecord, session?.username || "system");
@@ -168,7 +166,6 @@ function AccountingMigration() {
       const bucket = (Object.entries({
         clients: allRecords.filter((r) => r.id === record.id),
         leads: allRecords.filter((r) => r.id === record.id),
-        customers: allRecords.filter((r) => r.id === record.id),
       }).find(([, records]) => records.length > 0)?.[0] || "clients") as Bucket;
 
       await saveRecord(bucket, updatedRecord, session?.username || "system");

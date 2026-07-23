@@ -21,7 +21,7 @@ export async function migrateExistingRecords(): Promise<
     failed: number;
   }[]
 > {
-  const buckets: Bucket[] = ["clients", "leads", "customers"];
+  const buckets: Bucket[] = ["clients", "leads"];
   const results: {
     bucket: Bucket;
     processed: number;
@@ -174,7 +174,7 @@ export async function getUnmigratedRecords(): Promise<
     application?: string;
   }>
 > {
-  const buckets: Bucket[] = ["clients", "leads", "customers"];
+  const buckets: Bucket[] = ["clients", "leads"];
   const unmigrated: Array<{
     bucket: Bucket;
     id: string;
@@ -222,7 +222,7 @@ export async function getMigrationStatus(): Promise<{
     work?: string;
   }>;
 }> {
-  const buckets: Bucket[] = ["clients", "leads", "customers"];
+  const buckets: Bucket[] = ["clients", "leads"];
   let totalRecords = 0;
   let migratedRecords = 0;
   const unmigratedDetails: Array<{

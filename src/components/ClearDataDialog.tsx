@@ -118,15 +118,13 @@ export function ClearDataDialog({ open, onOpenChange }: ClearDataDialogProps) {
                 <ul className="text-sm text-destructive space-y-1.5 ml-4 list-disc">
                   <li>Clients</li>
                   <li>Leads</li>
-                  <li>Customers</li>
                   <li>Tasks & Task Templates</li>
                   <li>Services & Vehicles</li>
                   <li>Billing & Invoices</li>
                   <li>Payments & Collections</li>
                   <li>Accounting Records</li>
-                  <li>Documents</li>
                   <li>Activity Logs</li>
-                  <li>Analytics & Reports</li>
+                  <li>Analytics</li>
                   <li>Targets</li>
                   <li>All operational module data</li>
                 </ul>

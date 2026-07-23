@@ -319,7 +319,7 @@ export async function deleteClient(id: string): Promise<void> {
     query(collection(db, "client_activity_logs"), where("clientId", "==", id)),
     query(collection(db, "client_documents"), where("clientId", "==", id)),
     query(collection(db, "vehicle_documents"), where("clientId", "==", id)),
-    query(collection(db, "registry_customer_docs"), where("customerId", "==", id)),
+    query(collection(db, "registry_client_docs"), where("clientId", "==", id)),
     query(collection(db, "registry_vehicles_v2"), where("clientId", "==", id)),
     query(collection(db, "accounts_ledger"), where("referenceId", "==", id)),
     query(collection(db, "accounts_ledger"), where("clientId", "==", id)),

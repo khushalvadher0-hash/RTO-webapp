@@ -17,7 +17,7 @@ import {
   type Bucket,
   type ServiceType,
 } from "./records";
-import { type CustomerProfile } from "./customers";
+
 
 export interface MigrationReport {
   success: boolean;
@@ -164,123 +164,7 @@ export async function runV2Migration(): Promise<MigrationReport> {
       }
     }
 
-    // ─── 2. Migrate registry_customers ───────────────────────────────────────
-    const customersSnap = await getDocs(collection(db, "registry_customers"));
-    report.totalRecordsScanned += customersSnap.size;
 
-    for (const d of customersSnap.docs) {
-      const customer = { id: d.id, ...d.data() } as CustomerProfile;
-
-      const clientName = (customer.name || "Unknown Customer").trim();
-      const clientMobile = (customer.mobile || "").trim();
-      const clientKey = `${clientName.toLowerCase()}_${clientMobile.toLowerCase()}`;
-
-      let client = clientsMap.get(clientKey);
-      if (!client) {
-        client = {
-          id: `client_${crypto.randomUUID()}`,
-          name: clientName,
-          mobile: clientMobile,
-          address: (customer.address || "").trim(),
-          companyName: "",
-          gstNumber: "",
-          notes: `Migrated from legacy registry_customers. Email: ${customer.email || "N/A"}`,
-          type: "client",
-        };
-        clientsMap.set(clientKey, client);
-      }
-
-      const legacyVehicles = customer.vehicles || [];
-      for (const lv of legacyVehicles) {
-        const vehicleNo = (lv.mvNo || "UNKNOWN-MV").trim().toUpperCase();
-        const vehicleKey = `${client.id}_${vehicleNo}`;
-
-        let vehicle = vehiclesMap.get(vehicleKey);
-        if (!vehicle) {
-          vehicle = {
-            id: `vehicle_${crypto.randomUUID()}`,
-            clientId: client.id,
-            vehicleNumber: vehicleNo,
-            vehicleType: "Private",
-            chassisNumber: "",
-            engineNumber: "",
-            registrationDate: "",
-            status: lv.status || "Pending",
-          };
-          vehiclesMap.set(vehicleKey, vehicle);
-        }
-
-        // Infer services from customer vehicle fields
-        if (lv.work) {
-          const sType = inferType(lv.work);
-          const taskStatus: ServiceTaskStatus =
-            lv.status === "Completed" ? "Completed" : "In Progress";
-
-          servicesList.push({
-            id: `service_${crypto.randomUUID()}`,
-            vehicleId: vehicle.id,
-            serviceType: sType,
-            dueDate: "",
-            serviceAmount: 0,
-            amountReceived: 0,
-            pendingAmount: 0,
-            assignedStaff: "",
-            taskStatus,
-            progress: getProgressFromStatus(taskStatus),
-            notes: lv.work,
-          });
-        }
-
-        // Add specific services if due dates exist
-        if (lv.insurance && lv.insurance !== "—") {
-          servicesList.push({
-            id: `service_${crypto.randomUUID()}`,
-            vehicleId: vehicle.id,
-            serviceType: "Insurance",
-            dueDate: lv.insurance,
-            serviceAmount: 0,
-            amountReceived: 0,
-            pendingAmount: 0,
-            assignedStaff: "",
-            taskStatus: "In Progress",
-            progress: 50,
-            notes: "Inferred from customer insurance field.",
-          });
-        }
-
-        if (lv.fitness && lv.fitness !== "—") {
-          servicesList.push({
-            id: `service_${crypto.randomUUID()}`,
-            vehicleId: vehicle.id,
-            serviceType: "Fitness",
-            dueDate: lv.fitness,
-            serviceAmount: 0,
-            amountReceived: 0,
-            pendingAmount: 0,
-            assignedStaff: "",
-            taskStatus: "In Progress",
-            progress: 50,
-            notes: "Inferred from customer fitness field.",
-          });
-        }
-
-        if (lv.tax && lv.tax !== "—" && lv.tax !== "Paid") {
-          servicesList.push({
-            id: `service_${crypto.randomUUID()}`,
-            vehicleId: vehicle.id,
-            serviceType: "Tax",
-            dueDate: "",
-            serviceAmount: 0,
-            amountReceived: 0,
-            pendingAmount: 0,
-            assignedStaff: "",
-            taskStatus: "In Progress",
-            progress: 50,
-            notes: `Inferred tax status: ${lv.tax}`,
-          });
-        }
-      }
-    }
 
     // ─── 3. Write Normalized Data in batches ────────────────────────────────
     console.log(

@@ -44,7 +44,7 @@ export async function runServiceTypeMigration(): Promise<{
   stats: MigrationStats[];
   message: string;
 }> {
-  const buckets: Bucket[] = ["clients", "leads", "customers"];
+  const buckets: Bucket[] = ["clients", "leads"];
   const allStats: MigrationStats[] = [];
 
   console.log("[MIGRATION] Starting serviceType normalization...");
