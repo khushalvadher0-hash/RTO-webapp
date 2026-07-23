@@ -268,8 +268,22 @@ function TasksPage() {
   }, []);
 
   const allTasks = useMemo(() => {
-    // 1. Get manual tasks
-    const manualTasks = tasks;
+    // 1. Get manual tasks enriched with service info
+    const manualTasksMapped = tasks.map((t) => {
+      const svc = v2Services.find(
+        (s: any) =>
+          s.id === (t as any).serviceId ||
+          s.id === t.id ||
+          (s.vehicleId === t.vehicleId && s.serviceType === t.serviceName),
+      );
+
+      return {
+        ...t,
+        applicationId: t.applicationId || svc?.applicationId || "",
+        applicationType: t.applicationType || svc?.applicationType || "",
+        appointmentDate: t.appointmentDate || "",
+      };
+    });
 
     // 2. Generate task objects dynamically from registry_services_v2 joined with vehicles and clients/leads
     const serviceTasks: Task[] = v2Services.map((s: any) => {
@@ -302,12 +316,14 @@ function TasksPage() {
         progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
         reminderMinutes: s.reminderMinutes || 0,
         remarks: s.remarks || "",
+        applicationId: s.applicationId || "",
         applicationType: s.applicationType || "",
+        appointmentDate: s.appointmentDate || s.dueDate || "",
         subtasks: s.subtasks || [],
       };
     });
 
-    return [...manualTasks, ...serviceTasks];
+    return [...manualTasksMapped, ...serviceTasks];
   }, [tasks, v2Services, vehicles, clients, leads]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
@@ -877,6 +893,7 @@ function TasksPage() {
           leads={leads}
           vehicles={vehicles}
           employees={employees}
+          v2Services={v2Services}
           actor={session?.username ?? "system"}
           isAdmin={!!isAdmin}
           onEdit={openEdit}
@@ -1050,18 +1067,15 @@ function TaskTable({
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b z-10">
               <tr>
-                <th className="p-3">Task Name</th>
-                <th className="p-3">Client Name</th>
+                <th className="p-3">Client</th>
                 <th className="p-3">Vehicle</th>
-                <th className="p-3">Service</th>
+                <th className="p-3">Task Name</th>
                 <th className="p-3">Assigned Employee</th>
-                <th className="p-3">Priority</th>
+                <th className="p-3">Appointment Date</th>
+                <th className="p-3">Application ID</th>
+                <th className="p-3">Application Type</th>
                 <th className="p-3">Due Date</th>
                 <th className="p-3">Status</th>
-                <th className="p-3">Progress</th>
-                <th className="p-3">Remarks</th>
-                <th className="p-3">Last Updated By</th>
-                <th className="p-3">Last Updated On</th>
                 <th className="p-3 text-center">Actions</th>
               </tr>
             </thead>
@@ -1071,13 +1085,7 @@ function TaskTable({
                 return (
                   <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/20">
                     <td
-                      className="p-3 font-semibold text-gray-900 max-w-[150px] truncate"
-                      title={info.taskName}
-                    >
-                      {info.taskName}
-                    </td>
-                    <td
-                      className="p-3 max-w-[120px] truncate text-primary font-bold"
+                      className="p-3 max-w-[130px] truncate text-primary font-bold"
                       title={info.clientName}
                     >
                       {info.clientName}
@@ -1092,21 +1100,29 @@ function TaskTable({
                       )}
                     </td>
                     <td
-                      className="p-3 max-w-[100px] truncate text-slate-500 font-semibold"
-                      title={info.service}
+                      className="p-3 font-semibold text-gray-900 max-w-[160px] truncate"
+                      title={info.taskName}
                     >
-                      {info.service}
+                      {info.taskName}
                     </td>
                     <td className="p-3">{t.assignedEmployeeName || "Former Employee"}</td>
+                    <td className="p-3 font-mono">
+                      {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                    </td>
+                    <td className="p-3 font-mono font-semibold text-slate-800">
+                      {t.applicationId || "—"}
+                    </td>
                     <td className="p-3">
-                      <span
-                        className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-bold border",
-                          priorityBadgeClass(t.priority),
-                        )}
-                      >
-                        {t.priority}
-                      </span>
+                      {t.applicationType ? (
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-bold border shadow-xs"
+                          style={getApplicationTypeStyle(t.applicationType)}
+                        >
+                          {t.applicationType}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="p-3 font-mono">
                       {t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN") : "—"}
@@ -1127,24 +1143,7 @@ function TaskTable({
                         ))}
                       </select>
                     </td>
-                    <td className="p-3 font-mono text-[10px]">{getSubtasksProgress(t) || "—"}</td>
-                    <td
-                      className="p-3 max-w-[180px] truncate text-gray-600 italic cursor-help"
-                      title={t.remarks || "No Remarks"}
-                    >
-                      {t.remarks ? (t.remarks.length > 70 ? t.remarks.slice(0, 70) + "..." : t.remarks) : "No Remarks"}
-                    </td>
-                    <td className="p-3 text-gray-500">
-                      {t.lastRemarkBy
-                        ? staffLabel(t.lastRemarkBy) || t.lastRemarkBy
-                        : staffLabel(t.createdBy) || t.createdBy}
-                    </td>
-                    <td className="p-3 font-mono text-gray-500">
-                      {t.lastRemarkAt
-                        ? new Date(t.lastRemarkAt).toLocaleDateString("en-IN")
-                        : new Date(t.createdAt).toLocaleDateString("en-IN")}
-                    </td>
-                    <td className="p-3">
+                    <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <Button
                           variant="ghost"
@@ -1332,10 +1331,30 @@ function TaskCards({
                       <span className="font-mono text-[10px]">{info.vehicleNum}</span>
                     </div>
                   )}
+                  {t.applicationId && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">App ID:</span>
+                      <span className="font-mono font-semibold">{t.applicationId}</span>
+                    </div>
+                  )}
+                  {t.applicationType && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">App Type:</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold border" style={getApplicationTypeStyle(t.applicationType)}>
+                        {t.applicationType}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Assignee:</span>
                     <span>{t.assignedEmployeeName || "Former Employee"}</span>
                   </div>
+                  {t.appointmentDate && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Appt Date:</span>
+                      <span className="font-mono text-primary font-semibold">{new Date(t.appointmentDate).toLocaleDateString("en-IN")}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Due Date:</span>
                     <span className="font-mono">{t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN") : "—"}</span>
@@ -1454,6 +1473,7 @@ function TaskFormDialog({
   const [showDropdown, setShowDropdown] = useState(false);
   const [dueDate, setDueDate] = useState<string>("");
   const [dueTime, setDueTime] = useState<string>("");
+  const [appointmentDate, setAppointmentDate] = useState<string>("");
   const [reminderMinutes, setReminderMinutes] = useState<string>("0");
   const [saving, setSaving] = useState(false);
   const [remarks, setRemarks] = useState("");
@@ -1504,6 +1524,7 @@ function TaskFormDialog({
         setDueDate("");
         setDueTime("");
       }
+      setAppointmentDate(editing.appointmentDate ? editing.appointmentDate.slice(0, 10) : "");
       setReminderMinutes(String(editing.reminderMinutes ?? 0));
       setChecklist(editing.subtasks ?? []);
     } else {
@@ -1524,6 +1545,7 @@ function TaskFormDialog({
       setRecordSearch("");
       setDueDate("");
       setDueTime("");
+      setAppointmentDate("");
       setReminderMinutes("0");
       setChecklist([]);
     }
@@ -1622,6 +1644,7 @@ function TaskFormDialog({
             status,
             done: status === "Completed",
             dueDate: dueIso,
+            appointmentDate: appointmentDate ? new Date(appointmentDate).toISOString() : undefined,
             reminderMinutes: Number(reminderMinutes) || 0,
             associationType,
             bucket,
@@ -1645,6 +1668,7 @@ function TaskFormDialog({
           priority,
           status,
           dueDate: dueIso,
+          appointmentDate: appointmentDate ? new Date(appointmentDate).toISOString() : undefined,
           reminderMinutes: Number(reminderMinutes) || 0,
           associationType,
           bucket,
@@ -1959,6 +1983,33 @@ function TaskFormDialog({
             </div>
           )}
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-3">
+            <div className="grid gap-1.5">
+              <Label>Appointment Date (Optional)</Label>
+              <Input
+                type="date"
+                value={appointmentDate}
+                onChange={(e) => setAppointmentDate(e.target.value)}
+              />
+            </div>
+            {(editing?.applicationId || editing?.applicationType) && (
+              <div className="grid grid-cols-2 gap-2 p-2 bg-slate-50 border rounded-lg text-xs">
+                {editing?.applicationId && (
+                  <div>
+                    <span className="font-bold text-gray-500 uppercase block text-[10px]">Application ID</span>
+                    <span className="font-mono text-gray-900 font-semibold">{editing.applicationId}</span>
+                  </div>
+                )}
+                {editing?.applicationType && (
+                  <div>
+                    <span className="font-bold text-gray-500 uppercase block text-[10px]">Application Type</span>
+                    <span className="font-semibold text-gray-900">{editing.applicationType}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-3">
             <div className="grid gap-1.5">
               <Label>Due date</Label>
@@ -2014,6 +2065,7 @@ function TaskDetailsSheet({
   leads,
   vehicles,
   employees,
+  v2Services = [],
   actor,
   isAdmin,
   onEdit,
@@ -2025,6 +2077,7 @@ function TaskDetailsSheet({
   leads: RegistryRecord[];
   vehicles: any[];
   employees: any[];
+  v2Services?: any[];
   actor: string;
   isAdmin: boolean;
   onEdit: (t: Task) => void;
@@ -2039,14 +2092,14 @@ function TaskDetailsSheet({
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus>("Assigned");
 
   const assignedEmp = useMemo(() => {
-    if (!liveTask && !initialTask.assignee) return null;
-    const currentAssignee = liveTask?.assignee || initialTask.assignee;
-    return employees.find(
-      (e) =>
-        e.id === currentAssignee ||
-        e.uid === currentAssignee ||
-        e.employeeId === currentAssignee ||
-        e.username === currentAssignee
+    return (
+      employees.find(
+        (e) =>
+          e.id === (liveTask?.assignee || initialTask.assignee) ||
+          e.employeeId === (liveTask?.assignee || initialTask.assignee) ||
+          e.username === (liveTask?.assignee || initialTask.assignee) ||
+          e.fullName === (liveTask?.assignee || initialTask.assignee)
+      ) ?? null
     );
   }, [liveTask, initialTask.assignee, employees]);
 
@@ -2106,6 +2159,9 @@ function TaskDetailsSheet({
               manual: false,
               progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
               reminderMinutes: s.reminderMinutes || 0,
+              applicationId: s.applicationId || "",
+              applicationType: s.applicationType || "",
+              appointmentDate: s.appointmentDate || s.dueDate || "",
               subtasks: s.subtasks || [],
               comments: s.comments || [],
               activity: s.activity || [],
@@ -2129,7 +2185,21 @@ function TaskDetailsSheet({
     return () => unsubTasks();
   }, [open, initialTask.id, clients, leads, vehicles]);
 
-  const activeTask = liveTask || initialTask;
+  const activeTask = useMemo(() => {
+    const base = liveTask || initialTask;
+    const svc = v2Services.find(
+      (s: any) =>
+        s.id === (base as any).serviceId ||
+        s.id === base.id ||
+        (s.vehicleId === base.vehicleId && s.serviceType === base.serviceName),
+    );
+    return {
+      ...base,
+      applicationId: base.applicationId || svc?.applicationId || "",
+      applicationType: base.applicationType || svc?.applicationType || "",
+      appointmentDate: base.appointmentDate || svc?.appointmentDate || "",
+    };
+  }, [liveTask, initialTask, v2Services]);
 
   const handleSaveProgress = async () => {
     try {
@@ -2326,65 +2396,7 @@ function TaskDetailsSheet({
             {isAdmin && <ReassignmentSection task={activeTask} actor={actor} />}
           </div>
 
-          {/* Task Information Section */}
-          <CollapsibleSection title="Task Information" defaultOpen={true}>
-            <div className="space-y-4">
-              <div>
-                <Label className="text-xs uppercase font-bold text-gray-400">Description</Label>
-                <p className="text-sm text-gray-700 bg-slate-50 p-3 rounded-lg border whitespace-pre-wrap mt-1">
-                  {activeTask.description?.trim() ? activeTask.description : "No description."}
-                </p>
-              </div>
-
-              <div>
-                <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
-                <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
-                  <Meta label="Assigned to" value={activeTask.assignedEmployeeName || "Former Employee"} />
-                  {assignedEmp && (
-                    <>
-                      <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
-                      <Meta label="Email" value={assignedEmp.email || "—"} />
-                    </>
-                  )}
-                  <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
-                  <Meta label="Due" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
-                  <Meta
-                    label="Reminder"
-                    value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
-                  />
-                  <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
-                  <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
-                  {activeTask.readBy && (
-                    <>
-                      <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
-                      <Meta
-                        label="Read On"
-                        value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
-                      />
-                    </>
-                  )}
-                  {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
-                    <>
-                      <Meta
-                        label="Last Updated By"
-                        value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
-                      />
-                      <Meta
-                        label="Last Updated At"
-                        value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
-                      />
-                    </>
-                  )}
-                </dl>
-              </div>
-
-              {activeTask.recordId && (
-                <ClientRelationshipPanel clientId={activeTask.recordId} />
-              )}
-            </div>
-          </CollapsibleSection>
-
-          {/* Task Progress Section (No Subtasks) */}
+          {/* Task Progress Section */}
           {(!activeTask.subtasks || activeTask.subtasks.length === 0) && (
             <CollapsibleSection title="Task Progress" defaultOpen={true}>
               <div className="space-y-4">
@@ -2445,6 +2457,67 @@ function TaskDetailsSheet({
               </div>
             </CollapsibleSection>
           )}
+
+          {/* Task Information Section */}
+          <CollapsibleSection title="Task Information" defaultOpen={true}>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs uppercase font-bold text-gray-400">Description</Label>
+                <p className="text-sm text-gray-700 bg-slate-50 p-3 rounded-lg border whitespace-pre-wrap mt-1">
+                  {activeTask.description?.trim() ? activeTask.description : "No description."}
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
+                <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
+                  <Meta label="Assigned to" value={activeTask.assignedEmployeeName || "Former Employee"} />
+                  {assignedEmp && (
+                    <>
+                      <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
+                      <Meta label="Email" value={assignedEmp.email || "—"} />
+                    </>
+                  )}
+                  <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
+                  <Meta label="Due" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
+                  <Meta label="Appointment Date" value={activeTask.appointmentDate ? formatDate(activeTask.appointmentDate) : "—"} />
+                  <Meta label="Application ID" value={activeTask.applicationId || "—"} />
+                  <Meta label="Application Type" value={activeTask.applicationType || "—"} />
+                  <Meta
+                    label="Reminder"
+                    value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
+                  />
+                  <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
+                  <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
+                  {activeTask.readBy && (
+                    <>
+                      <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
+                      <Meta
+                        label="Read On"
+                        value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
+                      />
+                    </>
+                  )}
+                  {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
+                    <>
+                      <Meta
+                        label="Last Updated By"
+                        value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
+                      />
+                      <Meta
+                        label="Last Updated At"
+                        value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
+                      />
+                    </>
+                  )}
+                </dl>
+              </div>
+
+              {activeTask.recordId && (
+                <ClientRelationshipPanel clientId={activeTask.recordId} />
+              )}
+            </div>
+          </CollapsibleSection>
 
           {/* Subtasks Collapsible Section */}
           {activeTask.subtasks && activeTask.subtasks.length > 0 && (
@@ -2892,7 +2965,7 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
   };
 
   return (
-    <Section title="Subtask Workflow Tracker">
+    <CollapsibleSection title="Subtask Workflow Tracker" defaultOpen={true}>
       <div className="space-y-4">
         {/* Professional Progress Segment */}
         <div className="bg-slate-50 p-3.5 rounded-xl border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -3237,7 +3310,7 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
           </DialogContent>
         </Dialog>
       )}
-    </Section>
+    </CollapsibleSection>
   );
 }
 

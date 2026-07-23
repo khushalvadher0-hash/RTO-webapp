@@ -318,6 +318,7 @@ function AllClientsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground border-b">
                   <tr>
+                    <th className="w-10 px-3 py-3"></th>
                     <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">
                       Client Name
                     </th>
@@ -350,7 +351,7 @@ function AllClientsPage() {
                 <tbody>
                   {filteredClients.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">
+                      <td colSpan={12} className="px-4 py-12 text-center text-muted-foreground">
                         {clients.length === 0
                           ? "No clients found"
                           : "No clients match your filters"}
@@ -361,6 +362,7 @@ function AllClientsPage() {
                       <ClientRow
                         key={client.id}
                         client={client}
+                        searchQuery={searchQuery}
                         onView={() => handleViewDetails(client)}
                       />
                     ))
@@ -415,10 +417,16 @@ function KPICard({ icon: Icon, label, value, color }: KPICardProps) {
 
 interface ClientRowProps {
   client: AggregatedClient;
+  searchQuery: string;
   onView: () => void;
 }
 
-function ClientRow({ client, onView }: ClientRowProps) {
+function ClientRow({ client, searchQuery, onView }: ClientRowProps) {
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const q = searchQuery.trim().toLowerCase();
+  const matchesVehicleNo = q.length > 0 && client.vehicles.some((v) => v.toLowerCase().includes(q));
+  const isExpanded = userExpanded ?? matchesVehicleNo;
+
   const paymentStatusColor =
     client.paymentStatus === "Paid"
       ? "bg-green-100 text-green-800 border-green-200"
@@ -427,58 +435,97 @@ function ClientRow({ client, onView }: ClientRowProps) {
         : "bg-red-100 text-red-800 border-red-200";
 
   return (
-    <tr className="border-t hover:bg-muted/30 transition-colors">
-      <td className="px-4 py-3 font-semibold text-foreground">{client.name}</td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">{client.groupName || "—"}</td>
-      <td className="px-4 py-3 text-sm">
-        <div className="flex items-center gap-2">
-          <Phone className="size-3.5 text-muted-foreground" />
-          <a href={`tel:${client.mobile}`} className="hover:underline">
-            {client.mobile || "—"}
-          </a>
-        </div>
-      </td>
-      <td className="px-4 py-3 text-sm">
-        <div className="flex items-center gap-1 flex-wrap">
-          {client.vehicles.length > 0 ? (
-            client.vehicles.map((v) => (
-              <Badge key={v} variant="secondary" className="text-xs">
-                {v}
-              </Badge>
-            ))
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-3 text-center text-sm font-medium">
-        <Badge variant="outline">{client.allServices.length}</Badge>
-      </td>
-      <td className="px-4 py-3 text-center">
-        <Badge variant={client.activeServices > 0 ? "default" : "secondary"}>
-          {client.activeServices}
-        </Badge>
-      </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">
-        {staffLabel(client.assignee) || "—"}
-      </td>
-      <td className="px-4 py-3 text-right font-medium">
-        ₹{client.totalRevenue.toLocaleString("en-IN")}
-      </td>
-      <td className="px-4 py-3 text-center">
-        <Badge className={cn(paymentStatusColor, "border")}>{client.paymentStatus}</Badge>
-      </td>
-      <td className="px-4 py-3 text-center">
-        <Badge variant={client.isActive ? "default" : "secondary"}>
-          {client.isActive ? "Active" : "Inactive"}
-        </Badge>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <Button variant="ghost" size="sm" onClick={onView}>
-          <Eye className="size-4" />
-        </Button>
-      </td>
-    </tr>
+    <>
+      <tr className="border-t hover:bg-muted/30 transition-colors">
+        <td className="px-3 py-3 text-center">
+          <button
+            type="button"
+            onClick={() => setUserExpanded(!isExpanded)}
+            className="p-1 hover:bg-slate-100 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+            title={isExpanded ? "Collapse" : "Expand Vehicle Details"}
+          >
+            {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+          </button>
+        </td>
+        <td className="px-4 py-3 font-semibold text-foreground">{client.name}</td>
+        <td className="px-4 py-3 text-sm text-muted-foreground">{client.groupName || "—"}</td>
+        <td className="px-4 py-3 text-sm">
+          <div className="flex items-center gap-2">
+            <Phone className="size-3.5 text-muted-foreground" />
+            <a href={`tel:${client.mobile}`} className="hover:underline">
+              {client.mobile || "—"}
+            </a>
+          </div>
+        </td>
+        <td className="px-4 py-3 text-sm">
+          <div className="flex items-center gap-1 flex-wrap">
+            {client.vehicles.length > 0 ? (
+              client.vehicles.map((v) => (
+                <Badge key={v} variant="secondary" className="text-xs font-mono font-bold text-sky-700">
+                  {v}
+                </Badge>
+              ))
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-3 text-center text-sm font-medium">
+          <Badge variant="outline">{client.allServices.length}</Badge>
+        </td>
+        <td className="px-4 py-3 text-center">
+          <Badge variant={client.activeServices > 0 ? "default" : "secondary"}>
+            {client.activeServices}
+          </Badge>
+        </td>
+        <td className="px-4 py-3 text-sm text-muted-foreground">
+          {staffLabel(client.assignee) || "—"}
+        </td>
+        <td className="px-4 py-3 text-right font-medium">
+          ₹{client.totalRevenue.toLocaleString("en-IN")}
+        </td>
+        <td className="px-4 py-3 text-center">
+          <Badge className={cn(paymentStatusColor, "border")}>{client.paymentStatus}</Badge>
+        </td>
+        <td className="px-4 py-3 text-center">
+          <Badge variant={client.isActive ? "default" : "secondary"}>
+            {client.isActive ? "Active" : "Inactive"}
+          </Badge>
+        </td>
+        <td className="px-4 py-3 text-right">
+          <Button variant="ghost" size="sm" onClick={onView}>
+            <Eye className="size-4" />
+          </Button>
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr className="bg-slate-50/70 border-t">
+          <td colSpan={12} className="px-6 py-3">
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Car className="size-3.5 text-slate-500" /> Vehicle Assets ({client.vehicles.length})
+                </span>
+              </div>
+              {client.vehicles.length > 0 ? (
+                <div className="rounded-lg border bg-white p-3 shadow-xs">
+                  <div className="flex flex-wrap gap-2">
+                    {client.vehicles.map((vehNo) => (
+                      <div key={vehNo} className="flex items-center gap-2 bg-slate-100 border px-3 py-1.5 rounded-lg text-xs font-mono font-bold text-sky-800">
+                        <Car className="size-3.5 text-slate-500" />
+                        <span>{vehNo}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground italic">No registered vehicles found for this client.</div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

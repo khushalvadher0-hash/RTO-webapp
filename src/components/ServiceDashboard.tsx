@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getServiceClientsAll,
   getServiceStats,
@@ -18,6 +18,7 @@ import {
 import { RecordTable } from "@/components/RecordTable";
 import { ClientDetailWorkspace } from "./ClientDetailWorkspace";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "@tanstack/react-router";
 import {
@@ -30,6 +31,7 @@ import {
   Download,
   ChevronDown,
   ChevronRight,
+  Search,
 } from "lucide-react";
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
 
@@ -182,6 +184,25 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
   const [diagOutput, setDiagOutput] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredRecords = useMemo(() => {
+    if (!searchQuery.trim()) return records;
+    const q = searchQuery.toLowerCase().trim();
+    return records.filter((r) => {
+      const vehiclesList: string[] = (r as any).aggregatedVehicles || [];
+      const servicesList: any[] = (r as any).services || [];
+      const matchesName = r.name?.toLowerCase().includes(q);
+      const matchesMobile = (r.mo || "").toLowerCase().includes(q);
+      const matchesVehicle = vehiclesList.some((v) => v.toLowerCase().includes(q));
+      const matchesAppId = servicesList.some((s) => (s.applicationId || "").toLowerCase().includes(q));
+      const matchesAssignee =
+        servicesList.some((s) => (s.assignee || s.assignedEmployeeName || "").toLowerCase().includes(q)) ||
+        (r.assignee || "").toLowerCase().includes(q);
+      const matchesService = (r.serviceType || "").toLowerCase().includes(q);
+      return matchesName || matchesMobile || matchesVehicle || matchesAppId || matchesAssignee || matchesService;
+    });
+  }, [records, searchQuery]);
 
   const openWorkflow = (record: RegistryRecord) => {
     setSelectedRecord(record);
@@ -386,12 +407,23 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
 
       {/* Client Table */}
       <div>
-        <h3 className="text-lg font-semibold mb-4">Clients</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold">Clients</h3>
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by Name, Mobile, or Vehicle No..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 text-xs"
+            />
+          </div>
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <p className="text-muted-foreground">Loading clients...</p>
           </div>
-        ) : records.length === 0 ? (
+        ) : filteredRecords.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8 gap-4">
               <Package className="size-12 text-muted-foreground/50 mb-2" />
@@ -486,7 +518,7 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map((r) => {
+                  {filteredRecords.map((r) => {
                     const details = getRecordServiceDetails(r);
                     const matchingServices = details.filter((s) => s.serviceType === serviceType);
                     const servicePrice = matchingServices.reduce(
@@ -504,7 +536,11 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
 
                     const vehicleCount = (r as any).vehicleCount ?? 1;
                     const serviceCount = (r as any).serviceCount ?? 1;
-                    const vehiclesList = (r as any).aggregatedVehicles || [];
+                    const vehiclesList: string[] = (r as any).aggregatedVehicles || [];
+
+                    const q = searchQuery.toLowerCase().trim();
+                    const isVehicleSearchMatch = q.length > 0 && vehiclesList.some((v) => v.toLowerCase().includes(q));
+                    const isExpanded = expandedClients[r.id] ?? isVehicleSearchMatch;
 
                     return (
                       <>
@@ -517,7 +553,7 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
                             className="px-3 py-3 text-center"
                             onClick={(e) => toggleExpand(r.id, e)}
                           >
-                            {expandedClients[r.id] ? (
+                            {isExpanded ? (
                               <ChevronDown className="size-4 text-muted-foreground mx-auto hover:text-foreground cursor-pointer" />
                             ) : (
                               <ChevronRight className="size-4 text-muted-foreground mx-auto hover:text-foreground cursor-pointer" />
@@ -573,20 +609,25 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
                             ₹{servicePending.toLocaleString("en-IN")}
                           </td>
                         </tr>
-                        {expandedClients[r.id] && (
-                          <tr className="bg-muted/5 border-t">
-                            <td colSpan={10} className="px-6 py-4">
-                              <div className="rounded-lg border bg-background overflow-hidden shadow-sm">
+                        {isExpanded && (
+                          <tr className="bg-slate-50/70 border-t">
+                            <td colSpan={10} className="px-4 py-3">
+                              <div className="rounded-lg border bg-white overflow-hidden shadow-xs">
                                 <table className="w-full text-xs">
-                                  <thead className="bg-muted/40 uppercase tracking-wider text-muted-foreground text-[10px] font-semibold">
+                                  <thead className="bg-slate-100 uppercase tracking-wider text-slate-500 text-[10px] font-semibold border-b">
                                     <tr>
                                       <th className="text-left px-3 py-2">Vehicle Number</th>
                                       <th className="text-left px-3 py-2">Vehicle Type</th>
-                                      <th className="text-left px-3 py-2">Status</th>
+                                      <th className="text-left px-3 py-2">Application ID</th>
+                                      <th className="text-left px-3 py-2">Application Type</th>
+                                      <th className="text-left px-3 py-2">Assigned Staff</th>
+                                      <th className="text-left px-3 py-2">Task Status</th>
                                       <th className="text-left px-3 py-2">Due Date</th>
                                       <th className="text-left px-3 py-2">Service Amount</th>
+                                      <th className="text-left px-3 py-2">Advance</th>
                                       <th className="text-left px-3 py-2">Received</th>
                                       <th className="text-left px-3 py-2">Pending</th>
+                                      <th className="text-left px-3 py-2">Notes</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -595,44 +636,60 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
                                         0,
                                         (s.price ?? 0) - (s.amountReceived ?? 0),
                                       );
+                                      const advanceAmt = s.advancePayment ?? s.advance ?? 0;
                                       return (
                                         <tr
                                           key={s.serviceId || idx}
-                                          className="border-t hover:bg-muted/10 font-mono"
+                                          className="border-t hover:bg-slate-50 font-mono text-[11px]"
                                         >
-                                          <td className="px-3 py-2 font-bold text-sky-600">
+                                          <td className="px-3 py-2 font-bold text-sky-700 font-mono">
                                             {s.vehicleNumber || "—"}
                                           </td>
-                                          <td className="px-3 py-2 text-muted-foreground font-sans">
+                                          <td className="px-3 py-2 text-slate-700 font-sans">
                                             {s.vehicleType || "—"}
                                           </td>
-                                          <td className="px-3 py-2">
+                                          <td className="px-3 py-2 text-indigo-700 font-mono font-semibold">
+                                            {s.applicationId || "—"}
+                                          </td>
+                                          <td className="px-3 py-2 font-sans font-semibold text-slate-800">
+                                            {s.applicationType || "Home"}
+                                          </td>
+                                          <td className="px-3 py-2 text-slate-700 font-sans">
+                                            {s.assignedEmployeeName || s.assignee || "Unassigned"}
+                                          </td>
+                                          <td className="px-3 py-2 font-sans">
                                             <span
-                                              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border font-sans ${
+                                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${
                                                 s.status === "Completed"
-                                                  ? "bg-green-500/10 text-green-700 border-green-500/20"
+                                                  ? "bg-green-100 text-green-800 border-green-200"
                                                   : s.status === "In Progress" ||
                                                       s.status === "Active"
-                                                    ? "bg-blue-500/10 text-blue-700 border-blue-500/20"
-                                                    : "bg-muted text-muted-foreground"
+                                                    ? "bg-blue-100 text-blue-800 border-blue-200"
+                                                    : "bg-slate-100 text-slate-700 border-slate-200"
                                               }`}
                                             >
-                                              {s.status}
+                                              {s.status || "Pending"}
                                             </span>
                                           </td>
-                                          <td className="px-3 py-2">
+                                          <td className="px-3 py-2 font-sans">
                                             {s.dueDate
                                               ? new Date(s.dueDate).toLocaleDateString("en-IN")
                                               : "—"}
                                           </td>
-                                          <td className="px-3 py-2">
+                                          <td className="px-3 py-2 text-slate-900 font-bold">
                                             ₹{(s.price ?? 0).toLocaleString("en-IN")}
                                           </td>
-                                          <td className="px-3 py-2 text-green-600">
+                                          <td className="px-3 py-2 text-amber-700 font-semibold">
+                                            ₹{advanceAmt.toLocaleString("en-IN")}
+                                          </td>
+                                          <td className="px-3 py-2 text-green-700 font-semibold">
                                             ₹{(s.amountReceived ?? 0).toLocaleString("en-IN")}
                                           </td>
-                                          <td className="px-3 py-2 text-red-600">
+                                          <td className="px-3 py-2 text-red-700 font-bold">
                                             ₹{pendingAmt.toLocaleString("en-IN")}
+                                          </td>
+                                          <td className="px-3 py-2 text-slate-600 font-sans max-w-[150px] truncate" title={s.notes || ""}>
+                                            {s.notes || "—"}
                                           </td>
                                         </tr>
                                       );

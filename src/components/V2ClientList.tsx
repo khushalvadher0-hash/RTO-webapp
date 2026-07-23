@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Trash2, Eye, Pencil, Users, Download, FileText } from "lucide-react";
+import { Search, Plus, Trash2, Eye, Pencil, Users, Download, FileText, ChevronDown, ChevronRight, Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,9 @@ import { cn } from "@/lib/utils";
 import {
   CLIENTS_COL,
   type Client,
+  type Vehicle,
   subscribeToClients,
+  subscribeAllVehicles,
   saveClient,
   deleteClient,
 } from "@/lib/hierarchy";
@@ -109,17 +111,27 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
     return unsub;
   }, [type]);
 
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    return subscribeAllVehicles(setVehicles);
+  }, []);
+
   const filtered = useMemo(() => {
     if (!query.trim()) return clients;
-    const q = query.toLowerCase();
-    return clients.filter(
-      (c) =>
+    const q = query.toLowerCase().trim();
+    return clients.filter((c) => {
+      const clientVehicles = vehicles.filter((v) => v.clientId === c.id);
+      return (
         c.name.toLowerCase().includes(q) ||
         c.mobile.includes(q) ||
         (c.companyName || "").toLowerCase().includes(q) ||
-        (c.address || "").toLowerCase().includes(q),
-    );
-  }, [clients, query]);
+        (c.address || "").toLowerCase().includes(q) ||
+        clientVehicles.some((v) => v.vehicleNumber.toLowerCase().includes(q))
+      );
+    });
+  }, [clients, vehicles, query]);
 
   const handleOpenAddForm = () => {
     if (!canCreate) {
@@ -218,7 +230,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search by name, mobile, company...`}
+          placeholder={`Search by name, mobile, vehicle no, company...`}
           className="pl-9"
         />
       </div>
@@ -231,7 +243,8 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
         </div>
       )}
       <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
-        <div className="grid grid-cols-[2fr_2fr_2fr_1fr_auto] gap-4 px-4 py-3 bg-muted/50 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="grid grid-cols-[auto_2fr_2fr_2fr_1fr_auto] gap-4 px-4 py-3 bg-muted/50 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground items-center">
+          <div className="w-6"></div>
           <div>Name</div>
           <div>Contact</div>
           <div>Company Name</div>
@@ -248,132 +261,171 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
             No records found.
           </div>
         ) : (
-          filtered.map((c) => (
-            <div
-              key={c.id}
-              className="grid grid-cols-[2fr_2fr_2fr_1fr_auto] gap-4 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/20 transition-colors"
-            >
-              {/* Name */}
-              <div
-                className="flex items-center gap-3 min-w-0 cursor-pointer"
-                onClick={() => handleOpenDetails(c.id)}
-              >
-                <div
-                  className={cn(
-                    "size-9 rounded-full grid place-items-center text-sm font-bold flex-shrink-0",
-                    avatarColor(c.name),
-                  )}
-                >
-                  {initials(c.name)}
-                </div>
-                <div className="min-w-0">
-                  <div className="font-semibold text-sm truncate text-sky-600 underline decoration-dotted underline-offset-2">
-                    {c.name}
+          filtered.map((c) => {
+            const clientVehicles = vehicles.filter((v) => v.clientId === c.id);
+            const q = query.toLowerCase().trim();
+            const isVehicleSearchMatch =
+              q.length > 0 && clientVehicles.some((v) => v.vehicleNumber.toLowerCase().includes(q));
+            const isExpanded = expandedClients[c.id] ?? isVehicleSearchMatch;
+
+            return (
+              <div key={c.id} className="border-b last:border-0">
+                <div className="grid grid-cols-[auto_2fr_2fr_2fr_1fr_auto] gap-4 items-center px-4 py-3 hover:bg-muted/20 transition-colors">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedClients((prev) => ({ ...prev, [c.id]: !isExpanded }));
+                    }}
+                    className="p-1 hover:bg-slate-100 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                    title={isExpanded ? "Collapse Vehicle Details" : "Expand Vehicle Details"}
+                  >
+                    {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                  </button>
+
+                  {/* Name */}
+                  <div
+                    className="flex items-center gap-3 min-w-0 cursor-pointer"
+                    onClick={() => handleOpenDetails(c.id)}
+                  >
+                    <div
+                      className={cn(
+                        "size-9 rounded-full grid place-items-center text-sm font-bold flex-shrink-0",
+                        avatarColor(c.name),
+                      )}
+                    >
+                      {initials(c.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate text-sky-600 underline decoration-dotted underline-offset-2">
+                        {c.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {c.address || "No address"}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {c.address || "No address"}
+
+                  {/* Contact */}
+                  <div className="min-w-0 text-sm">
+                    <div className="font-medium">{c.mobile}</div>
+                  </div>
+
+                  <div className="min-w-0 text-xs">
+                    <div className="font-medium text-foreground">{c.companyName || "—"}</div>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="text-xs text-muted-foreground truncate max-w-xs">
+                    {c.notes || "—"}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="text-right flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        generatePDF(
+                          "client-details",
+                          {
+                            name: c.name,
+                            mo: c.mobile,
+                            email: "",
+                            address: c.address || "",
+                            group: "",
+                            createdAt: "",
+                            createdBy: "",
+                            vehicles: [],
+                          },
+                          session?.username || "system",
+                        )
+                      }
+                      title="Download PDF"
+                    >
+                      <Download className="size-4 text-red-600" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleOpenDetails(c.id)}
+                      title="View workspace"
+                    >
+                      <Eye className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setEditingClient(c);
+                        setClientForm(c);
+                        setFormOpen(true);
+                      }}
+                      disabled={!canEdit}
+                      title={!canEdit ? "You do not have permission to edit clients" : "Edit client"}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteClient(c.id)}
+                      disabled={!canDelete}
+                      className="text-destructive hover:bg-destructive/10"
+                      title={!canDelete ? "You do not have permission to delete clients" : "Delete client"}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
                 </div>
-              </div>
 
-              {/* Contact */}
-              <div className="min-w-0 text-sm">
-                <div className="font-medium">{c.mobile}</div>
+                {/* Auto-expanded Vehicle Details Table */}
+                {isExpanded && (
+                  <div className="px-6 py-3.5 bg-slate-50/70 border-t">
+                    <div className="text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Car className="size-3.5 text-slate-500" /> Vehicle Assets ({clientVehicles.length})
+                      </span>
+                    </div>
+                    {clientVehicles.length > 0 ? (
+                      <div className="rounded-lg border bg-white overflow-hidden shadow-xs">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-100 uppercase tracking-wider text-slate-500 text-[10px] font-semibold border-b">
+                            <tr>
+                              <th className="text-left px-3 py-2">Vehicle Number</th>
+                              <th className="text-left px-3 py-2">Vehicle Type</th>
+                              <th className="text-left px-3 py-2">Chassis Number</th>
+                              <th className="text-left px-3 py-2">Engine Number</th>
+                              <th className="text-left px-3 py-2">Reg Date</th>
+                              <th className="text-left px-3 py-2">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y text-slate-700">
+                            {clientVehicles.map((v) => (
+                              <tr key={v.id} className="hover:bg-slate-50">
+                                <td className="px-3 py-2 font-mono font-bold text-sky-700">{v.vehicleNumber}</td>
+                                <td className="px-3 py-2 font-medium">{v.vehicleType || "—"}</td>
+                                <td className="px-3 py-2 font-mono text-[11px]">{v.chassisNumber || "—"}</td>
+                                <td className="px-3 py-2 font-mono text-[11px]">{v.engineNumber || "—"}</td>
+                                <td className="px-3 py-2 font-mono">{v.registrationDate ? new Date(v.registrationDate).toLocaleDateString("en-IN") : "—"}</td>
+                                <td className="px-3 py-2">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 border text-slate-700">
+                                    {v.status || "Active"}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground italic py-1">No registered vehicles found for this client.</div>
+                    )}
+                  </div>
+                )}
               </div>
-
-              <div className="min-w-0 text-xs">
-                <div className="font-medium text-foreground">{c.companyName || "—"}</div>
-              </div>
-
-              {/* Notes */}
-              <div className="text-xs text-muted-foreground truncate max-w-xs">
-                {c.notes || "—"}
-              </div>
-
-              {/* Actions */}
-              <div className="text-right flex items-center justify-end gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    generatePDF(
-                      "client-details",
-                      {
-                        name: c.name,
-                        mo: c.mobile,
-                        email: "",
-                        address: c.address || "",
-                        group: "",
-                        createdAt: "",
-                        createdBy: "",
-                        vehicles: [],
-                      },
-                      session?.username || "system",
-                    )
-                  }
-                  title="Download PDF"
-                >
-                  <Download className="size-4 text-red-600" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    generatePDF(
-                      "client-details",
-                      {
-                        name: c.name,
-                        mo: c.mobile,
-                        email: "",
-                        address: c.address || "",
-                        group: "",
-                        createdAt: "",
-                        createdBy: "",
-                        vehicles: [],
-                      },
-                      session?.username || "system",
-                    )
-                  }
-                  title="View PDF"
-                >
-                  <FileText className="size-4 text-blue-600" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleOpenDetails(c.id)}
-                  title="View workspace"
-                >
-                  <Eye className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setEditingClient(c);
-                    setClientForm(c);
-                    setFormOpen(true);
-                  }}
-                  disabled={!canEdit}
-                  title={!canEdit ? "You do not have permission to edit clients" : "Edit client"}
-                >
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDeleteClient(c.id)}
-                  disabled={!canDelete}
-                  className="text-destructive hover:bg-destructive/10"
-                  title={
-                    !canDelete ? "You do not have permission to delete clients" : "Delete client"
-                  }
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

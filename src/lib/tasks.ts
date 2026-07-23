@@ -133,6 +133,10 @@ export interface Task {
   assignedEmployeeRole?: string;
   createdDate?: string;
   remarks?: string;
+  appointmentDate?: string;
+  applicationId?: string;
+  applicationType?: string;
+  serviceId?: string;
   activityLog?: any[];
   applicationType?: string;
 }
