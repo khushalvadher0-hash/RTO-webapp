@@ -183,7 +183,7 @@ export function RecordTable({ bucket, title, description }: Props) {
       (r.serviceAmount !== undefined || r.amountReceived !== undefined)
     ) {
       const serviceType =
-        normalizeLegacyServiceType(r.serviceType, r.application, r.work) || "Unknown";
+        normalizeLegacyServiceType(r.serviceType, r.application, r.work) || "Insurance";
       services = [
         {
           serviceType,
@@ -298,7 +298,7 @@ export function RecordTable({ bucket, title, description }: Props) {
           ? services[serviceIndex]
           : { serviceType: services[serviceIndex] };
 
-      const docEntry = await addCustomerDoc(editing.id, file.name, file.type, file, (pct) =>
+      const docEntry = await addClientDoc(editing.id, file.name, file.type, file, (pct: any) =>
         setUploadPct(pct),
       );
 

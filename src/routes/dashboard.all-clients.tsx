@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Loader2,
   ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { subscribeToAllClients, filterClients, type AggregatedClient } from "@/lib/allClients";

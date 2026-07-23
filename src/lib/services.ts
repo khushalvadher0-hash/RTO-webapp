@@ -36,10 +36,11 @@ export async function getServiceClientsAll(serviceType: ServiceType): Promise<Re
 
     servicesSnap.forEach((docSnap) => {
       const service = { id: docSnap.id, ...docSnap.data() } as any;
-      const vehicle = vehiclesMap.get(service.vehicleId);
-      if (!vehicle) return;
+      const vehicle = service.vehicleId ? vehiclesMap.get(service.vehicleId) : null;
+      const clientId = service.clientId || (vehicle ? vehicle.clientId : null);
+      if (!clientId) return;
 
-      const client = clientsMap.get(vehicle.clientId);
+      const client = clientsMap.get(clientId);
       if (!client) return;
 
       let status: any = "Pending";
@@ -55,7 +56,7 @@ export async function getServiceClientsAll(serviceType: ServiceType): Promise<Re
         id: client.id,
         srNo: srNo++,
         date: service.createdAt || client.createdAt || new Date().toISOString(),
-        mvNo: vehicle.vehicleNumber,
+        mvNo: vehicle?.vehicleNumber || "—",
         application: service.serviceType,
         work: service.notes || "",
         name: client.name,
@@ -82,9 +83,9 @@ export async function getServiceClientsAll(serviceType: ServiceType): Promise<Re
             amountReceived: service.amountReceived ?? 0,
             assignee: service.assignedStaff || service.assignee || "",
             assignedEmployeeName: service.assignedEmployeeName || service.assignedStaff || "",
-            vehicleId: service.vehicleId,
-            vehicleNumber: vehicle.vehicleNumber,
-            vehicleType: vehicle.vehicleType || "—",
+            vehicleId: service.vehicleId || "",
+            vehicleNumber: vehicle?.vehicleNumber || "—",
+            vehicleType: vehicle?.vehicleType || "—",
             notes: service.notes || service.remarks || "",
             taskTemplate: service.taskTemplate || "",
           },
@@ -240,10 +241,11 @@ export async function getUpcomingRenewals(daysFromNow: number = 30): Promise<Reg
       const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
       if (daysRemaining >= 0 && daysRemaining <= daysFromNow) {
-        const vehicle = vehiclesMap.get(service.vehicleId);
-        if (!vehicle) return;
+        const vehicle = service.vehicleId ? vehiclesMap.get(service.vehicleId) : null;
+        const clientId = service.clientId || (vehicle ? vehicle.clientId : null);
+        if (!clientId) return;
 
-        const client = clientsMap.get(vehicle.clientId);
+        const client = clientsMap.get(clientId);
         if (!client) return;
 
         let status: any = "Pending";

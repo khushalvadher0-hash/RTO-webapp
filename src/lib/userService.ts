@@ -129,29 +129,40 @@ export function generateTemporaryPassword(fullName: string): string {
   return `${initials || 'EM'}${digits}`;
 }
 
-/** Create a new employee */
+/** Create a new employee with manual Username and Password */
 export async function createEmployee(input: {
   fullName: string;
+  username: string;
+  password: string;
   email?: string;
   mobile?: string;
   department?: string;
   designation?: string;
-  role: 'manager' | 'employee';
+  role: 'manager' | 'employee' | 'admin';
+  status?: 'active' | 'inactive';
 }) {
   const employeeId = await generateEmployeeId();
-  const username = employeeId;
-  const tempPassword = `${employeeId}123`;
   const actor = getSession()?.username || 'system';
 
-  // 1. Validate password before creating user
-  if (!tempPassword || tempPassword.length < 6) {
+  const username = input.username?.trim().toLowerCase();
+  if (!username) {
+    throw new Error('Username is required.');
+  }
+
+  const password = input.password;
+  if (!password || password.length < 6) {
     throw new Error('Password must be at least 6 characters.');
   }
 
-  // 2. Validate email
-  const emailStr = (input.email || '').trim();
+  // 1. Uniqueness check for username & email against existing users
+  const existingUsers = await fetchAllUsers();
+  if (existingUsers.some(u => u.username?.toLowerCase() === username)) {
+    throw new Error('Username is already taken. Please choose another username.');
+  }
+
+  const emailStr = (input.email || '').trim().toLowerCase();
   if (!emailStr) {
-    throw new Error('Email is required');
+    throw new Error('Email is required.');
   }
   if (!emailStr.includes('@')) {
     throw new Error('Invalid email.');
@@ -165,13 +176,16 @@ export async function createEmployee(input: {
     throw new Error('Invalid email.');
   }
 
-  // 3. Create in Firebase Auth using Secondary Auth instance
+  if (existingUsers.some(u => u.email && u.email.trim().toLowerCase() === emailStr)) {
+    throw new Error('Email already exists. Please use a different email address.');
+  }
+
+  // 2. Create in Firebase Auth using Secondary Auth instance
   const secAuth = getSecondaryAuth();
   let cred;
   try {
-    cred = await secondaryCreate(secAuth, toEmail(username), tempPassword);
+    cred = await secondaryCreate(secAuth, toEmail(username), password);
   } catch (error: any) {
-    // 6. Log complete Firebase error to console
     console.error("Firebase auth error during employee creation:", error);
     if (error && error.code) {
       if (error.code === 'auth/email-already-in-use') {
@@ -188,22 +202,23 @@ export async function createEmployee(input: {
   }
   await secondarySignOut(secAuth);
 
-  // 4. Save in Firestore users collection
+  // 3. Save in Firestore users collection
   const now = new Date().toISOString();
+  const status = input.status || 'active';
   const userRecord: UserRecord & { name: string; createdDate: string } = {
     uid: cred.user.uid,
     userId: cred.user.uid,
-    fullName: input.fullName,
-    name: input.fullName,
+    fullName: input.fullName.trim(),
+    name: input.fullName.trim(),
     username,
     email: emailStr,
-    mobile: input.mobile || '',
-    department: input.department || '',
-    designation: input.designation || '',
+    mobile: input.mobile?.trim() || '',
+    department: input.department?.trim() || '',
+    designation: input.designation?.trim() || '',
     role: input.role,
-    status: 'active',
-    isActive: true,
-    password: tempPassword, // plain password stored to allow secondary auth resets
+    status,
+    isActive: status === 'active',
+    password, // Plain password stored securely to allow secondary auth resets
     employeeId,
     createdBy: actor,
     createdAt: now,
@@ -220,7 +235,7 @@ export async function createEmployee(input: {
   return {
     employeeId,
     username,
-    password: tempPassword
+    password,
   };
 }
 

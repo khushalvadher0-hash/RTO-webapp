@@ -105,11 +105,15 @@ function EmployeesPage() {
   // Form states for Create/Edit
   const [addForm, setAddForm] = useState({
     fullName: "",
+    username: "",
     email: "",
     mobile: "",
     department: "",
     designation: "",
-    role: "employee" as "manager" | "employee",
+    role: "employee" as "manager" | "employee" | "admin",
+    password: "",
+    confirmPassword: "",
+    status: "active" as "active" | "inactive",
   });
 
   const [editForm, setEditForm] = useState({
@@ -196,6 +200,7 @@ function EmployeesPage() {
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addForm.fullName.trim()) return toast.error("Full name is required");
+    if (!addForm.username.trim()) return toast.error("Username is required");
 
     // Validate email before submitting
     const email = addForm.email.trim();
@@ -218,28 +223,47 @@ function EmployeesPage() {
       return;
     }
 
+    if (!addForm.password) {
+      toast.error("Password is required");
+      return;
+    }
+    if (addForm.password.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    if (addForm.password !== addForm.confirmPassword) {
+      toast.error("Confirm password does not match.");
+      return;
+    }
+
     try {
-      const credentials = await createEmployee(addForm);
-      setShowAdd(false);
-      // Open success credentials overlay
-      setShowSuccessCredentials({
-        show: true,
-        employeeId: credentials.employeeId,
-        username: credentials.username,
-        password: credentials.password,
+      await createEmployee({
+        fullName: addForm.fullName,
+        username: addForm.username,
+        email: addForm.email,
+        mobile: addForm.mobile,
+        department: addForm.department,
+        designation: addForm.designation,
+        role: addForm.role,
+        password: addForm.password,
+        status: addForm.status,
       });
+      setShowAdd(false);
       // Clear form
       setAddForm({
         fullName: "",
+        username: "",
         email: "",
         mobile: "",
         department: "",
         designation: "",
         role: "employee",
+        password: "",
+        confirmPassword: "",
+        status: "active",
       });
       toast.success("Employee created successfully!");
     } catch (err: any) {
-      // 6. Log complete error to console
       console.error("Employee creation failed:", err);
       toast.error(err.message || "Failed to create employee");
     }
@@ -581,28 +605,40 @@ function EmployeesPage() {
           <DialogHeader>
             <DialogTitle>Add New Employee</DialogTitle>
             <DialogDescription>
-              Create a new employee profile. Login credentials will be generated automatically.
+              Create a new employee profile with manual login credentials.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddEmployee} className="space-y-4">
-            <div className="space-y-1">
-              <Label>Full Name *</Label>
-              <Input
-                placeholder="Rahul Patel"
-                value={addForm.fullName}
-                onChange={(e) => setAddForm({ ...addForm, fullName: e.target.value })}
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Full Name *</Label>
+                <Input
+                  placeholder="Rahul Patel"
+                  value={addForm.fullName}
+                  onChange={(e) => setAddForm({ ...addForm, fullName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Username *</Label>
+                <Input
+                  placeholder="rahul.patel"
+                  value={addForm.username}
+                  onChange={(e) => setAddForm({ ...addForm, username: e.target.value })}
+                  required
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Email</Label>
+                <Label>Email *</Label>
                 <Input
                   type="email"
                   placeholder="rahul@company.com"
                   value={addForm.email}
                   onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  required
                 />
               </div>
               <div className="space-y-1">
@@ -634,20 +670,62 @@ function EmployeesPage() {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <Label>Role *</Label>
-              <Select
-                value={addForm.role}
-                onValueChange={(val) => setAddForm({ ...addForm, role: val as "manager" | "employee" })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="employee">Employee</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Role *</Label>
+                <Select
+                  value={addForm.role}
+                  onValueChange={(val) => setAddForm({ ...addForm, role: val as "manager" | "employee" | "admin" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="employee">Employee</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Status *</Label>
+                <Select
+                  value={addForm.status}
+                  onValueChange={(val) => setAddForm({ ...addForm, status: val as "active" | "inactive" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Password *</Label>
+                <Input
+                  type="password"
+                  placeholder="Min 6 characters"
+                  value={addForm.password}
+                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Confirm Password *</Label>
+                <Input
+                  type="password"
+                  placeholder="Confirm password"
+                  value={addForm.confirmPassword}
+                  onChange={(e) => setAddForm({ ...addForm, confirmPassword: e.target.value })}
+                  required
+                />
+              </div>
             </div>
 
             <DialogFooter className="pt-2">
@@ -754,10 +832,10 @@ function EmployeesPage() {
             <div className="space-y-4">
               <div className="flex items-center gap-4 p-3 bg-muted/40 rounded-xl">
                 <div className="size-12 rounded-full bg-primary/20 flex items-center justify-center font-bold text-lg text-primary">
-                  {(selectedEmployee.fullName || selectedEmployee.name || "EE").slice(0, 2).toUpperCase()}
+                  {(selectedEmployee.fullName || (selectedEmployee as any).name || "EE").slice(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <h4 className="font-semibold text-lg">{selectedEmployee.fullName ?? selectedEmployee.name ?? "N/A"}</h4>
+                  <h4 className="font-semibold text-lg">{selectedEmployee.fullName ?? (selectedEmployee as any).name ?? "N/A"}</h4>
                   <p className="text-xs text-muted-foreground">ID: {selectedEmployee.employeeId ?? "N/A"}</p>
                 </div>
               </div>
@@ -769,7 +847,7 @@ function EmployeesPage() {
                 </div>
                 <div className="flex justify-between border-b py-1">
                   <span className="text-muted-foreground">Name</span>
-                  <span className="font-medium">{selectedEmployee.fullName ?? selectedEmployee.name ?? "N/A"}</span>
+                  <span className="font-medium">{selectedEmployee.fullName ?? (selectedEmployee as any).name ?? "N/A"}</span>
                 </div>
                 <div className="flex justify-between border-b py-1">
                   <span className="text-muted-foreground">Username</span>

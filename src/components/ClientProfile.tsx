@@ -1193,8 +1193,8 @@ export function ClientProfile({
                     <SelectValue placeholder="Select a service" />
                   </SelectTrigger>
                   <SelectContent>
-                    {services.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
+                    {services.map((s: any, idx: number) => (
+                      <SelectItem key={s.id || s.serviceId || idx} value={s.id || s.serviceId || String(idx)}>
                         {serviceLabel(s.serviceType)}
                       </SelectItem>
                     ))}
@@ -1316,7 +1316,7 @@ export function ClientProfile({
                       receivedBy: paymentForm.receivedBy || "",
                       referenceNumber: paymentForm.referenceNumber || "",
                       remarks: paymentForm.remarks || "",
-                    });
+                    } as any);
 
                     // Update the amountReceived for the selected service on the record
                     const updatedServices = serviceDetails.map((s) => {

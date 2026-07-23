@@ -290,9 +290,10 @@ function AccountingDashboardPage() {
     const clientsWithServices = new Set<string>();
 
     v2Services.forEach((s) => {
-      const vehicle = v2Vehicles.find((v) => v.id === s.vehicleId);
-      const vehicleNum = vehicle?.vehicleNumber || (s as any).vehicleNumber || "Unassigned Vehicle";
-      const clientId = vehicle?.clientId || s.clientId || "";
+      const isLicense = s.serviceType === "License New" || s.serviceType === "License Renew";
+      const vehicle = s.vehicleId ? v2Vehicles.find((v) => v.id === s.vehicleId) : null;
+      const vehicleNum = vehicle?.vehicleNumber || (s as any).vehicleNumber || (isLicense ? "Personal Service" : "Unassigned Vehicle");
+      const clientId = s.clientId || vehicle?.clientId || "";
       if (clientId) {
         clientsWithServices.add(clientId);
       }
@@ -301,8 +302,8 @@ function AccountingDashboardPage() {
       const clientName = client?.name || s.clientName || "Unknown Client";
       const clientMobile = client?.mobile || client?.mo || s.clientMobile || "";
 
-      // Unique accounting row key per vehicle
-      const groupKey = s.vehicleId ? `veh-${s.vehicleId}` : `client-${clientId}-${vehicleNum}`;
+      // Unique accounting row key per vehicle/service
+      const groupKey = isLicense ? `license-${s.id}` : (s.vehicleId ? `veh-${s.vehicleId}` : `client-${clientId}-${vehicleNum}`);
 
       const amt = s.serviceAmount || 0;
       const rec = (s.amountReceived || 0) + (s.advancePayment || 0);

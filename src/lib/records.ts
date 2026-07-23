@@ -71,6 +71,16 @@ export interface ServiceDetail {
   price?: number; // Service-specific price / charge
   amountReceived?: number; // Service-specific amount received
   assignee?: string; // Service-specific assignee (optional)
+  serviceId?: string;
+  notes?: string;
+  vehicleId?: string;
+  vehicleNumber?: string;
+  vehicleType?: string;
+  applicationType?: string;
+  applicationId?: string;
+  advancePayment?: number;
+  assignedEmployeeName?: string;
+  taskTemplate?: string;
 }
 
 export const SERVICE_TYPES: ServiceType[] = [
@@ -903,7 +913,7 @@ export async function saveRecord(
     }
   }
 
-  const { id: _maybeId, ...updateData } = data;
+  const { id: _maybeId, ...updateData } = data as any;
   const id = recId;
 
   // Apply uppercase forcing

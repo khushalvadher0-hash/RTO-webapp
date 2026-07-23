@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -170,8 +171,10 @@ function ClientAnalyticsDashboard() {
       const clientVehs = vehicles.filter((v) => v.clientId === client.id);
       const vehicleIds = clientVehs.map((v) => v.id);
 
-      // Find services for these vehicles
-      const allClientServices = services.filter((s) => vehicleIds.includes(s.vehicleId));
+      // Find services for these vehicles or client
+      const allClientServices = services.filter(
+        (s) => (s.vehicleId && vehicleIds.includes(s.vehicleId)) || s.clientId === client.id,
+      );
 
       // Filtered client services inside selected period
       const filteredServices = allClientServices.filter((s) => {
@@ -181,7 +184,7 @@ function ClientAnalyticsDashboard() {
 
       // Calculate Revenue using services[].price / serviceAmount
       const totalRevenue = filteredServices.reduce(
-        (sum, s) => sum + (s.price ?? s.serviceAmount ?? 0),
+        (sum, s) => sum + ((s as any).price ?? s.serviceAmount ?? 0),
         0,
       );
       const totalReceived = filteredServices.reduce((sum, s) => sum + (s.amountReceived ?? 0), 0);
@@ -203,7 +206,7 @@ function ClientAnalyticsDashboard() {
       allClientServices.forEach((s) => {
         if (!s.createdAt) return;
         const key = s.createdAt.substring(0, 7); // YYYY-MM
-        monthlyRevenueMap[key] = (monthlyRevenueMap[key] || 0) + (s.price ?? s.serviceAmount ?? 0);
+        monthlyRevenueMap[key] = (monthlyRevenueMap[key] || 0) + ((s as any).price ?? s.serviceAmount ?? 0);
       });
       const monthKeys = Object.keys(monthlyRevenueMap);
       const averageMonthlyBusiness =
@@ -244,14 +247,14 @@ function ClientAnalyticsDashboard() {
           const sDate = s.createdAt ? new Date(s.createdAt) : new Date();
           return sDate >= currentMonthStart;
         })
-        .reduce((sum, s) => sum + (s.price ?? s.serviceAmount ?? 0), 0);
+        .reduce((sum, s) => sum + ((s as any).price ?? s.serviceAmount ?? 0), 0);
 
       const revenueLastMonth = allClientServices
         .filter((s) => {
           const sDate = s.createdAt ? new Date(s.createdAt) : new Date();
           return sDate >= lastMonthStart && sDate <= lastMonthEnd;
         })
-        .reduce((sum, s) => sum + (s.price ?? s.serviceAmount ?? 0), 0);
+        .reduce((sum, s) => sum + ((s as any).price ?? s.serviceAmount ?? 0), 0);
 
       const growthRate =
         revenueLastMonth > 0
@@ -266,7 +269,7 @@ function ClientAnalyticsDashboard() {
           return sDate >= dateRange.start && sDate <= dateRange.end;
         });
 
-        const vRevenue = vFiltered.reduce((sum, s) => sum + (s.price ?? s.serviceAmount ?? 0), 0);
+        const vRevenue = vFiltered.reduce((sum, s) => sum + ((s as any).price ?? s.serviceAmount ?? 0), 0);
         const vReceived = vFiltered.reduce((sum, s) => sum + (s.amountReceived ?? 0), 0);
         const vPending = Math.max(0, vRevenue - vReceived);
 
@@ -400,7 +403,7 @@ function ClientAnalyticsDashboard() {
           servicesCount: 0,
         };
       }
-      monthlyMap[monthKey].revenue += s.price ?? s.serviceAmount ?? 0;
+      monthlyMap[monthKey].revenue += (s as any).price ?? s.serviceAmount ?? 0;
       monthlyMap[monthKey].servicesCount++;
     });
 

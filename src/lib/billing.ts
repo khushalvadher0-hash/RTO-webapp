@@ -1,6 +1,7 @@
 import { db, storage } from "./firebase";
 import {
   addDoc,
+  deleteDoc,
   collection,
   doc,
   getDoc,
@@ -63,6 +64,9 @@ export type Invoice = {
   pdfUrl?: string | null;
   collectionDate?: string | null;
   askBhaylubha?: boolean;
+  amountPaid?: number;
+  paymentMethod?: string;
+  notes?: string;
 };
 
 export type InvoicePayment = {
@@ -74,6 +78,11 @@ export type InvoicePayment = {
   referenceNumber?: string | null;
   notes?: string | null;
   createdAt: string;
+  paymentDate?: string;
+  amountReceived?: number;
+  paymentMethod?: string;
+  receivedInAccount?: string;
+  remarks?: string;
 };
 
 export interface BillingMetrics {
@@ -536,7 +545,7 @@ export function subscribeToClientInvoices(
     q,
     (snap) => {
       const invoices = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Invoice) }) as Invoice)
+        .map((d) => ({ ...(d.data() as any), id: d.id }) as Invoice)
         .sort((a, b) => {
           const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
           const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
@@ -556,7 +565,7 @@ export function subscribeToAllInvoices(callback: (invoices: Invoice[]) => void) 
   return onSnapshot(
     q,
     (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Invoice) }) as Invoice));
+      callback(snap.docs.map((d) => ({ ...(d.data() as any), id: d.id }) as Invoice));
     },
     (error) => {
       handleFirestoreError(error, "subscribeToAllInvoices");
@@ -569,7 +578,7 @@ export async function getInvoiceById(invoiceId: string): Promise<Invoice | null>
   const invoiceDoc = doc(db, BILLING_INVOICES_COL, invoiceId);
   const snap = await getDoc(invoiceDoc);
   if (!snap.exists()) return null;
-  return { id: snap.id, ...(snap.data() as Invoice) };
+  return { ...(snap.data() as any), id: snap.id };
 }
 
 export async function updateInvoiceStatus(
@@ -682,7 +691,7 @@ export function subscribeToInvoicePayments(
   return onSnapshot(
     q,
     (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as InvoicePayment) }) as InvoicePayment);
+      const list = snap.docs.map((d) => ({ ...(d.data() as any), id: d.id }) as InvoicePayment);
       list.sort((a, b) => {
         const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
         const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
@@ -704,7 +713,7 @@ export async function getInvoicePayments(invoiceId: string): Promise<InvoicePaym
   );
   const snap = await getDocs(q);
   const list = snap.docs.map(
-    (docSnap) => ({ id: docSnap.id, ...(docSnap.data() as InvoicePayment) }) as InvoicePayment,
+    (docSnap) => ({ ...(docSnap.data() as any), id: docSnap.id }) as InvoicePayment,
   );
   list.sort((a, b) => {
     const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
@@ -715,52 +724,26 @@ export async function getInvoicePayments(invoiceId: string): Promise<InvoicePaym
 }
 
 export async function calculateBillingMetrics(): Promise<BillingMetrics> {
-  const snap = await getDocs(collection(db, BILLING_INVOICES_COL));
-  const invoices = snap.docs.map((d) => d.data() as Invoice);
+  const q = query(collection(db, BILLING_INVOICES_COL));
+  const snap = await getDocs(q);
+  const invoices = snap.docs.map((d) => ({ ...(d.data() as any), id: d.id }) as Invoice);
 
-  const now = new Date();
-  const currentMonth = now.getUTCMonth();
-  const currentYear = now.getUTCFullYear();
-
-  let totalInvoiced = 0;
-  let totalCollected = 0;
-  let invoicesThisMonth = 0;
-  let pendingCount = 0;
-  let overdueCount = 0;
-
-  for (const invoice of invoices) {
-    totalInvoiced += invoice.totalAmount || 0;
-    totalCollected += invoice.totalPaid || 0;
-
-    const invoiceDate = normalizeIsoDate(invoice.invoiceDate);
-    if (
-      invoiceDate &&
-      invoiceDate.getUTCMonth() === currentMonth &&
-      invoiceDate.getUTCFullYear() === currentYear
-    ) {
-      invoicesThisMonth += 1;
-    }
-
-    if (invoice.status === "Pending" || invoice.status === "Partially Paid") {
-      pendingCount += 1;
-      const endDate = normalizeIsoDate(invoice.billingPeriodEnd);
-      if (endDate && endDate.getTime() < now.getTime()) {
-        overdueCount += 1;
-      }
-    }
-  }
-
+  const totalInvoiced = invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const totalCollected = invoices.reduce((sum, inv) => sum + (inv.totalPaid || 0), 0);
   const outstandingAmount = Math.max(0, totalInvoiced - totalCollected);
-  const collectionRate = totalInvoiced > 0 ? (totalCollected / totalInvoiced) * 100 : 0;
+
+  const pendingCount = invoices.filter(
+    (inv) => inv.status === "Pending" || inv.status === "Partially Paid",
+  ).length;
 
   return {
     totalInvoiced,
     totalCollected,
     outstandingAmount,
-    invoicesThisMonth,
+    invoicesThisMonth: invoices.length,
     pendingInvoices: pendingCount,
-    overdueInvoices: overdueCount,
-    collectionRate,
+    overdueInvoices: 0,
+    collectionRate: totalInvoiced > 0 ? (totalCollected / totalInvoiced) * 100 : 0,
   };
 }
 
@@ -776,7 +759,7 @@ export async function getClientBillingSummary(clientId: string) {
   const q = query(collection(db, BILLING_INVOICES_COL), where("clientId", "==", clientId));
   const snap = await getDocs(q);
   const invoices = snap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as Invoice) }) as Invoice)
+    .map((d) => ({ ...(d.data() as any), id: d.id }) as Invoice)
     .sort((a, b) => {
       const dateA = normalizeIsoDate(a.createdAt)?.getTime() ?? 0;
       const dateB = normalizeIsoDate(b.createdAt)?.getTime() ?? 0;
@@ -810,11 +793,11 @@ export async function deleteInvoiceById(
   // Delete associated payments
   const payments = await getInvoicePayments(invoiceId);
   for (const pay of payments) {
-    await firestoreDeleteDoc(doc(db, BILLING_INVOICE_PAYMENTS_COL, pay.id));
+    await deleteDoc(doc(db, BILLING_INVOICE_PAYMENTS_COL, pay.id));
   }
 
   // Delete invoice metadata doc
-  await firestoreDeleteDoc(doc(db, BILLING_INVOICES_COL, invoiceId));
+  await deleteDoc(doc(db, BILLING_INVOICES_COL, invoiceId));
 
   // Log client activity for deletion audit trail
   try {

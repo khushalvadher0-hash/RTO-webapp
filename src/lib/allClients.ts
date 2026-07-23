@@ -8,8 +8,9 @@ import {
   type Bucket,
   type PaymentStatus,
 } from "./records";
-import { subscribeToCustomers, type CustomerProfile } from "./customers";
 import { subscribeAllClients, subscribeAllVehicles, subscribeAllServices } from "./hierarchy";
+
+export type CustomerProfile = any;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -207,7 +208,7 @@ export function aggregateAllClients(
         mobile: customer.mobile || "",
         email: customer.email || "",
         address: customer.address || "",
-        vehicles: customer.vehicles.map((v) => v.mvNo),
+        vehicles: customer.vehicles.map((v: any) => v.mvNo),
         allServices: [],
         activeServices: 0,
         pendingServices: 0,

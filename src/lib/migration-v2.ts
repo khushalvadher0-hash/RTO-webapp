@@ -99,6 +99,8 @@ export async function runV2Migration(): Promise<MigrationReport> {
           clientsMap.set(clientKey, client);
         }
 
+        if (!client) continue;
+
         // Deduplicate Vehicle by vehicleNumber under this client
         const vehicleNo = (record.mvNo || "UNKNOWN-MV").trim().toUpperCase();
         const vehicleKey = `${client.id}_${vehicleNo}`;
@@ -123,7 +125,7 @@ export async function runV2Migration(): Promise<MigrationReport> {
         if (serviceDetails.length > 0) {
           for (const s of serviceDetails) {
             const taskStatus: ServiceTaskStatus =
-              s.status === "Completed" ? "Completed" : "In Progress";
+              s.status === "Completed" ? "Completed" : "Submitted";
             const progress = getProgressFromStatus(taskStatus);
 
             servicesList.push({
@@ -144,7 +146,7 @@ export async function runV2Migration(): Promise<MigrationReport> {
           // If no structured serviceDetails, infer one from the record's work description
           const sType = inferType(record.work);
           const taskStatus: ServiceTaskStatus =
-            record.status === "Completed" ? "Completed" : "In Progress";
+            record.status === "Completed" ? "Completed" : "Submitted";
           const progress = getProgressFromStatus(taskStatus);
 
           servicesList.push({

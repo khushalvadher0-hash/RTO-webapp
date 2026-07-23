@@ -16,7 +16,6 @@ import { db } from "./firebase";
 import { removeUndefined, type ServiceType } from "./records";
 import { getSession } from "./auth";
 import { invalidateCache } from "./cacheInvalidator";
-import { invalidateCache } from "./cacheInvalidator";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -34,6 +33,8 @@ export interface Client {
   createdById?: string;
   updatedBy?: string;
   updatedById?: string;
+  advancePayment?: number;
+  gstNumber?: string;
 }
 
 export interface VehicleDocument {
@@ -68,9 +69,13 @@ export type ServiceTaskStatus =
   | "Approved"
   | "Completed";
 
+export function isLicenseService(serviceType?: string): boolean {
+  return serviceType === "License New" || serviceType === "License Renew";
+}
+
 export interface Service {
   id: string;
-  vehicleId: string;
+  vehicleId?: string;
   serviceType: ServiceType;
   dueDate: string;
   serviceAmount: number;
@@ -106,6 +111,7 @@ export interface ClientAccounting {
 
 export interface ClientDetails extends Client {
   vehicles: (Vehicle & { services: Service[] })[];
+  personalServices?: Service[];
   accounting: ClientAccounting;
 }
 
@@ -659,15 +665,17 @@ export async function saveService(
   });
   await setDoc(docRef, cleanData, { merge: true });
 
-  // Look up vehicle to find its clientId for activity logging
-  let clientId = "";
-  try {
-    const vDoc = await getDoc(doc(db, VEHICLES_COL, data.vehicleId));
-    if (vDoc.exists()) {
-      clientId = vDoc.data().clientId || "";
+  // Look up vehicle or use clientId directly for activity logging
+  let clientId = data.clientId || "";
+  if (!clientId && data.vehicleId) {
+    try {
+      const vDoc = await getDoc(doc(db, VEHICLES_COL, data.vehicleId));
+      if (vDoc.exists()) {
+        clientId = vDoc.data().clientId || "";
+      }
+    } catch (err) {
+      console.error("Failed to fetch vehicle for service activity log:", err);
     }
-  } catch (err) {
-    console.error("Failed to fetch vehicle for service activity log:", err);
   }
 
   if (clientId) {
@@ -763,14 +771,16 @@ export async function deleteService(
   const sSnap = await getDoc(doc(db, SERVICES_COL, id));
   if (sSnap.exists()) {
     const service = sSnap.data() as Service;
-    let clientId = "";
-    try {
-      const vDoc = await getDoc(doc(db, VEHICLES_COL, service.vehicleId));
-      if (vDoc.exists()) {
-        clientId = vDoc.data().clientId || "";
+    let clientId = service.clientId || "";
+    if (!clientId && service.vehicleId) {
+      try {
+        const vDoc = await getDoc(doc(db, VEHICLES_COL, service.vehicleId));
+        if (vDoc.exists()) {
+          clientId = vDoc.data().clientId || "";
+        }
+      } catch (err) {
+        console.error(err);
       }
-    } catch (err) {
-      console.error(err);
     }
     if (clientId) {
       await logActivity(
@@ -830,6 +840,7 @@ export function subscribeToClientDetails(
 ): () => void {
   let client: Client | null = null;
   let vehicles: Vehicle[] = [];
+  let personalServices: Service[] = [];
   let serviceSubscribers: Record<string, () => void> = {};
   let servicesMap: Record<string, Service[]> = {};
   let unsubscribing = false;
@@ -849,6 +860,7 @@ export function subscribeToClientDetails(
     let totalAmount = 0;
     let amountReceived = 0;
     let hasAllocatedAdvance = false;
+
     for (const v of detailedVehicles) {
       for (const s of v.services) {
         totalAmount += s.serviceAmount ?? 0;
@@ -859,10 +871,17 @@ export function subscribeToClientDetails(
       }
     }
 
+    for (const s of personalServices) {
+      totalAmount += s.serviceAmount ?? 0;
+      amountReceived += s.amountReceived ?? 0;
+      if (s.invoiceId === `advance_${client.id}`) {
+        hasAllocatedAdvance = true;
+      }
+    }
+
     if (!hasAllocatedAdvance) {
       amountReceived += client.advancePayment ?? 0;
     }
-
 
     const accounting: ClientAccounting = {
       totalAmount,
@@ -873,6 +892,7 @@ export function subscribeToClientDetails(
     cb({
       ...client,
       vehicles: detailedVehicles,
+      personalServices,
       accounting,
     });
   };
@@ -885,6 +905,25 @@ export function subscribeToClientDetails(
       return;
     }
     client = { id: snap.id, ...snap.data() } as Client;
+    triggerCallback();
+  });
+
+  // Subscribe to Personal Services (where clientId == clientId and vehicleId is empty or is a license service)
+  const qPersonalServices = query(collection(db, SERVICES_COL), where("clientId", "==", clientId));
+  const unsubPersonalServices = onSnapshot(qPersonalServices, (snap) => {
+    personalServices = snap.docs
+      .map((d) => {
+        const data = d.data();
+        const serviceAmount = data.serviceAmount ?? 0;
+        const amountReceived = data.amountReceived ?? 0;
+        return {
+          id: d.id,
+          ...data,
+          pendingAmount: Math.max(0, serviceAmount - amountReceived),
+        } as Service;
+      })
+      .filter((s) => !s.vehicleId || isLicenseService(s.serviceType));
+
     triggerCallback();
   });
 
@@ -929,6 +968,7 @@ export function subscribeToClientDetails(
   return () => {
     unsubscribing = true;
     unsubClient();
+    unsubPersonalServices();
     unsubVehicles();
     Object.values(serviceSubscribers).forEach((unsub) => unsub());
   };

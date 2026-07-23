@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getForceCapsSetting, setForceCapsSetting } from "@/lib/capitalize-settings";
 import { getMigrationStatus } from "@/lib/migration";
-import { ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import { ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, KeyRound } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { ClearDataDialog } from "@/components/ClearDataDialog";
+import { ChangePinModal } from "@/components/ChangePinModal";
 import {
   type RolePermissions,
   saveStaffPermissions,
@@ -44,6 +45,7 @@ function SettingsPage() {
   const [permissions, setPermissions] = useState<RolePermissions>(defaultPermissions);
   const [permsSaved, setPermsSaved] = useState(false);
   const [clearDataDialogOpen, setClearDataDialogOpen] = useState(false);
+  const [changePinOpen, setChangePinOpen] = useState(false);
 
   const session = getSession();
   if (session?.role === "employee") {
@@ -139,10 +141,39 @@ function SettingsPage() {
       </div>
 
       {isAdmin && (
-        <div className="mt-4 space-y-2">
-          <Link to="/dashboard/employees">
-            <Button variant="outline">Employee Management</Button>
-          </Link>
+        <div className="space-y-4">
+          <div className="rounded-xl border bg-card p-6 space-y-4">
+            <div>
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <ShieldCheck className="size-5 text-primary" />
+                Security Settings
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Manage global application security and action confirmation authorization.
+              </p>
+            </div>
+            <div className="pt-3 border-t flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Delete Confirmation PIN</Label>
+                <p className="text-xs text-muted-foreground">
+                  Global PIN required before executing any record or entity deletion
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-sm tracking-widest bg-muted px-2.5 py-1 rounded border">••••</span>
+                <Button variant="outline" size="sm" onClick={() => setChangePinOpen(true)}>
+                  <KeyRound className="size-3.5 mr-1.5" />
+                  Change PIN
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Link to="/dashboard/employees">
+              <Button variant="outline">Employee Management</Button>
+            </Link>
+          </div>
         </div>
       )}
         <div className="rounded-xl border bg-card p-6 space-y-4">
@@ -258,6 +289,11 @@ function SettingsPage() {
       <ClearDataDialog 
         open={clearDataDialogOpen} 
         onOpenChange={setClearDataDialogOpen} 
+      />
+
+      <ChangePinModal
+        open={changePinOpen}
+        onOpenChange={setChangePinOpen}
       />
     </div>
   );

@@ -18,6 +18,6 @@ export function withRoleGuard<P>(Component: React.ComponentType<P>, requiredRole
       // Not authorized – redirect to settings (or a 403 page).
       return <Navigate to="/dashboard/settings" replace />;
     }
-    return <Component {...props} />;
+    return <Component {...(props as any)} />;
   };
 }

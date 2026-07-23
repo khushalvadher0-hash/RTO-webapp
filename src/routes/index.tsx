@@ -1,6 +1,6 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { login, getSession, STAFF_CREDENTIALS } from "@/lib/auth";
+import { login, getSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,21 +110,6 @@ function LoginPage() {
               {loading ? "Signing in…" : "Sign in"}
             </Button>
           </form>
-
-          <div className="mt-6 rounded-lg border bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground mb-1">Demo credentials</p>
-            <p>
-              <span className="font-mono">admin</span> / <span className="font-mono">admin123</span>{" "}
-              <span className="opacity-70">— Office Admin</span>
-            </p>
-            {STAFF_CREDENTIALS.map((s) => (
-              <p key={s.username}>
-                <span className="font-mono">{s.username}</span> /{" "}
-                <span className="font-mono">{s.password}</span>
-                <span className="opacity-70"> — {s.name}</span>
-              </p>
-            ))}
-          </div>
         </div>
       </section>
     </main>

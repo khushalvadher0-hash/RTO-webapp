@@ -287,17 +287,20 @@ function TasksPage() {
 
     // 2. Generate task objects dynamically from registry_services_v2 joined with vehicles and clients/leads
     const serviceTasks: Task[] = v2Services.map((s: any) => {
-      const vehicle = vehicles.find((v) => v.id === s.vehicleId);
-      const vehicleNo = vehicle?.vehicleNumber || "—";
-      const clientId = vehicle?.clientId || s.clientId || "";
+      const isLicense = s.serviceType === "License New" || s.serviceType === "License Renew";
+      const vehicle = s.vehicleId ? vehicles.find((v) => v.id === s.vehicleId) : null;
+      const vehicleNo = vehicle?.vehicleNumber || "";
+      const clientId = s.clientId || vehicle?.clientId || "";
       const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
       const clientName = client?.name || s.clientName || "Unknown Client";
+      const taskTitle = s.title || (isLicense ? `${s.serviceType || "License Service"} - ${clientName}` : `${s.serviceType || "Service"} - ${vehicleNo || "—"}`);
+      const taskDesc = s.description || (isLicense ? `Client: ${clientName}. Status: ${s.taskStatus || s.status || "Pending"}. Notes: ${s.notes || s.remarks || "—"}` : `Vehicle: ${vehicleNo || "—"}. Status: ${s.taskStatus || s.status || "Pending"}. Remarks: ${s.remarks || "—"}`);
 
       return {
         id: s.id,
-        title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
+        title: taskTitle,
         serviceName: s.serviceType || "",
-        description: s.description || `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
+        description: taskDesc,
         assignee: s.assignedTo || s.employeeId || s.assignee || "",
         assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
         assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
@@ -2131,17 +2134,18 @@ function TaskDetailsSheet({
         const unsubServices = onSnapshot(doc(db, "registry_services_v2", initialTask.id), (sSnap) => {
           if (sSnap.exists()) {
             const s = sSnap.data() as any;
-            const vehicle = vehicles.find((v) => v.id === s.vehicleId);
-            const vehicleNo = vehicle?.vehicleNumber || "—";
-            const clientId = vehicle?.clientId || s.clientId || "";
+            const isLicense = s.serviceType === "License New" || s.serviceType === "License Renew";
+            const vehicle = s.vehicleId ? vehicles.find((v) => v.id === s.vehicleId) : null;
+            const vehicleNo = vehicle?.vehicleNumber || "";
+            const clientId = s.clientId || vehicle?.clientId || "";
             const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
             const clientName = client?.name || s.clientName || "Unknown Client";
 
             const resolvedTask = {
               id: sSnap.id,
-              title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
+              title: s.title || (isLicense ? `${s.serviceType || "License Service"} - ${clientName}` : `${s.serviceType || "Service"} - ${vehicleNo || "—"}`),
               serviceName: s.serviceType || "",
-              description: s.remarks || s.notes || `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
+              description: s.remarks || s.notes || (isLicense ? `Client: ${clientName}. Status: ${s.taskStatus || s.status || "Pending"}` : `Vehicle: ${vehicleNo || "—"}. Status: ${s.taskStatus || s.status || "Pending"}`),
               assignee: s.assignedTo || s.employeeId || s.assignee || "",
               assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
               assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",

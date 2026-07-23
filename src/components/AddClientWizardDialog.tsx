@@ -36,6 +36,7 @@ import {
   saveClient,
   saveVehicle,
   saveService,
+  isLicenseService,
   type Client,
   type Vehicle,
   type Service,
@@ -183,7 +184,7 @@ export function AddClientWizardDialog({
   };
 
   const handleStep2Next = () => {
-    if (!vehicleForm.vehicleNumber.trim()) {
+    if (!isLicenseService(serviceForm.serviceType) && !vehicleForm.vehicleNumber.trim()) {
       toast.error("Vehicle Number is required");
       return;
     }
@@ -204,9 +205,11 @@ export function AddClientWizardDialog({
         ? { name: session.name, uid: session.uid, role: session.role }
         : undefined;
 
+      const isLicense = isLicenseService(serviceForm.serviceType);
+
       // 1. Generate IDs
       const clientId = `cli_${crypto.randomUUID()}`;
-      const vehicleId = `veh_${crypto.randomUUID()}`;
+      const vehicleId = isLicense ? "" : `veh_${crypto.randomUUID()}`;
       const serviceId = `srv_${crypto.randomUUID()}`;
 
       // 2. Create Client
@@ -221,18 +224,21 @@ export function AddClientWizardDialog({
       };
       await saveClient(newClient, actorOverride);
 
-      // 3. Create Vehicle
-      const newVehicle: Vehicle = {
-        id: vehicleId,
-        clientId,
-        vehicleNumber: vehicleForm.vehicleNumber.trim().toUpperCase(),
-        vehicleType: vehicleForm.vehicleType,
-        chassisNumber: vehicleForm.chassisNumber.trim(),
-        engineNumber: vehicleForm.engineNumber.trim(),
-        registrationDate: vehicleForm.registrationDate,
-        status: vehicleForm.status,
-      };
-      await saveVehicle(newVehicle, actorOverride);
+      // 3. Create Vehicle (if not license or vehicle number provided)
+      if (!isLicense || vehicleForm.vehicleNumber.trim()) {
+        const vId = vehicleId || `veh_${crypto.randomUUID()}`;
+        const newVehicle: Vehicle = {
+          id: vId,
+          clientId,
+          vehicleNumber: vehicleForm.vehicleNumber.trim().toUpperCase(),
+          vehicleType: vehicleForm.vehicleType,
+          chassisNumber: vehicleForm.chassisNumber.trim(),
+          engineNumber: vehicleForm.engineNumber.trim(),
+          registrationDate: vehicleForm.registrationDate,
+          status: vehicleForm.status,
+        };
+        await saveVehicle(newVehicle, actorOverride);
+      }
 
       // 4. Create Service
       const serviceAmount = Number(serviceForm.serviceAmount) || 0;
@@ -242,7 +248,7 @@ export function AddClientWizardDialog({
 
       const newService: Service = {
         id: serviceId,
-        vehicleId,
+        vehicleId: isLicense ? "" : vehicleId,
         clientId,
         clientName: newClient.name,
         clientMobile: newClient.mobile,
@@ -263,7 +269,7 @@ export function AddClientWizardDialog({
       await saveService(newService, actorOverride);
 
       toast.success(
-        `Successfully created Client "${newClient.name}", Vehicle "${newVehicle.vehicleNumber}", and ${newService.serviceType} Service!`
+        `Successfully created Client "${newClient.name}" and ${newService.serviceType} Service!`
       );
 
       onOpenChange(false);

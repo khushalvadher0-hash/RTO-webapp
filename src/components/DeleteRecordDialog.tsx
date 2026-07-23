@@ -20,8 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Lock } from "lucide-react";
 import { softDeleteRecord, type DeleteReason, type Bucket } from "@/lib/records";
-
-const ADMIN_PIN = "1234"; // TODO: Move to secure config
+import { verifyAdminPin } from "@/lib/adminSecurity";
 
 interface DeleteRecordDialogProps {
   open: boolean;
@@ -62,13 +61,21 @@ export function DeleteRecordDialog({
     }, 300);
   };
 
-  const handleVerifyPin = () => {
-    if (pin !== ADMIN_PIN) {
-      setError("Invalid PIN. Please try again.");
-      return;
+  const handleVerifyPin = async () => {
+    setLoading(true);
+    try {
+      const ok = await verifyAdminPin(pin);
+      if (!ok) {
+        setError("Invalid PIN. Please try again.");
+        return;
+      }
+      setError("");
+      setStep("reason");
+    } catch (e) {
+      setError("PIN verification error.");
+    } finally {
+      setLoading(false);
     }
-    setError("");
-    setStep("reason");
   };
 
   const handleSelectReason = () => {

@@ -73,6 +73,7 @@ export interface TaskSubtask {
   id: string;
   title: string;
   completed: boolean;
+  status?: string;
   assignedTo?: string;
   dueDate?: string;
   completedBy?: string;
@@ -138,7 +139,6 @@ export interface Task {
   applicationType?: string;
   serviceId?: string;
   activityLog?: any[];
-  applicationType?: string;
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -274,14 +274,14 @@ export async function updateSubtasks(
   });
 
   if (isService) {
-    if (updates.status !== undefined) {
-      updates.taskStatus = updates.status;
+    if ((updates as any).status !== undefined) {
+      (updates as any).taskStatus = (updates as any).status;
     }
     const existingActivity = task.activity || [];
     const existingActivityLogs = task.activityLogs || [];
-    updates.activity = [...existingActivity, entry];
-    updates.activityLogs = [...existingActivityLogs, cleanLog];
-    await updateDoc(doc(db, "registry_services_v2", taskId), updates);
+    (updates as any).activity = [...existingActivity, entry];
+    (updates as any).activityLogs = [...existingActivityLogs, cleanLog];
+    await updateDoc(doc(db, "registry_services_v2", taskId), updates as any);
   } else {
     await updateDoc(doc(db, COL, taskId), updates);
   }
@@ -427,9 +427,9 @@ export async function addSubtask(taskId: string, title: string, actor: string): 
     if (isService) {
       const existingActivity = task.activity || [];
       const existingActivityLogs = task.activityLogs || [];
-      updates.activity = [...existingActivity, entry];
-      updates.activityLogs = [...existingActivityLogs, cleanLog];
-      await updateDoc(doc(db, "registry_services_v2", taskId), updates);
+      (updates as any).activity = [...existingActivity, entry];
+      (updates as any).activityLogs = [...existingActivityLogs, cleanLog];
+      await updateDoc(doc(db, "registry_services_v2", taskId), updates as any);
     } else {
       await updateDoc(doc(db, COL, taskId), updates);
     }
@@ -486,14 +486,14 @@ export async function reassignTask(
   });
 
   if (isService) {
-    updates.assignedTo = assigneeInfo.assignee;
-    updates.employeeId = newAssigneeId;
-    updates.assignedStaff = assigneeInfo.assignee;
+    (updates as any).assignedTo = assigneeInfo.assignee;
+    (updates as any).employeeId = newAssigneeId;
+    (updates as any).assignedStaff = assigneeInfo.assignee;
     const existingActivity = task.activity || [];
     const existingActivityLogs = task.activityLogs || [];
-    updates.activity = [...existingActivity, entry];
-    updates.activityLogs = [...existingActivityLogs, cleanLog];
-    await updateDoc(doc(db, "registry_services_v2", taskId), updates);
+    (updates as any).activity = [...existingActivity, entry];
+    (updates as any).activityLogs = [...existingActivityLogs, cleanLog];
+    await updateDoc(doc(db, "registry_services_v2", taskId), updates as any);
   } else {
     await updateDoc(doc(db, COL, taskId), updates);
   }
@@ -629,9 +629,10 @@ export interface CreateTaskInput {
   assignedEmployeeName?: string;
   assignedEmployeeRole?: string;
   remarks?: string;
+  appointmentDate?: string;
 }
 
-async function resolveAssigneeIdentity(input: string): Promise<{
+export async function resolveAssigneeIdentity(input: string): Promise<{
   assignee: string;
   assignedEmployeeId: string;
   assignedEmployeeUid: string;

@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { AlertCircle, Lock } from "lucide-react";
 import { deleteTaskPermanently } from "@/lib/tasks";
+import { verifyAdminPin } from "@/lib/adminSecurity";
 import { toast } from "sonner";
 
 interface DeleteTaskDialogProps {
@@ -47,13 +48,15 @@ export function DeleteTaskDialog({
   };
 
   const handleDelete = async () => {
-    if (pin !== "1234") {
-      setError("Invalid PIN. Deletion aborted.");
-      return;
-    }
-    setError("");
     setLoading(true);
     try {
+      const ok = await verifyAdminPin(pin);
+      if (!ok) {
+        setError("Invalid PIN. Deletion aborted.");
+        setLoading(false);
+        return;
+      }
+      setError("");
       await deleteTaskPermanently(taskId);
       toast.success("Task deleted successfully.");
       handleClose();

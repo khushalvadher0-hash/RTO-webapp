@@ -45,6 +45,7 @@ import {
   type Vehicle,
   type Service,
   type ServiceTaskStatus,
+  isLicenseService,
   saveClient,
   saveVehicle,
   deleteVehicle,
@@ -63,7 +64,7 @@ import { toast } from "sonner";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { storage, auth, db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc } from "firebase/firestore";
 import { getSession } from "@/lib/auth";
 import { subscribeStaffPermissions, type RolePermissions } from "@/lib/permissions";
 import { secureDelete } from "@/lib/secureDelete";
@@ -400,13 +401,17 @@ export function ClientDetailWorkspace({
     }
     if (s) {
       setEditingService(s);
-      setServiceForm(s);
+      setServiceForm({
+        ...s,
+        clientId: s.clientId || clientId,
+      });
     } else {
       setEditingService(null);
       setServiceForm({
         id: `service_${crypto.randomUUID()}`,
-        vehicleId,
-        serviceType: "Insurance",
+        clientId,
+        vehicleId: vehicleId || "",
+        serviceType: vehicleId ? "Insurance" : "License New",
         applicationType: "Home",
         dueDate: "",
         serviceAmount: undefined,
@@ -438,12 +443,19 @@ export function ClientDetailWorkspace({
       toast.error("Advance Payment cannot exceed Total Amount");
       return;
     }
+    const isLicense = isLicenseService(serviceForm.serviceType);
+    if (!isLicense && !serviceForm.vehicleId) {
+      toast.error("Vehicle selection is required for vehicle services");
+      return;
+    }
     try {
       const actorOverride = session
         ? { name: session.name, uid: session.uid, role: session.role }
         : undefined;
       const servicePayload = {
         ...serviceForm,
+        clientId,
+        vehicleId: isLicense ? "" : serviceForm.vehicleId,
         applicationType: serviceForm.applicationType || "Home",
       };
       await saveService(servicePayload as Service, actorOverride);
@@ -1187,6 +1199,127 @@ export function ClientDetailWorkspace({
               )}
             </Card>
 
+            {/* Personal Services (License New / License Renew) section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
+                  <User className="size-5 text-primary" />
+                  Personal Services ({details.personalServices?.length || 0})
+                </h3>
+                <Button onClick={() => handleOpenServiceModal("")} size="sm">
+                  <Plus className="size-4 mr-1" /> Add License Service
+                </Button>
+              </div>
+
+              {(!details.personalServices || details.personalServices.length === 0) ? (
+                <div className="text-center py-6 border border-dashed rounded-2xl bg-muted/5">
+                  <p className="text-xs text-muted-foreground">
+                    No personal services (License New / License Renew) active for this client. Click Add License Service to create one.
+                  </p>
+                </div>
+              ) : (
+                <Card className="border shadow-sm overflow-hidden">
+                  <CardContent className="p-0 divide-y">
+                    {details.personalServices.map((s: Service) => (
+                      <div key={s.id} className="p-5 flex flex-col gap-4">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm">
+                                {serviceLabel(s.serviceType)}
+                              </span>
+                              <Badge variant="outline" className="text-[10px]">
+                                {s.taskStatus}
+                              </Badge>
+                              {s.dueDate && (
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="size-3" />
+                                  Due: {new Date(s.dueDate).toLocaleDateString("en-IN")}
+                                </span>
+                              )}
+                              {s.applicationId && (
+                                <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                                  App ID: {s.applicationId}
+                                </Badge>
+                              )}
+                            </div>
+                            {s.notes && (
+                              <p className="text-xs text-muted-foreground mt-1.5 bg-muted/20 p-2 rounded border leading-relaxed">
+                                {s.notes}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-4 text-xs font-mono">
+                            <div className="text-right">
+                              <span className="text-[9px] text-muted-foreground block uppercase font-bold">Amt</span>
+                              <span className="font-bold text-foreground">₹{s.serviceAmount}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] text-green-700 block uppercase font-bold">Rec</span>
+                              <span className="font-bold text-green-600">₹{s.amountReceived}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] text-red-700 block uppercase font-bold">Pend</span>
+                              <span className="font-bold text-red-600">₹{s.pendingAmount}</span>
+                            </div>
+                            <div className="flex gap-1 ml-2">
+                              <Button
+                                onClick={() => handleOpenServiceModal("", s)}
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <Button
+                                onClick={() => handleDeleteService(s.id)}
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 border-t pt-3">
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-semibold text-muted-foreground">Pipeline Progression:</span>
+                            <span className="font-mono text-primary font-bold">{s.progress}% Complete</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {TASK_STAGES.map((stage) => {
+                              const active = s.taskStatus === stage;
+                              const completedIndex = TASK_STAGES.indexOf(s.taskStatus);
+                              const currentIndex = TASK_STAGES.indexOf(stage);
+                              const done = currentIndex <= completedIndex;
+                              return (
+                                <button
+                                  key={stage}
+                                  onClick={() => handleUpdateServiceStatus(s, stage)}
+                                  className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all ${
+                                    active
+                                      ? "bg-primary text-primary-foreground font-semibold ring-2 ring-primary/30"
+                                      : done
+                                        ? "bg-green-100 text-green-700 border border-green-200"
+                                        : "bg-muted text-muted-foreground hover:bg-muted/80 border border-transparent"
+                                  }`}
+                                >
+                                  {stage}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
             {/* Vehicles & nested Services section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b pb-2">
@@ -1369,29 +1502,29 @@ export function ClientDetailWorkspace({
                                           generatePDF(
                                             type,
                                             {
-                                              policyNumber: s.serviceNo || s.applicationNo || "—",
-                                              company: s.companyName || "—",
-                                              startDate: s.startDate || "—",
-                                              expiryDate: s.dueDate || s.expiryDate || "—",
+                                              policyNumber: (s as any).serviceNo || (s as any).applicationNo || "—",
+                                              company: (s as any).companyName || "—",
+                                              startDate: (s as any).startDate || "—",
+                                              expiryDate: s.dueDate || (s as any).expiryDate || "—",
                                               premiumAmount: s.serviceAmount || 0,
                                               status: s.taskStatus || "—",
-                                              assignee: s.assignedTo || "—",
+                                              assignee: (s as any).assignedTo || "—",
                                               remarks: s.notes || "—",
                                               vehicleNumber: v.vehicleNumber || "—",
-                                              inspectionDate: s.startDate || "—",
+                                              inspectionDate: (s as any).startDate || "—",
                                               paymentAmount: s.serviceAmount || 0,
                                               paymentStatus: "Paid",
-                                              permitNo: s.serviceNo || "—",
+                                              permitNo: (s as any).serviceNo || "—",
                                               amount: s.serviceAmount || 0,
-                                              period: s.period || "—",
+                                              period: (s as any).period || "—",
                                               paidAmount: s.amountReceived || 0,
                                               pendingAmount: s.pendingAmount || 0,
-                                              pucNo: s.serviceNo || "—",
-                                              issueDate: s.startDate || "—",
-                                              licenseNo: s.serviceNo || "—",
+                                              pucNo: (s as any).serviceNo || "—",
+                                              issueDate: (s as any).startDate || "—",
+                                              licenseNo: (s as any).serviceNo || "—",
                                               licenseType: s.serviceType || "—",
                                               applicantName: details.name || "—",
-                                              applicationNo: s.applicationNo || "—",
+                                              applicationNo: (s as any).applicationNo || "—",
                                             },
                                             session?.username || "system",
                                           );

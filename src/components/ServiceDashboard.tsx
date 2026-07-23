@@ -67,7 +67,7 @@ function aggregateServiceRecords(recs: RegistryRecord[], serviceType: ServiceTyp
     const group = clientGroups[clientId];
     const first = group[0];
 
-    const vehicleNumbers = Array.from(new Set(group.map((r) => r.mvNo).filter(Boolean)));
+    const vehicleNumbers = Array.from(new Set(group.map((r) => r.mvNo).filter((v) => v && v !== "—")));
     vehicleNumbers.forEach((v) => uniqueVehicles.add(v));
 
     const servicesList = group.flatMap((r) => r.services || []);

@@ -929,7 +929,7 @@ function Overview() {
 
       {/* Client Detail Workspace modal */}
       <ClientDetailWorkspace
-        clientId={selectedClientId}
+        clientId={selectedClientId || ""}
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />

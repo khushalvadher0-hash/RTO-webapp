@@ -102,7 +102,7 @@ export function V2ClientList({ type, title, description }: V2ClientListProps) {
       console.log("Documents Count", data.length);
       
       const filtered = isEmployee
-        ? data.filter((c) => c.assignee === session?.username)
+        ? data.filter((c: any) => c.assignee === session?.username)
         : data;
 
       setClients(filtered);
