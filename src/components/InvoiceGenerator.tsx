@@ -16,6 +16,9 @@ import {
 import { getSession } from "@/lib/auth";
 import { subscribeAllClients } from "@/lib/hierarchy";
 
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+
 interface InvoiceGeneratorProps {
   onInvoiceCreated?: (invoice: Invoice) => void;
 }
@@ -28,6 +31,9 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
   const [billingEndDate, setBillingEndDate] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [clientVehicles, setClientVehicles] = useState<any[]>([]);
+  const [clientServices, setClientServices] = useState<any[]>([]);
+  const [checkedServiceIds, setCheckedServiceIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -71,31 +77,69 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
     }
   }, [selectedClient]);
 
-  // Recalculate invoice amount and breakdown dynamically
+  // Fetch vehicles and services for selected client, pre-select all services
   useEffect(() => {
-    if (selectedClient && selectedServices.length > 0) {
+    if (selectedClient) {
       (async () => {
         try {
-          const res = await calculateInvoiceAmount(selectedClient.id, selectedServices);
-          setUnitPrice(String(res.totalAmount));
-          setBreakdown(res.breakdown);
+          const qV = query(collection(db, "registry_vehicles_v2"), where("clientId", "==", selectedClient.id));
+          const vSnap = await getDocs(qV);
+          const vehicles = vSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setClientVehicles(vehicles);
 
-          // Debugging logs requested by prompt
-          console.log("[Billing] Selected Client", selectedClient.id);
-          console.log("[Billing] Selected Services", selectedServices);
-          console.log("[Billing] Service Breakdown", res.breakdown);
-          console.log("[Billing] Calculated Invoice Amount", res.totalAmount);
+          const vehicleIds = vehicles.map((v) => v.id);
+
+          const qS = query(collection(db, "registry_services_v2"));
+          const sSnap = await getDocs(qS);
+          const services = sSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((s: any) => s.clientId === selectedClient.id || vehicleIds.includes(s.vehicleId));
+
+          setClientServices(services);
+          const allIds = services.map((s: any) => s.id);
+          setCheckedServiceIds(allIds);
+          setSelectedServices([...new Set(services.map((s: any) => s.serviceType))]);
         } catch (err) {
-          console.error("Failed to calculate invoice amount:", err);
-          setUnitPrice("0");
-          setBreakdown([]);
+          console.error("Failed to load client vehicles/services:", err);
         }
       })();
     } else {
+      setClientVehicles([]);
+      setClientServices([]);
+      setCheckedServiceIds([]);
+      setSelectedServices([]);
+    }
+  }, [selectedClient]);
+
+  // Recalculate invoice amount and breakdown dynamically based on checked services
+  useEffect(() => {
+    if (selectedClient && checkedServiceIds.length > 0) {
+      const activeServices = clientServices.filter((s) => checkedServiceIds.includes(s.id));
+      let totalAmount = 0;
+      const breakdownList: any[] = [];
+
+      activeServices.forEach((s) => {
+        const v = clientVehicles.find((veh) => veh.id === s.vehicleId);
+        const amount = s.serviceAmount ?? 0;
+        totalAmount += amount;
+        breakdownList.push({
+          serviceId: s.id,
+          serviceName: s.serviceType,
+          vehicleNumber: v?.vehicleNumber || (s as any).vehicleNumber || "—",
+          vehicleType: v?.vehicleType || "Commercial",
+          amount,
+        });
+      });
+
+      setUnitPrice(String(totalAmount));
+      setBreakdown(breakdownList);
+      setSelectedServices([...new Set(activeServices.map((s) => s.serviceType))]);
+    } else {
       setUnitPrice("0");
       setBreakdown([]);
+      setSelectedServices([]);
     }
-  }, [selectedClient, selectedServices]);
+  }, [selectedClient, checkedServiceIds, clientServices, clientVehicles]);
 
   // Validate billing period
   useEffect(() => {
@@ -162,7 +206,7 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
     !!selectedClient &&
     !!billingStartDate &&
     !!billingEndDate &&
-    selectedServices.length > 0 &&
+    checkedServiceIds.length > 0 &&
     Number(unitPrice) > 0 &&
     validationMsg?.includes("✓");
 
@@ -186,7 +230,7 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
       setError("Please select billing period");
       return;
     }
-    if (selectedServices.length === 0) {
+    if (checkedServiceIds.length === 0) {
       setError("Please select at least one service");
       return;
     }
@@ -388,23 +432,116 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
             </div>
           </div>
 
-          {/* Service Selection */}
-          <div>
-            <label className="text-sm font-medium">Select Services *</label>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {serviceNames.map((service) => (
-                <label key={service} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedServices.includes(service)}
-                    onChange={() => toggleService(service)}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm">{service}</span>
-                </label>
-              ))}
+          {/* Service Selection per Vehicle */}
+          {selectedClient && (
+            <div>
+              <label className="text-sm font-medium">Select Services *</label>
+              {clientServices.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-1 bg-amber-50 p-2 border border-amber-200 rounded">
+                  No services found for this client. Please add services to vehicles first.
+                </p>
+              ) : (
+                <div className="space-y-3 mt-2">
+                  {clientVehicles.map((vehicle) => {
+                    const vehServices = clientServices.filter((s) => s.vehicleId === vehicle.id);
+                    if (vehServices.length === 0) return null;
+
+                    return (
+                      <div key={vehicle.id} className="p-3 border rounded-lg bg-slate-50 space-y-2">
+                        <div className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                          <span>Vehicle {vehicle.vehicleNumber}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {vehServices.length} service(s)
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t">
+                          {vehServices.map((s) => {
+                            const isChecked = checkedServiceIds.includes(s.id);
+                            return (
+                              <label
+                                key={s.id}
+                                className={`flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-colors ${
+                                  isChecked
+                                    ? "bg-blue-50/80 border-blue-300 font-semibold"
+                                    : "bg-white border-gray-200 opacity-60"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      setCheckedServiceIds((prev) =>
+                                        prev.includes(s.id)
+                                          ? prev.filter((id) => id !== s.id)
+                                          : [...prev, s.id],
+                                      );
+                                    }}
+                                    className="rounded border-gray-300 size-4 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span>{s.serviceType}</span>
+                                </div>
+                                <span className="font-mono font-bold text-slate-700">
+                                  ₹{(s.serviceAmount || 0).toLocaleString("en-IN")}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Render unassigned services if any */}
+                  {(() => {
+                    const vehIds = clientVehicles.map((v) => v.id);
+                    const unassigned = clientServices.filter((s) => !vehIds.includes(s.vehicleId));
+                    if (unassigned.length === 0) return null;
+
+                    return (
+                      <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
+                        <div className="text-xs font-bold text-slate-700">Other Services</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t">
+                          {unassigned.map((s) => {
+                            const isChecked = checkedServiceIds.includes(s.id);
+                            return (
+                              <label
+                                key={s.id}
+                                className={`flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-colors ${
+                                  isChecked
+                                    ? "bg-blue-50/80 border-blue-300 font-semibold"
+                                    : "bg-white border-gray-200 opacity-60"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      setCheckedServiceIds((prev) =>
+                                        prev.includes(s.id)
+                                          ? prev.filter((id) => id !== s.id)
+                                          : [...prev, s.id],
+                                      );
+                                    }}
+                                    className="rounded border-gray-300 size-4 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span>{s.serviceType}</span>
+                                </div>
+                                <span className="font-mono font-bold text-slate-700">
+                                  ₹{(s.serviceAmount || 0).toLocaleString("en-IN")}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
           {/* Breakdown of selected services across vehicles */}
           {selectedClient && selectedServices.length > 0 && breakdown.length > 0 && (

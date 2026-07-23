@@ -1,6 +1,6 @@
 // src/routes/dashboard.accounting.tsx
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   subscribeAndSyncFinance,
   subscribePaymentHistory,
@@ -276,13 +276,22 @@ function AccountingDashboardPage() {
 
   // Filtered lists
 
+  const [expandedVehicles, setExpandedVehicles] = useState<Record<string, boolean>>({});
+
+  const toggleVehicleExpand = (id: string) => {
+    setExpandedVehicles((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
   const allAccountingRows = useMemo(() => {
-    const rows: any[] = [];
+    const vehicleGroups = new Map<string, any>();
     const clientsWithServices = new Set<string>();
 
     v2Services.forEach((s) => {
       const vehicle = v2Vehicles.find((v) => v.id === s.vehicleId);
-      const vehicleNum = vehicle?.vehicleNumber || "—";
+      const vehicleNum = vehicle?.vehicleNumber || (s as any).vehicleNumber || "Unassigned Vehicle";
       const clientId = vehicle?.clientId || s.clientId || "";
       if (clientId) {
         clientsWithServices.add(clientId);
@@ -292,15 +301,73 @@ function AccountingDashboardPage() {
       const clientName = client?.name || s.clientName || "Unknown Client";
       const clientMobile = client?.mobile || client?.mo || s.clientMobile || "";
 
-      const invoiceAmount = s.serviceAmount || 0;
-      const receivedAmount = (s.amountReceived || 0) + (s.advancePayment || 0);
-      const balanceAmount = Math.max(0, invoiceAmount - receivedAmount);
-      const paymentStatus = balanceAmount === 0 ? "Paid" : receivedAmount > 0 ? "Partially Paid" : "Pending";
+      // Unique accounting row key per vehicle
+      const groupKey = s.vehicleId ? `veh-${s.vehicleId}` : `client-${clientId}-${vehicleNum}`;
+
+      const amt = s.serviceAmount || 0;
+      const rec = (s.amountReceived || 0) + (s.advancePayment || 0);
+      const bal = Math.max(0, amt - rec);
       const colDate = s.collectionDate || s.dueDate || "";
 
+      if (!vehicleGroups.has(groupKey)) {
+        vehicleGroups.set(groupKey, {
+          id: groupKey,
+          vehicleId: s.vehicleId || "",
+          clientId: clientId,
+          clientName: clientName,
+          clientMobile: clientMobile,
+          vehicleNumber: vehicleNum,
+          invoiceId: s.invoiceId || s.id,
+          invoiceNumber: s.invoiceNumber || "Services Batch",
+          totalAmount: 0,
+          totalReceived: 0,
+          totalOutstanding: 0,
+          collectionDate: colDate,
+          askBhaylubha: false,
+          assignedEmployee: s.assignedStaff || client?.assignee || "—",
+          services: [],
+          hasInvoice: !!s.invoiceNumber,
+        });
+      }
+
+      const group = vehicleGroups.get(groupKey)!;
+      group.totalAmount += amt;
+      group.totalReceived += rec;
+      group.totalOutstanding += bal;
+
+      if (s.askBhaylubha) group.askBhaylubha = true;
+      if (s.invoiceNumber) {
+        group.hasInvoice = true;
+        group.invoiceNumber = s.invoiceNumber;
+        group.invoiceId = s.invoiceId || s.id;
+      }
+      if (colDate && (!group.collectionDate || colDate > group.collectionDate)) {
+        group.collectionDate = colDate;
+      }
+
+      group.services.push({
+        id: s.id,
+        serviceType: s.serviceType,
+        amount: amt,
+        received: rec,
+        outstanding: bal,
+        status: s.taskStatus || "Not Started",
+        dueDate: colDate,
+      });
+    });
+
+    const rows: any[] = [];
+    vehicleGroups.forEach((group) => {
+      const paymentStatus =
+        group.totalOutstanding === 0
+          ? "Paid"
+          : group.totalReceived > 0
+            ? "Partially Paid"
+            : "Pending";
+
       let daysOverdue = 0;
-      if (paymentStatus !== "Paid" && colDate) {
-        const due = new Date(colDate);
+      if (paymentStatus !== "Paid" && group.collectionDate) {
+        const due = new Date(group.collectionDate);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         due.setHours(0, 0, 0, 0);
@@ -309,24 +376,17 @@ function AccountingDashboardPage() {
         }
       }
 
+      const serviceTypesStr = group.services.map((ser: any) => ser.serviceType).join(", ");
+
       rows.push({
-        id: s.id,
-        clientId: clientId,
-        clientName: clientName,
-        clientMobile: clientMobile,
-        vehicleNumber: vehicleNum,
-        invoiceId: s.invoiceId || s.id,
-        invoiceNumber: s.invoiceNumber || "Pending Invoice",
-        invoiceAmount: invoiceAmount,
-        receivedAmount: receivedAmount,
-        balanceAmount: balanceAmount,
-        collectionDate: colDate,
-        paymentStatus: paymentStatus,
-        askBhaylubha: !!s.askBhaylubha,
-        assignedEmployee: s.assignedStaff || client?.assignee || "—",
+        ...group,
+        invoiceAmount: group.totalAmount,
+        receivedAmount: group.totalReceived,
+        balanceAmount: group.totalOutstanding,
+        paymentStatus,
         daysOverdue,
-        services: s.serviceType || "—",
-        hasInvoice: !!s.invoiceNumber,
+        services: serviceTypesStr,
+        serviceList: group.services,
       });
     });
 
@@ -337,6 +397,7 @@ function AccountingDashboardPage() {
         const vehicleNum = c.mvNo || clientVehicles.map((v) => v.vehicleNumber).join(", ") || "—";
         rows.push({
           id: `no-service-${c.id}`,
+          vehicleId: "",
           clientId: c.id,
           clientName: c.name || "Unknown Client",
           clientMobile: c.mo || c.mobile || "",
@@ -352,6 +413,7 @@ function AccountingDashboardPage() {
           assignedEmployee: c.assignee || "—",
           daysOverdue: 0,
           services: "—",
+          serviceList: [],
           hasInvoice: false,
         });
       }
@@ -1218,117 +1280,143 @@ function AccountingDashboardPage() {
                     <thead>
                       <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
                         <th className="p-3">Client</th>
-                        <th className="p-3">Invoice Number</th>
-                        <th className="p-3">Service</th>
-                        <th className="p-3">Payment Collection Date</th>
-                        <th className="p-3 text-right">Invoice Amount</th>
+                        <th className="p-3">Vehicle Number</th>
+                        <th className="p-3">Services</th>
+                        <th className="p-3">Collection Date</th>
+                        <th className="p-3 text-right">Total Amount</th>
                         <th className="p-3 text-right">Received Amount</th>
                         <th className="p-3 text-right">Outstanding Balance</th>
                         <th className="p-3">Assigned Employee</th>
                         <th className="p-3">Status</th>
-                        <th className="p-3">Ask Bhaylubha</th>
                         <th className="p-3 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y text-gray-700">
                       {filteredRecords.map((r) => {
                         const mobile = r.clientMobile || "";
+                        const isExpanded = !!expandedVehicles[r.id];
 
                         return (
-                          <tr key={r.id} className="hover:bg-slate-50 transition">
-                            <td className="p-3 font-semibold text-gray-900">
-                              <button
-                                onClick={() => {
-                                  setLedgerClientId(r.clientId);
-                                  setShowLedgerModal(true);
-                                }}
-                                className="text-blue-600 hover:underline font-bold"
-                              >
-                                {r.clientName}
-                              </button>
-                            </td>
-                            <td className="p-3 font-mono">{r.invoiceNumber}</td>
-                            <td className="p-3 max-w-[150px] truncate" title={r.services}>{r.services}</td>
-                            <td className="p-3">
-                              {r.hasInvoice ? (
-                                <input
-                                  type="date"
-                                  value={r.collectionDate || ""}
-                                  onChange={(e) => handleUpdateDate(r.id, e.target.value)}
-                                  disabled={isStaff}
-                                  className="bg-white border rounded p-1 text-[11px] font-mono focus:ring-1 focus:ring-primary w-28 disabled:bg-slate-50"
-                                />
-                              ) : (
-                                <span className="text-slate-400">Not Scheduled</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-right font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
-                            <td className="p-3 text-right font-mono text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
-                            <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
-                            <td className="p-3 text-slate-600">{r.assignedEmployee || "—"}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                                r.paymentStatus === "Paid"
-                                  ? "bg-green-100 text-green-800"
-                                  : r.paymentStatus === "Partially Paid"
-                                    ? "bg-amber-100 text-amber-800"
-                                    : r.paymentStatus === "Pending Invoice"
-                                      ? "bg-slate-100 text-slate-500"
-                                      : "bg-orange-100 text-orange-800"
-                              }`}>
-                                {r.paymentStatus}
-                              </span>
-                            </td>
-                            <td className="p-3">
-                              <input
-                                type="checkbox"
-                                checked={r.askBhaylubha}
-                                onChange={(e) => handleToggleBhaylubhaFlag(r.id, e.target.checked)}
-                                disabled={isStaff || !r.hasInvoice}
-                                className="size-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
-                              />
-                            </td>
-                            <td className="p-3 text-center">
-                              <div className="flex items-center justify-center gap-2">
+                          <React.Fragment key={r.id}>
+                            <tr className="hover:bg-slate-50 transition">
+                              <td className="p-3 font-semibold text-gray-900">
+                                <div className="flex items-center gap-1.5">
+                                  {r.serviceList && r.serviceList.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleVehicleExpand(r.id)}
+                                      className="text-xs font-mono font-bold px-1.5 py-0.5 border rounded bg-slate-100 hover:bg-slate-200 text-slate-700 shrink-0"
+                                      title="Expand/Collapse Services"
+                                    >
+                                      {isExpanded ? "▼" : "▶"}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      setLedgerClientId(r.clientId);
+                                      setShowLedgerModal(true);
+                                    }}
+                                    className="text-blue-600 hover:underline font-bold text-left"
+                                  >
+                                    {r.clientName}
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="p-3 font-mono font-bold text-slate-800">{r.vehicleNumber}</td>
+                              <td className="p-3 max-w-[160px] truncate text-slate-600" title={r.services}>
+                                {r.services}
+                              </td>
+                              <td className="p-3">
                                 {r.hasInvoice ? (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        handleClientChange(r.clientId);
-                                        setPaymentModeType("single");
-                                        setSelectedSingleInvoiceId(r.id);
-                                        setPaymentDialogOpen(true);
-                                      }}
-                                      className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
-                                    >
-                                      Record Payment
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.invoiceNumber, r.balanceAmount)}
-                                      className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
-                                    >
-                                      WhatsApp
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => startDeleteInvoice(r.invoiceId)}
-                                      disabled={isStaff}
-                                      className="text-red-600 hover:text-red-900 text-xs px-2 py-1 h-auto"
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                    </Button>
-                                  </>
+                                  <input
+                                    type="date"
+                                    value={r.collectionDate || ""}
+                                    onChange={(e) => handleUpdateDate(r.id, e.target.value)}
+                                    disabled={isStaff}
+                                    className="bg-white border rounded p-1 text-[11px] font-mono focus:ring-1 focus:ring-primary w-28 disabled:bg-slate-50"
+                                  />
                                 ) : (
-                                  <span className="text-[10px] text-slate-400 italic">No Actions</span>
+                                  <span className="text-slate-400">Not Scheduled</span>
                                 )}
-                              </div>
-                            </td>
-                          </tr>
+                              </td>
+                              <td className="p-3 text-right font-mono font-bold text-slate-900">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-slate-600">{r.assignedEmployee || "—"}</td>
+                              <td className="p-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                  r.paymentStatus === "Paid"
+                                    ? "bg-green-100 text-green-800"
+                                    : r.paymentStatus === "Partially Paid"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : r.paymentStatus === "Pending Invoice"
+                                        ? "bg-slate-100 text-slate-500"
+                                        : "bg-orange-100 text-orange-800"
+                                }`}>
+                                  {r.paymentStatus}
+                                </span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      handleClientChange(r.clientId);
+                                      setPaymentModeType("single");
+                                      setSelectedSingleInvoiceId(r.invoiceId);
+                                      setPaymentDialogOpen(true);
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
+                                  >
+                                    Record Payment
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.vehicleNumber, r.balanceAmount)}
+                                    className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
+                                  >
+                                    WhatsApp
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {/* Expandable Service Details */}
+                            {isExpanded && r.serviceList && r.serviceList.length > 0 && (
+                              <tr className="bg-slate-50/90">
+                                <td colSpan={10} className="p-3 pl-8">
+                                  <div className="rounded-lg border bg-white p-3 space-y-2 shadow-sm">
+                                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between border-b pb-1">
+                                      <span>Services Breakdown — Vehicle {r.vehicleNumber}</span>
+                                      <span className="font-mono text-[10px] text-muted-foreground">{r.serviceList.length} service(s)</span>
+                                    </div>
+                                    <div className="space-y-1 text-xs">
+                                      {r.serviceList.map((ser: any) => (
+                                        <div key={ser.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-1.5 border-b last:border-b-0 text-slate-700 gap-1 font-mono">
+                                          <span className="font-semibold text-slate-900 font-sans">{ser.serviceType}</span>
+                                          <div className="flex items-center gap-4 text-right text-[11px]">
+                                            <span>Amount: <strong className="text-slate-900">₹{ser.amount.toLocaleString("en-IN")}</strong></span>
+                                            <span>Received: <strong className="text-emerald-600">₹{ser.received.toLocaleString("en-IN")}</strong></span>
+                                            <span>Outstanding: <strong className="text-rose-600">₹{ser.outstanding.toLocaleString("en-IN")}</strong></span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="pt-2 text-xs font-bold font-mono flex justify-between border-t border-slate-200 text-slate-900">
+                                      <span>Vehicle Total</span>
+                                      <div className="flex items-center gap-4 text-right">
+                                        <span>Total: ₹{r.invoiceAmount.toLocaleString("en-IN")}</span>
+                                        <span className="text-emerald-600">Received: ₹{r.receivedAmount.toLocaleString("en-IN")}</span>
+                                        <span className="text-rose-600">Outstanding: ₹{r.balanceAmount.toLocaleString("en-IN")}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
@@ -1357,12 +1445,11 @@ function AccountingDashboardPage() {
                     <thead>
                       <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
                         <th className="p-3">Client</th>
-                        <th className="p-3">Invoice</th>
+                        <th className="p-3">Vehicle Number</th>
                         <th className="p-3 text-right">Amount</th>
                         <th className="p-3 text-right">Outstanding</th>
                         <th className="p-3">Collection Date</th>
                         <th className="p-3">Days Due</th>
-                        <th className="p-3 text-center">Ask Bhaylubha</th>
                         <th className="p-3 text-center">Actions</th>
                       </tr>
                     </thead>
@@ -1371,6 +1458,7 @@ function AccountingDashboardPage() {
                         const inv = invoicesMap.get(r.invoiceId);
                         const cDetails = clientDetailsMap.get(r.clientId);
                         const mobile = inv?.clientMobile || cDetails?.mobile || "";
+                        const isExpanded = !!expandedVehicles[r.id];
 
                         let daysOverdue = 0;
                         if (r.collectionDate) {
@@ -1384,58 +1472,97 @@ function AccountingDashboardPage() {
                         }
 
                         return (
-                          <tr key={r.id} className="hover:bg-slate-50 transition">
-                            <td className="p-3 font-semibold text-gray-900">
-                              <button
-                                onClick={() => {
-                                  setLedgerClientId(r.clientId);
-                                  setShowLedgerModal(true);
-                                }}
-                                className="text-blue-600 hover:underline font-bold"
-                              >
-                                {r.clientName}
-                              </button>
-                            </td>
-                            <td className="p-3 font-mono">{r.invoiceNumber}</td>
-                            <td className="p-3 text-right font-mono">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
-                            <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
-                            <td className="p-3 font-mono">{r.collectionDate || "—"}</td>
-                            <td className="p-3 text-red-600 font-bold">{daysOverdue > 0 ? `${daysOverdue} Days` : "—"}</td>
-                            <td className="p-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={r.askBhaylubha}
-                                onChange={(e) => handleToggleBhaylubhaFlag(r.id, e.target.checked)}
-                                disabled={isStaff}
-                                className="size-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
-                              />
-                            </td>
-                            <td className="p-3 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    handleClientChange(r.clientId);
-                                    setPaymentModeType("single");
-                                    setSelectedSingleInvoiceId(r.id);
-                                    setPaymentDialogOpen(true);
-                                  }}
-                                  className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
-                                >
-                                  Record Payment
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.invoiceNumber, r.balanceAmount)}
-                                  className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
-                                >
-                                  WhatsApp
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
+                          <React.Fragment key={r.id}>
+                            <tr className="hover:bg-slate-50 transition">
+                              <td className="p-3 font-semibold text-gray-900">
+                                <div className="flex items-center gap-1.5">
+                                  {r.serviceList && r.serviceList.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleVehicleExpand(r.id)}
+                                      className="text-xs font-mono font-bold px-1.5 py-0.5 border rounded bg-slate-100 hover:bg-slate-200 text-slate-700 shrink-0"
+                                      title="Expand/Collapse Services"
+                                    >
+                                      {isExpanded ? "▼" : "▶"}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      setLedgerClientId(r.clientId);
+                                      setShowLedgerModal(true);
+                                    }}
+                                    className="text-blue-600 hover:underline font-bold text-left"
+                                  >
+                                    {r.clientName}
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="p-3 font-mono font-bold text-slate-800">{r.vehicleNumber}</td>
+                              <td className="p-3 text-right font-mono font-bold text-slate-900">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-3 font-mono">{r.collectionDate || "—"}</td>
+                              <td className="p-3 text-red-600 font-bold">{daysOverdue > 0 ? `${daysOverdue} Days` : "—"}</td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      handleClientChange(r.clientId);
+                                      setPaymentModeType("single");
+                                      setSelectedSingleInvoiceId(r.invoiceId);
+                                      setPaymentDialogOpen(true);
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
+                                  >
+                                    Record Payment
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.vehicleNumber, r.balanceAmount)}
+                                    className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
+                                  >
+                                    WhatsApp
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {/* Expandable Service Details */}
+                            {isExpanded && r.serviceList && r.serviceList.length > 0 && (
+                              <tr className="bg-slate-50/90">
+                                <td colSpan={7} className="p-3 pl-8">
+                                  <div className="rounded-lg border bg-white p-3 space-y-2 shadow-sm">
+                                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between border-b pb-1">
+                                      <span>Services Breakdown — Vehicle {r.vehicleNumber}</span>
+                                      <span className="font-mono text-[10px] text-muted-foreground">{r.serviceList.length} service(s)</span>
+                                    </div>
+                                    <div className="space-y-1 text-xs">
+                                      {r.serviceList.map((ser: any) => (
+                                        <div key={ser.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-1.5 border-b last:border-b-0 text-slate-700 gap-1 font-mono">
+                                          <span className="font-semibold text-slate-900 font-sans">{ser.serviceType}</span>
+                                          <div className="flex items-center gap-4 text-right text-[11px]">
+                                            <span>Amount: <strong className="text-slate-900">₹{ser.amount.toLocaleString("en-IN")}</strong></span>
+                                            <span>Received: <strong className="text-emerald-600">₹{ser.received.toLocaleString("en-IN")}</strong></span>
+                                            <span>Outstanding: <strong className="text-rose-600">₹{ser.outstanding.toLocaleString("en-IN")}</strong></span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="pt-2 text-xs font-bold font-mono flex justify-between border-t border-slate-200 text-slate-900">
+                                      <span>Vehicle Total</span>
+                                      <div className="flex items-center gap-4 text-right">
+                                        <span>Total: ₹{r.invoiceAmount.toLocaleString("en-IN")}</span>
+                                        <span className="text-emerald-600">Received: ₹{r.receivedAmount.toLocaleString("en-IN")}</span>
+                                        <span className="text-rose-600">Outstanding: ₹{r.balanceAmount.toLocaleString("en-IN")}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
