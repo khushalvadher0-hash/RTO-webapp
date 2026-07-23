@@ -611,6 +611,11 @@ function ClientDetailsModal({ client, open, onOpenChange }: ClientDetailsModalPr
                             <Badge variant="secondary" className="text-xs">
                               {service.application}
                             </Badge>
+                            {service.applicationId && (
+                              <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                                App ID: {service.applicationId}
+                              </Badge>
+                            )}
                             <Badge
                               className="text-xs"
                               variant={

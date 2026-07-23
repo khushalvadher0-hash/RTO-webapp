@@ -61,9 +61,11 @@ function TaskTemplatesPage() {
   const [viewOnly, setViewOnly] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [templateName, setTemplateName] = useState("");
-  const [serviceType, setServiceType] = useState("Insurance");
+  const [description, setDescription] = useState("");
   const [subtasks, setSubtasks] = useState<string[]>([]);
   const [newSubtask, setNewSubtask] = useState("");
+  const [editingSubtaskIndex, setEditingSubtaskIndex] = useState<number | null>(null);
+  const [editingSubtaskValue, setEditingSubtaskValue] = useState("");
 
   const isAdmin = session?.role === "admin";
   const actor = session?.name || session?.username || "system";
@@ -82,7 +84,7 @@ function TaskTemplatesPage() {
     setEditingTemplate(null);
     setViewOnly(false);
     setTemplateName("");
-    setServiceType("Insurance");
+    setDescription("");
     setSubtasks([]);
     setNewSubtask("");
     setDialogOpen(true);
@@ -93,7 +95,7 @@ function TaskTemplatesPage() {
     setEditingTemplate(tpl);
     setViewOnly(false);
     setTemplateName(tpl.templateName);
-    setServiceType(tpl.serviceType || "Insurance");
+    setDescription(tpl.description || "");
     setSubtasks(tpl.subtasks || []);
     setNewSubtask("");
     setDialogOpen(true);
@@ -103,7 +105,7 @@ function TaskTemplatesPage() {
     setEditingTemplate(tpl);
     setViewOnly(true);
     setTemplateName(tpl.templateName);
-    setServiceType(tpl.serviceType || "Insurance");
+    setDescription(tpl.description || "");
     setSubtasks(tpl.subtasks || []);
     setNewSubtask("");
     setDialogOpen(true);
@@ -113,7 +115,7 @@ function TaskTemplatesPage() {
     if (!isAdmin) return toast.error("Only admins can duplicate templates.");
     try {
       const name = `Copy of ${tpl.templateName}`;
-      await createTemplate(name, tpl.serviceType || "Custom Service", tpl.subtasks || [], actor);
+      await createTemplate(name, tpl.description || "", tpl.subtasks || [], actor);
       toast.success("Template duplicated successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to duplicate template");
@@ -163,14 +165,14 @@ function TaskTemplatesPage() {
           editingTemplate.id,
           {
             templateName: templateName.trim(),
-            serviceType: serviceType,
+            description: description.trim(),
             subtasks,
           },
           actor,
         );
         toast.success("Template updated successfully!");
       } else {
-        await createTemplate(templateName.trim(), serviceType, subtasks, actor);
+        await createTemplate(templateName.trim(), description.trim(), subtasks, actor);
         toast.success("Template created successfully!");
       }
       setDialogOpen(false);
@@ -313,7 +315,7 @@ function TaskTemplatesPage() {
                 <thead>
                   <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
                     <th className="p-3.5">Template Name</th>
-                    <th className="p-3.5">Service Type</th>
+                    <th className="p-3.5">Description</th>
                     <th className="p-3.5 text-center">Subtasks Count</th>
                     <th className="p-3.5">Created By</th>
                     <th className="p-3.5">Created Date</th>
@@ -332,7 +334,7 @@ function TaskTemplatesPage() {
                           </span>
                         )}
                       </td>
-                      <td className="p-3.5 font-semibold text-slate-700">{tpl.serviceType || "—"}</td>
+                      <td className="p-3.5 font-medium text-slate-500 max-w-xs truncate">{tpl.description || "—"}</td>
                       <td className="p-3.5 text-center font-mono font-bold text-gray-800">{tpl.subtasks?.length || 0}</td>
                       <td className="p-3.5 font-medium text-slate-600">{tpl.createdBy}</td>
                       <td className="p-3.5 font-mono text-slate-500">{formatDate(tpl.createdAt)}</td>
@@ -408,22 +410,16 @@ function TaskTemplatesPage() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="srvType" className="text-xs font-bold uppercase text-gray-500">
-                  Service Type *
+                <Label htmlFor="tplDesc" className="text-xs font-bold uppercase text-gray-500">
+                  Description
                 </Label>
-                <select
-                  id="srvType"
+                <Input
+                  id="tplDesc"
                   disabled={viewOnly}
-                  value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value)}
-                  className="w-full text-xs border rounded-md p-2 bg-white text-gray-700 font-semibold"
-                >
-                  {SERVICE_OPTIONS.map((srv) => (
-                    <option key={srv} value={srv}>
-                      {srv}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Describe what this template is for (optional)"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
               </div>
 
               {/* Subtasks Configurator */}
@@ -451,34 +447,86 @@ function TaskTemplatesPage() {
                 )}
 
                 <div className="space-y-1.5 mt-3 max-h-60 overflow-y-auto bg-slate-50 p-2.5 border rounded-lg">
-                  {subtasks.map((st, index) => (
-                    <div
-                      key={index}
-                      draggable={!viewOnly}
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, index)}
-                      className={`flex items-center justify-between gap-2 bg-white p-2 rounded border shadow-sm ${
-                        viewOnly ? "" : "cursor-move hover:border-primary/40"
-                      } active:opacity-60 transition`}
-                    >
-                      <div className="flex items-center gap-2 text-xs text-gray-700 truncate">
-                        {!viewOnly && <GripVertical className="size-3.5 text-muted-foreground shrink-0" />}
-                        <span className="truncate">
-                          {index + 1}. {st}
-                        </span>
+                  {subtasks.map((st, index) => {
+                    const isEditing = editingSubtaskIndex === index;
+                    return (
+                      <div
+                        key={index}
+                        draggable={!viewOnly && !isEditing}
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, index)}
+                        className={`flex items-center justify-between gap-2 bg-white p-2 rounded border shadow-sm ${
+                          viewOnly || isEditing ? "" : "cursor-move hover:border-primary/40"
+                        } active:opacity-60 transition`}
+                      >
+                        <div className="flex items-center gap-2 text-xs text-gray-700 truncate flex-1">
+                          {!viewOnly && !isEditing && (
+                            <GripVertical className="size-3.5 text-muted-foreground shrink-0" />
+                          )}
+                          {isEditing ? (
+                            <Input
+                              className="h-7 text-xs flex-1"
+                              value={editingSubtaskValue}
+                              onChange={(e) => setEditingSubtaskValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const updated = [...subtasks];
+                                  updated[index] = editingSubtaskValue.trim();
+                                  setSubtasks(updated);
+                                  setEditingSubtaskIndex(null);
+                                } else if (e.key === "Escape") {
+                                  setEditingSubtaskIndex(null);
+                                }
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <span className="truncate">
+                              {index + 1}. {st}
+                            </span>
+                          )}
+                        </div>
+                        {!viewOnly && (
+                          <div className="flex gap-1.5 shrink-0">
+                            {isEditing ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...subtasks];
+                                  updated[index] = editingSubtaskValue.trim();
+                                  setSubtasks(updated);
+                                  setEditingSubtaskIndex(null);
+                                }}
+                                className="text-emerald-600 hover:text-emerald-800 p-0.5 rounded"
+                              >
+                                <Save className="size-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSubtaskIndex(index);
+                                  setEditingSubtaskValue(st);
+                                }}
+                                className="text-indigo-600 hover:text-indigo-800 p-0.5 rounded"
+                              >
+                                <Edit className="size-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSubtask(index)}
+                              className="text-rose-600 hover:text-rose-800 p-0.5 rounded"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {!viewOnly && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSubtask(index)}
-                          className="text-red-500 hover:text-red-800 p-0.5 rounded"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                   {subtasks.length === 0 && (
                     <div className="text-center py-6 text-xs text-muted-foreground italic flex items-center justify-center gap-1.5">
                       <AlertCircle className="size-4 text-muted-foreground" /> Configure subtasks to populate automatically.
@@ -494,7 +542,7 @@ function TaskTemplatesPage() {
               </Button>
               {!viewOnly && (
                 <Button type="submit" className="gap-1">
-                  <Save className="size-4" /> Save Template
+                  <Save className="size-4" /> {editingTemplate ? "Save Template" : "Create Template"}
                 </Button>
               )}
             </div>

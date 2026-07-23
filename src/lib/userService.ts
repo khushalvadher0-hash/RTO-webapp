@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, writeBatch } from '@firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, writeBatch, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth as primaryAuth } from './firebase';
 import { getSession, toEmail } from './auth';
 import { initializeApp, getApp, getApps } from 'firebase/app';
@@ -381,5 +381,25 @@ export async function changeOwnPassword(newPassword: string) {
     'Password Reset',
     `Changed own password`,
     session.username
+  );
+}
+
+/** Subscribe to all active users */
+export function subscribeAllUsers(cb: (users: UserRecord[]) => void): () => void {
+  const q = query(USERS_COL, where("status", "==", "active"), orderBy("fullName", "asc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          uid: d.id,
+          userId: d.id,
+          ...data,
+        } as UserRecord;
+      });
+      cb(list);
+    },
+    (err) => console.error("[subscribeAllUsers] error:", err),
   );
 }

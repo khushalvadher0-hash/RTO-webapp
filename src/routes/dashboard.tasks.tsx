@@ -129,6 +129,17 @@ const statusBadgeClass = (s: TaskStatus) =>
     "On Hold": "bg-zinc-100 text-zinc-700 border-zinc-200",
   })[s];
 
+const getApplicationTypeStyle = (appType?: string) => {
+  if (!appType) return {};
+  const t = appType.trim().toLowerCase();
+  if (t === "home") return { backgroundColor: "#F8F9FA" };
+  if (t === "faceless") return { backgroundColor: "#EAF4FF" };
+  if (t === "out of bhavnagar") return { backgroundColor: "#FFEAEA" };
+  if (t === "cng") return { backgroundColor: "#ECFFF0" };
+  if (t === "out of bhavnagar to bhavnagar") return { backgroundColor: "#FFF4E6" };
+  return {};
+};
+
 function formatDate(iso?: string) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -272,7 +283,7 @@ function TasksPage() {
         id: s.id,
         title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
         serviceName: s.serviceType || "",
-        description: `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
+        description: s.description || `Vehicle: ${vehicleNo}. Status: ${s.status || "Pending"}. Remarks: ${s.remarks || "—"}`,
         assignee: s.assignedTo || s.employeeId || s.assignee || "",
         assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
         assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
@@ -291,6 +302,8 @@ function TasksPage() {
         progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
         reminderMinutes: s.reminderMinutes || 0,
         remarks: s.remarks || "",
+        applicationType: s.applicationType || "",
+        subtasks: s.subtasks || [],
       };
     });
 
@@ -1056,7 +1069,7 @@ function TaskTable({
               {paginatedTasks.map((t) => {
                 const info = getTaskInfo(t);
                 return (
-                  <tr key={t.id} className="hover:bg-slate-50">
+                  <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/20">
                     <td
                       className="p-3 font-semibold text-gray-900 max-w-[150px] truncate"
                       title={info.taskName}
@@ -1275,7 +1288,7 @@ function TaskCards({
           const displayRemark = latestRemark.length > 70 ? latestRemark.slice(0, 70) + "..." : latestRemark;
           
           return (
-            <div key={t.id} className="border rounded-xl bg-white p-4 shadow-sm hover:shadow-md transition flex flex-col justify-between gap-3 min-h-[220px]">
+            <div key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="border rounded-xl p-4 shadow-sm hover:shadow-md transition flex flex-col justify-between gap-3 min-h-[220px]">
               <div className="space-y-2">
                 {/* Header status and priority badges */}
                 <div className="flex items-center justify-between gap-2">

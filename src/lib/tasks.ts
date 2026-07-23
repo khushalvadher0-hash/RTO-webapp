@@ -134,6 +134,7 @@ export interface Task {
   createdDate?: string;
   remarks?: string;
   activityLog?: any[];
+  applicationType?: string;
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -1313,7 +1314,8 @@ export const TASK_STATUS_OPTIONS: TaskStatus[] = [
 export interface TaskTemplate {
   id: string;
   templateName: string;
-  serviceType: string;
+  serviceType?: string;
+  description?: string;
   subtasks: string[];
   isDefault: boolean;
   createdBy: string;
@@ -1495,13 +1497,13 @@ export function subscribeToTemplates(cb: (templates: TaskTemplate[]) => void): (
 
 export async function createTemplate(
   templateName: string,
-  serviceType: string,
+  description: string,
   subtasks: string[],
   createdBy: string,
 ): Promise<TaskTemplate> {
   const payload = {
     templateName,
-    serviceType,
+    description,
     subtasks,
     isDefault: false,
     createdBy,
@@ -1517,7 +1519,7 @@ export async function createTemplate(
       `Task Template created: ${templateName}`,
       "template",
       null,
-      `Service Type: ${serviceType}`,
+      `Description: ${description || "—"}`,
     );
   } catch (err) {
     console.warn("Template Created log activity failed:", err);

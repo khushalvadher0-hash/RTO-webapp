@@ -58,6 +58,7 @@ import {
 } from "@/lib/hierarchy";
 import { SERVICE_TYPES, serviceLabel, STAFF_USERS } from "@/lib/records";
 import { generatePDF } from "@/lib/pdfGenerator";
+import { subscribeAllUsers, type UserRecord } from "@/lib/userService";
 import { toast } from "sonner";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
@@ -76,6 +77,8 @@ import {
   deleteClientDocEntry,
   deleteVehicleDocEntry,
 } from "@/lib/structuredDocs";
+
+import { subscribeToTemplates, type TaskTemplate } from "@/lib/tasks";
 
 interface ClientDetailWorkspaceProps {
   clientId: string;
@@ -132,6 +135,13 @@ export function ClientDetailWorkspace({
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
   const [serviceForm, setServiceForm] = useState<Partial<Service>>({});
+  const [activeEmployees, setActiveEmployees] = useState<UserRecord[]>([]);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToTemplates(setTaskTemplates);
+    return unsub;
+  }, []);
 
   const [previewDoc, setPreviewDoc] = useState<{ url: string; type: string; name: string } | null>(
     null,
@@ -179,6 +189,12 @@ export function ClientDetailWorkspace({
     });
     return unsub;
   }, [clientId]);
+
+  // Load real-time active employees
+  useEffect(() => {
+    const unsub = subscribeAllUsers(setActiveEmployees);
+    return unsub;
+  }, []);
 
   // Load real-time client payments and ledger entries
   useEffect(() => {
@@ -316,6 +332,7 @@ export function ClientDetailWorkspace({
         id: `service_${crypto.randomUUID()}`,
         vehicleId,
         serviceType: "Insurance",
+        applicationType: "Home",
         dueDate: "",
         serviceAmount: undefined,
         amountReceived: undefined,
@@ -323,11 +340,17 @@ export function ClientDetailWorkspace({
         assignedStaff: "",
         taskStatus: "Not Started",
         notes: "",
+        applicationId: "",
+        templateId: "",
       });
     }
     setServiceModalOpen(true);
   };
   const handleSaveService = async () => {
+    if (!serviceForm.applicationId || !serviceForm.applicationId.trim()) {
+      toast.error("Application ID is required");
+      return;
+    }
     if (!serviceForm.serviceAmount || serviceForm.serviceAmount <= 0) {
       toast.error("Total Amount is required and must be greater than 0");
       return;
@@ -344,7 +367,11 @@ export function ClientDetailWorkspace({
       const actorOverride = session
         ? { name: session.name, uid: session.uid, role: session.role }
         : undefined;
-      await saveService(serviceForm as Service, actorOverride);
+      const servicePayload = {
+        ...serviceForm,
+        applicationType: serviceForm.applicationType || "Home",
+      };
+      await saveService(servicePayload as Service, actorOverride);
       setServiceModalOpen(false);
       toast.success(editingService ? "Service updated!" : "Service added!");
     } catch (error) {
@@ -1200,6 +1227,11 @@ export function ClientDetailWorkspace({
                                           Due: {new Date(s.dueDate).toLocaleDateString("en-IN")}
                                         </span>
                                       )}
+                                      {s.applicationId && (
+                                        <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                                          App ID: {s.applicationId}
+                                        </Badge>
+                                      )}
                                     </div>
                                     {s.notes && (
                                       <p className="text-xs text-muted-foreground mt-1.5 bg-muted/20 p-2 rounded border leading-relaxed">
@@ -1762,6 +1794,53 @@ export function ClientDetailWorkspace({
               </Select>
             </div>
             <div className="space-y-1">
+              <Label className="text-xs font-bold uppercase">Task Template (Optional)</Label>
+              <Select
+                value={serviceForm.templateId || "__none"}
+                onValueChange={(v: any) =>
+                  setServiceForm({ ...serviceForm, templateId: v === "__none" ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Task Template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">None (Default Manual Task)</SelectItem>
+                  {taskTemplates.map((tpl) => (
+                    <SelectItem key={tpl.id} value={tpl.id}>
+                      {tpl.templateName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold uppercase">Application Type</Label>
+              <Select
+                value={serviceForm.applicationType || "Home"}
+                onValueChange={(v: any) => setServiceForm({ ...serviceForm, applicationType: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Home">Home</SelectItem>
+                  <SelectItem value="Faceless">Faceless</SelectItem>
+                  <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                  <SelectItem value="CNG">CNG</SelectItem>
+                  <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold uppercase">Application ID *</Label>
+              <Input
+                placeholder="Enter Application ID"
+                value={serviceForm.applicationId || ""}
+                onChange={(e) => setServiceForm({ ...serviceForm, applicationId: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
               <Label className="text-xs font-bold uppercase">Due Date</Label>
               <Input
                 type="date"
@@ -1821,27 +1900,9 @@ export function ClientDetailWorkspace({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none">Unassigned</SelectItem>
-                  {STAFF_USERS.map((s) => (
-                    <SelectItem key={s.username} value={s.username}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-bold uppercase">Task Status</Label>
-              <Select
-                value={serviceForm.taskStatus || "Not Started"}
-                onValueChange={(v: any) => setServiceForm({ ...serviceForm, taskStatus: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TASK_STAGES.map((ts) => (
-                    <SelectItem key={ts} value={ts}>
-                      {ts}
+                  {activeEmployees.map((emp) => (
+                    <SelectItem key={emp.uid || emp.username} value={emp.username}>
+                      {emp.fullName}
                     </SelectItem>
                   ))}
                 </SelectContent>

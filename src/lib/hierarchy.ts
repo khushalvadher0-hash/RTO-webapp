@@ -76,6 +76,7 @@ export interface Service {
   serviceAmount: number;
   amountReceived: number;
   advancePayment?: number;
+  applicationType?: string;
   pendingAmount: number; // serviceAmount - amountReceived - advancePayment
   assignedStaff: string;
   taskStatus: ServiceTaskStatus;
@@ -90,6 +91,11 @@ export interface Service {
   invoiceId?: string;
   invoiceNumber?: string;
   askBhaylubha?: boolean;
+  applicationId?: string;
+  templateId?: string;
+  title?: string;
+  description?: string;
+  subtasks?: any[];
 }
 
 export interface ClientAccounting {
@@ -601,8 +607,50 @@ export async function saveService(
   const existing = existingSnap.exists() ? (existingSnap.data() as Service) : null;
   const isNew = !existing;
 
+  // Uniqueness validation for applicationId
+  if (data.applicationId && data.applicationId.trim() !== "") {
+    const q = query(
+      collection(db, SERVICES_COL),
+      where("applicationId", "==", data.applicationId.trim())
+    );
+    const snap = await getDocs(q);
+    const duplicate = snap.docs.find((d) => d.id !== id);
+    if (duplicate) {
+      throw new Error(`Application ID "${data.applicationId.trim()}" is already assigned to another service.`);
+    }
+  }
+
+  // Fetch task template if specified and changed/new
+  let templateUpdates: any = {};
+  if (data.templateId && data.templateId.trim() !== "") {
+    if (isNew || existing?.templateId !== data.templateId) {
+      try {
+        const tplDoc = await getDoc(doc(db, "task_templates", data.templateId));
+        if (tplDoc.exists()) {
+          const tplData = tplDoc.data();
+          const actor = actorOverride?.name || actorOverride?.role || "system";
+          const copiedSubtasks = (tplData.subtasks || []).map((sub: string) => ({
+            id: `sub_${crypto.randomUUID()}`,
+            title: sub,
+            completed: false,
+            createdBy: actor,
+            createdAt: now,
+          }));
+          templateUpdates = {
+            title: tplData.templateName || "",
+            description: tplData.description || "",
+            subtasks: copiedSubtasks,
+          };
+        }
+      } catch (err) {
+        console.error("Failed to fetch task template in saveService:", err);
+      }
+    }
+  }
+
   const cleanData = removeUndefined({
     ...data,
+    ...templateUpdates,
     pendingAmount,
     progress,
     updatedAt: now,

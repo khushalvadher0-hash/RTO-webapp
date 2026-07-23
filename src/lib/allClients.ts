@@ -26,6 +26,7 @@ export interface ClientService {
   amountReceived?: number;
   paymentStatus?: PaymentStatus;
   activityLogs?: RegistryRecord["activityLogs"];
+  applicationId?: string;
 }
 
 export interface AggregatedClient {
@@ -382,6 +383,7 @@ export function subscribeToAllClients(callback: (clients: AggregatedClient[]) =>
               : amountReceived > 0
                 ? "Partially Paid"
                 : "Unpaid",
+          applicationId: service.applicationId,
         };
       });
 
