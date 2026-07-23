@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   getServiceClientsAll,
   getServiceStats,
@@ -17,6 +17,7 @@ import {
 } from "@/lib/records";
 import { RecordTable } from "@/components/RecordTable";
 import { ClientDetailWorkspace } from "./ClientDetailWorkspace";
+import { AddClientWizardDialog } from "./AddClientWizardDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import {
   ChevronDown,
   ChevronRight,
   Search,
+  Plus,
 } from "lucide-react";
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
 
@@ -185,6 +187,7 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
   const [diagRunning, setDiagRunning] = useState(false);
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const filteredRecords = useMemo(() => {
     if (!searchQuery.trim()) return records;
@@ -217,34 +220,34 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
     }));
   };
 
+  const refreshData = async () => {
+    try {
+      setLoading(true);
+      console.log(`[ServiceDashboard] LOADING: serviceType="${serviceType}"`);
+
+      const [recs] = await Promise.all([getServiceClientsAll(serviceType)]);
+
+      console.log(`[ServiceDashboard] LOADED: ${recs.length} records for "${serviceType}"`, {
+        serviceType,
+        totalRecords: recs.length,
+      });
+
+      const agg = aggregateServiceRecords(recs, serviceType);
+
+      setRecords(agg.aggregatedRecords);
+      setStats(agg.stats);
+      setTotalServiceAmount(agg.serviceTotal);
+      setTotalReceived(agg.receivedTotal);
+      setTotalPending(agg.pendingTotal);
+    } catch (error) {
+      console.error(`[ServiceDashboard] ERROR loading service data for "${serviceType}":`, error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        console.log(`[ServiceDashboard] LOADING: serviceType="${serviceType}"`);
-
-        const [recs] = await Promise.all([getServiceClientsAll(serviceType)]);
-
-        console.log(`[ServiceDashboard] LOADED: ${recs.length} records for "${serviceType}"`, {
-          serviceType,
-          totalRecords: recs.length,
-        });
-
-        const agg = aggregateServiceRecords(recs, serviceType);
-
-        setRecords(agg.aggregatedRecords);
-        setStats(agg.stats);
-        setTotalServiceAmount(agg.serviceTotal);
-        setTotalReceived(agg.receivedTotal);
-        setTotalPending(agg.pendingTotal);
-      } catch (error) {
-        console.error(`[ServiceDashboard] ERROR loading service data for "${serviceType}":`, error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
+    refreshData();
   }, [serviceType]);
 
   const handleExportServicePDF = async () => {
@@ -307,20 +310,27 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
             Manage all {serviceType.toLowerCase()} service requests and renewals.
           </p>
         </div>
-        <Link to="/dashboard/clients" className="inline-flex">
-          <Button variant="outline">
-            {" "}
-            <ArrowRight className="size-4 mr-2" /> All Clients{" "}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() => setWizardOpen(true)}
+            className="h-9 gap-1.5 bg-primary text-primary-foreground font-semibold shadow-sm"
+          >
+            <Plus className="size-4" /> Add Client
           </Button>
-        </Link>
-        <Button
-          onClick={handleExportServicePDF}
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5"
-        >
-          <Download className="size-4" /> Export PDF
-        </Button>
+          <Link to="/dashboard/clients" className="inline-flex">
+            <Button variant="outline" size="sm" className="h-9">
+              <ArrowRight className="size-4 mr-2" /> All Clients
+            </Button>
+          </Link>
+          <Button
+            onClick={handleExportServicePDF}
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5"
+          >
+            <Download className="size-4" /> Export PDF
+          </Button>
+        </div>
       </div>
 
       {/* Legacy Accounting warning banner */}
@@ -543,9 +553,8 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
                     const isExpanded = expandedClients[r.id] ?? isVehicleSearchMatch;
 
                     return (
-                      <>
+                      <React.Fragment key={r.id}>
                         <tr
-                          key={r.id}
                           className="border-t hover:bg-muted/30 cursor-pointer"
                           onClick={() => openWorkflow(r)}
                         >
@@ -700,7 +709,7 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -716,6 +725,12 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
           onOpenChange={setProfileOpen}
         />
       )}
+      <AddClientWizardDialog
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        defaultServiceType={serviceType}
+        onSuccess={refreshData}
+      />
     </div>
   );
 }

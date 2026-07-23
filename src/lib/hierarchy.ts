@@ -262,6 +262,7 @@ export async function saveClient(
       }
     }
     await logActivity(id, "Created Client", null, null, null, actorOverride);
+  } else if (existing) {
     // Compare fields
     const fieldsToTrack: (keyof Client)[] = [
       "name",
