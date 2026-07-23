@@ -25,6 +25,8 @@ export interface VehicleDocumentInfo {
   uploadedAt: string;
   uploadedBy: string;
   storagePath: string;
+  expiryDate?: string;
+  documentNumber?: string;
 }
 
 // Subscribe to Client Documents
@@ -185,7 +187,7 @@ export async function saveVehicleDocument(
     uploadedAt: now,
     uploadedBy: userName,
     storagePath,
-  });
+  }, { merge: true });
 
   if (existingDoc && existingDoc.storagePath && existingDoc.storagePath !== storagePath) {
     try {

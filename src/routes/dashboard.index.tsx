@@ -10,7 +10,9 @@ import {
   serviceToUrlParam,
   type RegistryRecord,
 } from "@/lib/records";
-import { computeFollowUps } from "@/lib/followups";
+import { computeFollowUps, computeVehicleDocFollowUps } from "@/lib/followups";
+import { Button } from "@/components/ui/button";
+import { ClientDetailWorkspace } from "@/components/ClientDetailWorkspace";
 import {
   getTotalRevenue,
   getActiveServicesCount,
@@ -49,7 +51,7 @@ function Overview() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [targets, setTargets] = useState<TargetMetrics[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<{ type: string } | null>(null);
+  const [filter, setFilter] = useState<{ type: string } | null>({ type: "today" });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
@@ -57,6 +59,9 @@ function Overview() {
   const [collectionCategory, setCollectionCategory] = useState<
     "today" | "7days" | "15days" | "30days" | "overdue"
   >("7days");
+  const [vehicleDocuments, setVehicleDocuments] = useState<any[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const totalRevenue = useMemo(() => {
     return services.reduce((sum, s: any) => sum + (s.serviceAmount || 0), 0);
@@ -92,65 +97,47 @@ function Overview() {
     return result.filter((r) => r.revenue > 0);
   }, [services]);
 
-  const upcomingRenewals = useMemo(() => {
-    const now = new Date();
-
-    const vehiclesMap = new Map<string, any>(vehicles.map(v => [v.id, v]));
-    const clientsMap = new Map<string, any>([...clients, ...leads].map(c => [c.id, c]));
-
-    const records: any[] = [];
-    services.forEach((s: any) => {
-      if (!s.dueDate) return;
-      const dueDate = new Date(s.dueDate);
-      if (isNaN(dueDate.getTime())) return;
-
-      const timeDiff = dueDate.getTime() - now.getTime();
-      const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
-
-      if (daysRemaining >= 0 && daysRemaining <= 30) {
-        const vehicle = vehiclesMap.get(s.vehicleId);
-        if (!vehicle) return;
-        const client = clientsMap.get(vehicle.clientId);
-        if (!client) return;
-
-        let status = "Pending";
-        if (s.taskStatus === "Completed") status = "Completed";
-        else if (s.taskStatus === "On Hold") status = "On Hold";
-        else if (s.taskStatus !== "Not Started") status = "In Progress";
-
-        records.push({
-          id: client.id,
-          date: s.createdAt || client.createdAt || new Date().toISOString(),
-          mvNo: vehicle.vehicleNumber,
-          application: s.serviceType,
-          work: s.notes || "",
-          name: client.name,
-          status,
-          mo: client.mobile || "",
-          co: client.address || "",
-          groupName: client.companyName || "",
-          assignee: s.assignedStaff || "",
-          createdAt: s.createdAt || client.createdAt,
-          serviceType: s.serviceType,
-          serviceStatus: s.taskStatus,
-          serviceDueDate: s.dueDate,
-          type: client.type || "client",
-          services: [
-            {
-              serviceType: s.serviceType,
-              dueDate: s.dueDate || "",
-              status: s.taskStatus || "Pending",
-              price: s.serviceAmount ?? 0,
-              amountReceived: s.amountReceived ?? 0,
-              assignee: s.assignedStaff || "",
-            }
-          ]
-        });
-      }
+  const upcomingTasks = useMemo(() => {
+    const manualTasksMapped = tasks.map((t) => {
+      const client = clients.find((c) => c.id === t.clientId || c.id === t.recordId) || 
+                     leads.find((l) => l.id === t.clientId || l.id === t.recordId);
+      const vehicle = vehicles.find((v) => v.id === t.vehicleId);
+      
+      return {
+        id: t.id,
+        title: t.title || "Manual Task",
+        clientName: client?.name || t.clientName || "Unknown Client",
+        vehicleNo: vehicle?.vehicleNumber || "—",
+        assignee: t.assignedEmployeeName || t.assignee || "Unassigned",
+        dueDate: t.dueDate ? new Date(t.dueDate) : null,
+        status: t.status || "Assigned",
+        isManual: true,
+      };
     });
 
-    return Array.from(new Map(records.map(r => [r.id, r])).values());
-  }, [services, vehicles, clients, leads]);
+    const serviceTasksMapped = services.map((s: any) => {
+      const vehicle = vehicles.find((v) => v.id === s.vehicleId);
+      const vehicleNo = vehicle?.vehicleNumber || "—";
+      const clientId = vehicle?.clientId || s.clientId || "";
+      const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
+      const clientName = client?.name || s.clientName || "Unknown Client";
+
+      return {
+        id: s.id,
+        title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
+        clientName,
+        vehicleNo,
+        assignee: s.assignedEmployeeName || s.assignedStaff || s.assignee || "Unassigned",
+        dueDate: s.dueDate ? new Date(s.dueDate) : null,
+        status: s.taskStatus || "Assigned",
+        isManual: false,
+      };
+    });
+
+    return [...manualTasksMapped, ...serviceTasksMapped]
+      .filter((t) => t.dueDate !== null && !isNaN(t.dueDate.getTime()))
+      .sort((a, b) => a.dueDate!.getTime() - b.dueDate!.getTime());
+  }, [tasks, services, vehicles, clients, leads]);
 
   const billingMetrics = useMemo(() => {
     const now = new Date();
@@ -352,6 +339,10 @@ function Overview() {
       checkLoaded();
     });
 
+    const u11 = onSnapshot(collection(db, "vehicle_documents"), (snap) => {
+      setVehicleDocuments(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
     return () => {
       u1();
       u4();
@@ -361,15 +352,15 @@ function Overview() {
       u8();
       u9();
       u10();
+      u11();
     };
   }, []);
 
   // Compute follow-ups in real-time from all registry buckets
   const [followups, setFollowups] = useState<any>(null);
   useEffect(() => {
-    const all = [...clients, ...leads];
-    setFollowups(computeFollowUps(all));
-  }, [clients, leads]);
+    setFollowups(computeVehicleDocFollowUps(vehicleDocuments, vehicles, clients, leads));
+  }, [vehicleDocuments, vehicles, clients, leads]);
 
   const completed = clients.filter((c) => c.status === "Completed").length;
   const inProgress = [...clients, ...leads].filter((c) => c.status === "In Progress").length;
@@ -437,12 +428,12 @@ function Overview() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Upcoming Renewals</CardTitle>
+              <CardTitle className="text-sm font-medium">Upcoming Tasks</CardTitle>
               <AlertCircle className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{upcomingRenewals.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Due in 30 days</p>
+              <div className="text-2xl font-bold text-orange-600">{upcomingTasks.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Pending tasks sorted by date</p>
             </CardContent>
           </Card>
         </div>
@@ -546,7 +537,15 @@ function Overview() {
             </div>
 
             {/* Quick lists - show filtered entries when a card is clicked */}
-            <FollowUpLists followups={followups} filter={filter} setFilter={setFilter} />
+            <FollowUpLists 
+              followups={followups} 
+              filter={filter} 
+              setFilter={setFilter} 
+              onOpenClient={(id: string) => {
+                setSelectedClientId(id);
+                setDetailOpen(true);
+              }}
+            />
           </div>
         )}
 
@@ -593,31 +592,38 @@ function Overview() {
           </CardContent>
         </Card>
 
-        {/* Upcoming Renewals Table */}
-        {upcomingRenewals.length > 0 && (
+        {/* Upcoming Tasks Table */}
+        {upcomingTasks.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Upcoming Renewals (30 Days)</CardTitle>
+              <CardTitle className="text-sm">Upcoming Tasks</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {upcomingRenewals.map((renewal) => (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {upcomingTasks.map((task) => (
                   <div
-                    key={renewal.id}
-                    className="flex items-center justify-between p-2 border rounded text-sm"
+                    key={task.id}
+                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg text-sm bg-background hover:bg-muted/5 transition-all gap-2"
                   >
                     <div>
-                      <p className="font-medium">{renewal.name}</p>
+                      <p className="font-semibold text-foreground">{task.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {serviceLabel(renewal.serviceType)}
+                        Client: <span className="font-medium text-foreground">{task.clientName}</span>
+                        {task.vehicleNo && task.vehicleNo !== "—" && (
+                          <> • Vehicle: <span className="font-medium text-foreground">{task.vehicleNo}</span></>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Assigned: {task.assignee}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-medium">
-                        {renewal.serviceDueDate
-                          ? new Date(renewal.serviceDueDate).toLocaleDateString("en-IN")
-                          : "N/A"}
+                    <div className="text-left sm:text-right shrink-0">
+                      <p className="text-xs font-semibold text-foreground">
+                        {task.dueDate ? task.dueDate.toLocaleDateString("en-IN") : "—"}
                       </p>
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1 bg-muted text-foreground border">
+                        {task.status}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -920,11 +926,18 @@ function Overview() {
           </Link>
         </div>
       </div>
+
+      {/* Client Detail Workspace modal */}
+      <ClientDetailWorkspace
+        clientId={selectedClientId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }
 
-function FollowUpLists({ followups, filter, setFilter }: any) {
+function FollowUpLists({ followups, filter, setFilter, onOpenClient }: any) {
   const type = filter?.type || "today";
   const list =
     type === "today"
@@ -939,6 +952,19 @@ function FollowUpLists({ followups, filter, setFilter }: any) {
               ? followups.overdue
               : followups.flat;
 
+  const headerLabel = 
+    type === "today" 
+      ? "Today's Follow-Ups" 
+      : type === "upcoming7"
+        ? "Upcoming 7 Days"
+        : type === "upcoming15"
+          ? "Upcoming 15 Days"
+          : type === "upcoming30"
+            ? "Upcoming 30 Days"
+            : type === "overdue"
+              ? "Overdue Expiries"
+              : "All Document Follow-Ups";
+
   return (
     <div>
       <div className="mt-3 grid gap-3">
@@ -952,30 +978,49 @@ function FollowUpLists({ followups, filter, setFilter }: any) {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">
-                {type === "today" ? "Today's Follow-Ups" : type}
+                {headerLabel}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-96 overflow-y-auto">
                 {list.map((e: any, i: number) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between p-2 border rounded text-sm"
+                    className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border rounded-lg text-sm bg-background hover:bg-muted/5 transition-all gap-3"
                   >
                     <div>
-                      <p className="font-medium">{e.clientName}</p>
+                      <p className="font-semibold text-foreground">{e.clientName}</p>
                       <p className="text-xs text-muted-foreground">
-                        {e.serviceType} • {e.mvNo || "—"}
+                        Document: <span className="font-medium text-foreground">{e.serviceType}</span> • Vehicle: <span className="font-medium text-foreground">{e.mvNo || "—"}</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Expiry Date: {e.dueDate ? new Date(e.dueDate).toLocaleDateString("en-IN") : "N/A"}
                       </p>
                     </div>
-                    <div className="text-right text-xs">
-                      <div>
-                        {e.dueDate ? new Date(e.dueDate).toLocaleDateString("en-IN") : "N/A"}
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end shrink-0">
+                      <div className="text-right text-xs">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          e.daysRemaining < 0 
+                            ? "bg-red-100 text-red-700 border border-red-200" 
+                            : e.daysRemaining === 0 
+                              ? "bg-orange-100 text-orange-700 border border-orange-200"
+                              : "bg-green-100 text-green-700 border border-green-200"
+                        }`}>
+                          {e.daysRemaining < 0 
+                            ? `Expired ${Math.abs(e.daysRemaining)} days ago` 
+                            : e.daysRemaining === 0 
+                              ? "Expires Today" 
+                              : `${e.daysRemaining} days remaining`}
+                        </span>
                       </div>
-                      <div className="text-muted-foreground">
-                        {e.daysRemaining !== undefined ? `${e.daysRemaining} days` : ""}
-                      </div>
-                      <div className="text-xs">{e.assignee || "Unassigned"}</div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px] px-2.5 font-medium"
+                        onClick={() => onOpenClient(e.clientId)}
+                      >
+                        Open Client
+                      </Button>
                     </div>
                   </div>
                 ))}

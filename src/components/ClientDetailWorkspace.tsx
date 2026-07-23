@@ -138,6 +138,81 @@ export function ClientDetailWorkspace({
   const [activeEmployees, setActiveEmployees] = useState<UserRecord[]>([]);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
 
+  const [docFields, setDocFields] = useState<Record<string, { documentNumber?: string; expiryDate?: string }>>({});
+  const [personalDocsCollapsed, setPersonalDocsCollapsed] = useState(true);
+  const [vehicleDocsCollapsed, setVehicleDocsCollapsed] = useState<Record<string, boolean>>({});
+
+  const handleDocFieldChange = (vehicleId: string, slotKey: string, field: string, value: string) => {
+    const key = `${vehicleId}-${slotKey}`;
+    setDocFields((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [field]: value,
+      },
+    }));
+  };
+
+  const hasDocChanges = (key: string, docObj: any) => {
+    const changes = docFields[key];
+    if (!changes) return false;
+    
+    const currentNum = changes.documentNumber !== undefined ? changes.documentNumber : (docObj?.documentNumber ?? "");
+    const currentExp = changes.expiryDate !== undefined ? changes.expiryDate : (docObj?.expiryDate ?? "");
+    
+    const originalNum = docObj?.documentNumber ?? "";
+    const originalExp = docObj?.expiryDate ?? "";
+    
+    return currentNum !== originalNum || currentExp !== originalExp;
+  };
+
+  const handleSaveDocFields = async (vehicleId: string, slotKey: string, docObj: any) => {
+    const key = `${vehicleId}-${slotKey}`;
+    const fields = docFields[key] || {};
+    
+    const documentNumber = fields.documentNumber !== undefined ? fields.documentNumber : (docObj?.documentNumber ?? "");
+    const expiryDate = fields.expiryDate !== undefined ? fields.expiryDate : (docObj?.expiryDate ?? "");
+    
+    try {
+      const now = new Date().toISOString();
+      const userName = session?.name || "System";
+      
+      let docId = docObj?.id;
+      if (!docId) {
+        docId = `doc_${crypto.randomUUID()}`;
+      }
+      
+      const docRef = doc(db, "vehicle_documents", docId);
+      const payload = {
+        clientId,
+        vehicleId,
+        documentType: slotKey,
+        documentNumber,
+        expiryDate,
+        updatedAt: now,
+        updatedBy: userName,
+        fileName: docObj?.fileName || "",
+        url: docObj?.url || "",
+        uploadedAt: docObj?.uploadedAt || now,
+        uploadedBy: docObj?.uploadedBy || userName,
+        storagePath: docObj?.storagePath || "",
+      };
+      
+      const { setDoc: firestoreSetDoc } = await import("firebase/firestore");
+      await firestoreSetDoc(docRef, payload, { merge: true });
+      toast.success("Document details updated successfully!");
+      
+      setDocFields((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } catch (err: any) {
+      console.error("Failed to save document details:", err);
+      toast.error("Failed to save details: " + err.message);
+    }
+  };
+
   useEffect(() => {
     const unsub = subscribeToTemplates(setTaskTemplates);
     return unsub;
@@ -998,108 +1073,118 @@ export function ClientDetailWorkspace({
 
             {/* Structured Client Documents Section */}
             <Card className="border shadow-sm">
-              <CardHeader className="pb-3 border-b">
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <FileText className="size-4 text-primary" />
-                  Client Documents
+              <CardHeader 
+                className="pb-3 border-b cursor-pointer hover:bg-muted/10 transition-colors select-none"
+                onClick={() => setPersonalDocsCollapsed(!personalDocsCollapsed)}
+              >
+                <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <FileText className="size-4 text-primary" />
+                    Personal Documents
+                  </span>
+                  <span className="text-xs text-muted-foreground font-normal">
+                    {personalDocsCollapsed ? "▶ Expand" : "▼ Collapse"}
+                  </span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-0 divide-y">
-                {CLIENT_DOC_SLOTS.map((slot) => {
-                  const docObj = clientDocs.find((d) => d.category === slot.key) || null;
-                  const progress = docProgress[`client-${slot.key}`];
-                  return (
-                    <div
-                      key={slot.key}
-                      className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-card hover:bg-muted/5 transition-colors"
-                    >
-                      <div className="space-y-1">
-                        <span className="font-semibold text-sm text-foreground block">
-                          {slot.label}
-                        </span>
-                        {docObj ? (
-                          <div className="text-xs text-muted-foreground space-y-0.5">
-                            <p className="font-medium text-foreground truncate max-w-md">
-                              {docObj.fileName}
-                            </p>
-                            <p>
-                              Uploaded by {docObj.uploadedBy} on{" "}
-                              {new Date(docObj.uploadedAt).toLocaleDateString("en-IN")}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground block">Not Uploaded</span>
-                        )}
-                        {progress !== undefined && (
-                          <div className="w-full max-w-[200px] mt-1.5">
-                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary transition-all duration-300"
-                                style={{ width: `${progress}%` }}
-                              />
+              {!personalDocsCollapsed && (
+                <CardContent className="p-0 divide-y">
+                  {CLIENT_DOC_SLOTS.map((slot) => {
+                    const docObj = clientDocs.find((d) => d.category === slot.key) || null;
+                    const progress = docProgress[`client-${slot.key}`];
+                    return (
+                      <div
+                        key={slot.key}
+                        className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-card hover:bg-muted/5 transition-colors"
+                      >
+                        <div className="space-y-1">
+                          <span className="font-semibold text-sm text-foreground block">
+                            {slot.label}
+                          </span>
+                          {docObj ? (
+                            <div className="text-xs text-muted-foreground space-y-0.5">
+                              <p className="font-medium text-foreground truncate max-w-md">
+                                {docObj.fileName}
+                              </p>
+                              <p>
+                                Uploaded by {docObj.uploadedBy} on{" "}
+                                {new Date(docObj.uploadedAt).toLocaleDateString("en-IN")}
+                              </p>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {docObj && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 text-xs gap-1"
-                              onClick={() => {
-                                const isPdf = docObj.fileName.toLowerCase().endsWith(".pdf");
-                                setViewerDoc({ url: docObj.url, name: slot.label, isPdf });
+                          ) : (
+                            <span className="text-xs text-muted-foreground block">Not Uploaded</span>
+                          )}
+                          {progress !== undefined && (
+                            <div className="w-full max-w-[200px] mt-1.5">
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-primary transition-all duration-300"
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {docObj && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 text-xs gap-1"
+                                onClick={() => {
+                                  const isPdf = docObj.fileName.toLowerCase().endsWith(".pdf");
+                                  setViewerDoc({ url: docObj.url, name: slot.label, isPdf });
+                                }}
+                              >
+                                <Eye className="size-3.5" /> View
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 text-xs gap-1"
+                                onClick={() => handleDownloadDocument(docObj.url, docObj.fileName)}
+                              >
+                                <Download className="size-3.5" /> Download
+                              </Button>
+                            </>
+                          )}
+                          <label className="h-8 px-3 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-pointer flex items-center justify-center text-xs font-semibold gap-1.5 transition-colors">
+                            <Upload className="size-3.5" />
+                            {docObj ? "Replace" : "Upload"}
+                            <input
+                              type="file"
+                              accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
+                              onChange={(e) => {
+                                const file = e.currentTarget.files?.[0];
+                                if (file) handleUploadClientDoc(slot.key, file);
+                                e.currentTarget.value = "";
                               }}
-                            >
-                              <Eye className="size-3.5" /> View
-                            </Button>
+                              className="hidden"
+                            />
+                          </label>
+                          {docObj && (
                             <Button
-                              size="sm"
+                              size="icon"
                               variant="ghost"
-                              className="h-8 text-xs gap-1"
-                              onClick={() => handleDownloadDocument(docObj.url, docObj.fileName)}
+                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              disabled={!isAdmin}
+                              title={
+                                !isAdmin
+                                  ? "Only administrators can delete documents"
+                                  : "Delete document"
+                              }
+                              onClick={() => handleDeleteClientDoc(docObj)}
                             >
-                              <Download className="size-3.5" /> Download
+                              <Trash2 className="size-3.5" />
                             </Button>
-                          </>
-                        )}
-                        <label className="h-8 px-3 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-pointer flex items-center justify-center text-xs font-semibold gap-1.5 transition-colors">
-                          <Upload className="size-3.5" />
-                          {docObj ? "Replace" : "Upload"}
-                          <input
-                            type="file"
-                            accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
-                            onChange={(e) => {
-                              const file = e.currentTarget.files?.[0];
-                              if (file) handleUploadClientDoc(slot.key, file);
-                              e.currentTarget.value = "";
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-                        {docObj && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                            disabled={!isAdmin}
-                            title={
-                              !isAdmin
-                                ? "Only administrators can delete documents"
-                                : "Delete document"
-                            }
-                            onClick={() => handleDeleteClientDoc(docObj)}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
+                    );
+                  })}
+                </CardContent>
+              )}
             </Card>
 
             {/* Vehicles & nested Services section */}
@@ -1381,202 +1466,257 @@ export function ClientDetailWorkspace({
                         </div>
 
                         {/* Structured Vehicle Documents Section */}
-                        <div className="border-t p-5 bg-muted/5 space-y-4">
-                          <h4 className="font-semibold text-sm text-foreground flex items-center gap-2 border-b pb-2">
-                            <FileText className="size-4 text-primary" />
-                            Vehicle Documents
-                          </h4>
-
-                          <div className="grid gap-3">
-                            {VEHICLE_DOC_SLOTS.map((slot) => {
-                              const docObj =
-                                vehicleDocs.find(
-                                  (d) => d.vehicleId === v.id && d.documentType === slot.key,
-                                ) || null;
-                              const progress = docProgress[`vehicle-${v.id}-${slot.key}`];
-                              return (
-                                <div
-                                  key={slot.key}
-                                  className="p-3 border rounded-lg bg-background flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:shadow-sm transition-all"
-                                >
-                                  <div className="space-y-0.5">
-                                    <span className="font-semibold text-xs text-foreground block">
-                                      {slot.label}
-                                    </span>
-                                    {docObj ? (
-                                      <div className="text-[11px] text-muted-foreground">
-                                        <p className="font-medium text-foreground truncate max-w-xs">
-                                          {docObj.fileName}
-                                        </p>
-                                        <p>
-                                          Uploaded by {docObj.uploadedBy} on{" "}
-                                          {new Date(docObj.uploadedAt).toLocaleDateString("en-IN")}
-                                        </p>
-                                      </div>
-                                    ) : (
-                                      <span className="text-[11px] text-muted-foreground block">
-                                        Not Uploaded
-                                      </span>
-                                    )}
-                                    {progress !== undefined && (
-                                      <div className="w-full max-w-[150px] mt-1.5">
-                                        <div className="h-1 bg-muted rounded-full overflow-hidden">
-                                          <div
-                                            className="h-full bg-primary transition-all duration-300"
-                                            style={{ width: `${progress}%` }}
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {docObj && (
-                                      <>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-7 text-[11px] px-2 gap-1"
-                                          onClick={() => {
-                                            const isPdf = docObj.fileName
-                                              .toLowerCase()
-                                              .endsWith(".pdf");
-                                            setViewerDoc({
-                                              url: docObj.url,
-                                              name: `${v.vehicleNumber} - ${slot.label}`,
-                                              isPdf,
-                                            });
-                                          }}
-                                        >
-                                          <Eye className="size-3" /> View
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-7 text-[11px] px-2 gap-1"
-                                          onClick={() =>
-                                            handleDownloadDocument(docObj.url, docObj.fileName)
-                                          }
-                                        >
-                                          <Download className="size-3" /> Download
-                                        </Button>
-                                      </>
-                                    )}
-                                    <label className="h-7 px-2.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-pointer flex items-center justify-center text-[11px] font-semibold gap-1 transition-colors">
-                                      <Upload className="size-3" />
-                                      {docObj ? "Replace" : "Upload"}
-                                      <input
-                                        type="file"
-                                        accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
-                                        onChange={(e) => {
-                                          const file = e.currentTarget.files?.[0];
-                                          if (file) handleUploadVehicleDoc(v.id, slot.key, file);
-                                          e.currentTarget.value = "";
-                                        }}
-                                        className="hidden"
-                                      />
-                                    </label>
-                                    {docObj && (
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                        disabled={!isAdmin}
-                                        title={
-                                          !isAdmin
-                                            ? "Only administrators can delete documents"
-                                            : "Delete document"
-                                        }
-                                        onClick={() => handleDeleteVehicleDoc(docObj)}
-                                      >
-                                        <Trash2 className="size-3" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                        <div className="border-t bg-muted/5">
+                          <div 
+                            className="p-4 border-b cursor-pointer hover:bg-muted/10 transition-colors select-none flex items-center justify-between"
+                            onClick={() => {
+                              setVehicleDocsCollapsed((prev) => ({
+                                ...prev,
+                                [v.id]: prev[v.id] === false ? true : false,
+                              }));
+                            }}
+                          >
+                            <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                              <FileText className="size-4 text-primary" />
+                              Vehicle Documents
+                            </h4>
+                            <span className="text-xs text-muted-foreground">
+                              {vehicleDocsCollapsed[v.id] !== false ? "▶ Expand" : "▼ Collapse"}
+                            </span>
                           </div>
 
-                          {/* Backward Compatibility: Display Legacy Documents if any exist */}
-                          {v.documents &&
-                            Array.isArray(v.documents) &&
-                            v.documents.filter((doc: any) => doc && (doc.fileUrl || doc.url))
-                              .length > 0 && (
-                              <div className="mt-4 pt-4 border-t border-dashed">
-                                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide block mb-2">
-                                  Legacy Documents
-                                </span>
-                                <div className="grid gap-2">
-                                  {v.documents
-                                    .filter((doc: any) => doc && (doc.fileUrl || doc.url))
-                                    .map((doc: any, index: number) => {
-                                      const docUrl = doc.fileUrl || doc.url;
-                                      const docName = doc.fileName || doc.name || "Document";
-                                      const docId = doc.id || `doc-${index}-${docName}`;
-                                      const docType =
-                                        doc.fileType ||
-                                        (docUrl.toLowerCase().includes(".pdf") ? "pdf" : "image");
-                                      const storagePath = doc.storagePath || "";
-
-                                      return (
-                                        <div
-                                          key={docId}
-                                          className="flex items-center justify-between p-2.5 border border-dashed rounded-lg bg-background gap-3"
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <FileText className="size-3.5 text-muted-foreground shrink-0" />
-                                            <span
-                                              className="text-xs truncate text-muted-foreground"
-                                              title={docName}
-                                            >
-                                              {docName}
+                          {vehicleDocsCollapsed[v.id] === false && (
+                            <div className="p-4 space-y-4">
+                              <div className="grid gap-3">
+                                {VEHICLE_DOC_SLOTS.map((slot) => {
+                                  const docObj =
+                                    vehicleDocs.find(
+                                      (d) => d.vehicleId === v.id && d.documentType === slot.key,
+                                    ) || null;
+                                  const progress = docProgress[`vehicle-${v.id}-${slot.key}`];
+                                  const changeKey = `${v.id}-${slot.key}`;
+                                  return (
+                                    <div
+                                      key={slot.key}
+                                      className="p-3 border rounded-lg bg-background flex flex-col gap-3 hover:shadow-sm transition-all"
+                                    >
+                                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                        <div className="space-y-0.5">
+                                          <span className="font-semibold text-xs text-foreground block">
+                                            {slot.label}
+                                          </span>
+                                          {docObj && docObj.fileName ? (
+                                            <div className="text-[11px] text-muted-foreground">
+                                              <p className="font-medium text-foreground truncate max-w-xs">
+                                                {docObj.fileName}
+                                              </p>
+                                              <p>
+                                                Uploaded by {docObj.uploadedBy} on{" "}
+                                                {new Date(docObj.uploadedAt).toLocaleDateString("en-IN")}
+                                              </p>
+                                            </div>
+                                          ) : (
+                                            <span className="text-[11px] text-muted-foreground block">
+                                              Not Uploaded
                                             </span>
-                                          </div>
-                                          <div className="flex items-center gap-1 shrink-0">
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="h-7 w-7 hover:bg-muted"
-                                              onClick={() =>
-                                                setViewerDoc({
-                                                  url: docUrl,
-                                                  name: docName,
-                                                  isPdf: docType === "pdf",
-                                                })
-                                              }
-                                              title="View Document"
-                                            >
-                                              <Eye className="size-3" />
-                                            </Button>
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="h-7 w-7 hover:bg-muted"
-                                              onClick={() =>
-                                                handleDownloadDocument(docUrl, docName)
-                                              }
-                                              title="Download Document"
-                                            >
-                                              <Download className="size-3" />
-                                            </Button>
+                                          )}
+                                          {progress !== undefined && (
+                                            <div className="w-full max-w-[150px] mt-1.5">
+                                              <div className="h-1 bg-muted rounded-full overflow-hidden">
+                                                <div
+                                                  className="h-full bg-primary transition-all duration-300"
+                                                  style={{ width: `${progress}%` }}
+                                                />
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {docObj && docObj.url && (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-7 text-[11px] px-2 gap-1"
+                                                onClick={() => {
+                                                  const isPdf = docObj.fileName
+                                                    .toLowerCase()
+                                                    .endsWith(".pdf");
+                                                  setViewerDoc({
+                                                    url: docObj.url,
+                                                    name: `${v.vehicleNumber} - ${slot.label}`,
+                                                    isPdf,
+                                                  });
+                                                }}
+                                              >
+                                                <Eye className="size-3" /> View
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-7 text-[11px] px-2 gap-1"
+                                                onClick={() =>
+                                                  handleDownloadDocument(docObj.url, docObj.fileName)
+                                                }
+                                              >
+                                                <Download className="size-3" /> Download
+                                              </Button>
+                                            </>
+                                          )}
+                                          <label className="h-7 px-2.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-pointer flex items-center justify-center text-[11px] font-semibold gap-1 transition-colors">
+                                            <Upload className="size-3" />
+                                            {docObj && docObj.url ? "Replace" : "Upload"}
+                                            <input
+                                              type="file"
+                                              accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
+                                              onChange={(e) => {
+                                                const file = e.currentTarget.files?.[0];
+                                                if (file) handleUploadVehicleDoc(v.id, slot.key, file);
+                                                e.currentTarget.value = "";
+                                              }}
+                                              className="hidden"
+                                            />
+                                          </label>
+                                          {docObj && docObj.url && (
                                             <Button
                                               size="icon"
                                               variant="ghost"
                                               className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                              onClick={() =>
-                                                handleDeleteDocument(v.id, docId, storagePath)
+                                              disabled={!isAdmin}
+                                              title={
+                                                !isAdmin
+                                                  ? "Only administrators can delete documents"
+                                                  : "Delete document"
                                               }
-                                              title="Delete Document"
+                                              onClick={() => handleDeleteVehicleDoc(docObj)}
                                             >
                                               <Trash2 className="size-3" />
                                             </Button>
-                                          </div>
+                                          )}
                                         </div>
-                                      );
-                                    })}
-                                </div>
+                                      </div>
+
+                                      {/* Document Number and Expiry Date Fields */}
+                                      <div className="mt-2 pt-2 border-t flex flex-wrap gap-3 items-end">
+                                        {(slot.key === "rc_book" || slot.key === "insurance") && (
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] uppercase font-bold text-muted-foreground block font-sans">
+                                              {slot.key === "rc_book" ? "Document Number" : "Policy Number"}
+                                            </label>
+                                            <Input
+                                              className="h-8 text-xs w-48 bg-background border"
+                                              value={docFields[changeKey]?.documentNumber ?? docObj?.documentNumber ?? ""}
+                                              onChange={(e) => handleDocFieldChange(v.id, slot.key, "documentNumber", e.target.value)}
+                                              placeholder={slot.key === "rc_book" ? "Enter Document Number" : "Enter Policy Number"}
+                                            />
+                                          </div>
+                                        )}
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] uppercase font-bold text-muted-foreground block font-sans">Expiry Date</label>
+                                          <Input
+                                            type="date"
+                                            className="h-8 text-xs w-40 bg-background border"
+                                            value={docFields[changeKey]?.expiryDate ?? docObj?.expiryDate ?? ""}
+                                            onChange={(e) => handleDocFieldChange(v.id, slot.key, "expiryDate", e.target.value)}
+                                          />
+                                        </div>
+                                        {hasDocChanges(changeKey, docObj) && (
+                                          <Button
+                                            size="sm"
+                                            className="h-8 text-[11px] px-3 font-semibold"
+                                            onClick={() => handleSaveDocFields(v.id, slot.key, docObj)}
+                                          >
+                                            Save Details
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            )}
+
+                              {/* Backward Compatibility: Display Legacy Documents if any exist */}
+                              {v.documents &&
+                                Array.isArray(v.documents) &&
+                                v.documents.filter((doc: any) => doc && (doc.fileUrl || doc.url))
+                                  .length > 0 && (
+                                  <div className="mt-4 pt-4 border-t border-dashed">
+                                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide block mb-2">
+                                      Legacy Documents
+                                    </span>
+                                    <div className="grid gap-2">
+                                      {v.documents
+                                        .filter((doc: any) => doc && (doc.fileUrl || doc.url))
+                                        .map((doc: any, index: number) => {
+                                          const docUrl = doc.fileUrl || doc.url;
+                                          const docName = doc.fileName || doc.name || "Document";
+                                          const docId = doc.id || `doc-${index}-${docName}`;
+                                          const docType =
+                                            doc.fileType ||
+                                            (docUrl.toLowerCase().includes(".pdf") ? "pdf" : "image");
+                                          const storagePath = doc.storagePath || "";
+
+                                          return (
+                                            <div
+                                              key={docId}
+                                              className="flex items-center justify-between p-2.5 border border-dashed rounded-lg bg-background gap-3"
+                                            >
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <FileText className="size-3.5 text-muted-foreground shrink-0" />
+                                                <span
+                                                  className="text-xs truncate text-muted-foreground"
+                                                  title={docName}
+                                                >
+                                                  {docName}
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                <Button
+                                                  size="icon"
+                                                  variant="ghost"
+                                                  className="h-7 w-7 hover:bg-muted"
+                                                  onClick={() =>
+                                                    setViewerDoc({
+                                                      url: docUrl,
+                                                      name: docName,
+                                                      isPdf: docType === "pdf",
+                                                    })
+                                                  }
+                                                  title="View Document"
+                                                >
+                                                  <Eye className="size-3" />
+                                                </Button>
+                                                <Button
+                                                  size="icon"
+                                                  variant="ghost"
+                                                  className="h-7 w-7 hover:bg-muted"
+                                                  onClick={() =>
+                                                    handleDownloadDocument(docUrl, docName)
+                                                  }
+                                                  title="Download Document"
+                                                >
+                                                  <Download className="size-3" />
+                                                </Button>
+                                                <Button
+                                                  size="icon"
+                                                  variant="ghost"
+                                                  className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                                  onClick={() =>
+                                                    handleDeleteDocument(v.id, docId, storagePath)
+                                                  }
+                                                  title="Delete Document"
+                                                >
+                                                  <Trash2 className="size-3" />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                )}
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
