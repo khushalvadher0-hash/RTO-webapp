@@ -175,20 +175,33 @@ function normalizeTaskIdentityValue(value?: string): string {
 
 export function isTaskAssignedToUser(
   task: Task,
-  user?: { uid?: string; employeeId?: string; username?: string; name?: string } | null,
+  user?: { uid?: string; employeeId?: string; username?: string; name?: string; fullName?: string } | null,
 ): boolean {
   if (!user) return false;
 
-  const uid = normalizeTaskIdentityValue(user.uid);
-  const employeeId = normalizeTaskIdentityValue(user.employeeId);
+  const userIdentities = [
+    user.uid,
+    user.employeeId,
+    user.username,
+    user.name,
+    user.fullName,
+  ]
+    .map((v) => normalizeTaskIdentityValue(v))
+    .filter(Boolean);
 
-  const assignedEmployeeId = normalizeTaskIdentityValue(task.assignedEmployeeId);
-  const assignee = normalizeTaskIdentityValue(task.assignee);
+  const taskIdentities = [
+    task.assignedEmployeeId,
+    (task as any).assignedEmployeeUid,
+    task.assignee,
+    task.assignedEmployeeName,
+  ]
+    .map((v) => normalizeTaskIdentityValue(v))
+    .filter(Boolean);
 
-  return (
-    (assignedEmployeeId !== "" && (assignedEmployeeId === employeeId || assignedEmployeeId === uid)) ||
-    (assignee !== "" && (assignee === employeeId || assignee === uid))
-  );
+  if (taskIdentities.length === 0) return false;
+  if (taskIdentities.some((id) => id === "unassigned" || id === "former employee")) return false;
+
+  return userIdentities.some((uId) => taskIdentities.includes(uId));
 }
 
 export function taskMatchesClient(

@@ -2400,130 +2400,67 @@ function TaskDetailsSheet({
             {isAdmin && <ReassignmentSection task={activeTask} actor={actor} />}
           </div>
 
-          {/* Task Progress Section */}
-          {(!activeTask.subtasks || activeTask.subtasks.length === 0) && (
-            <CollapsibleSection title="Task Progress" defaultOpen={true}>
-              <div className="space-y-4">
-                {/* Status Selection Buttons */}
-                <div>
-                  <Label className="text-xs uppercase font-bold text-gray-400 block mb-2">Status Stages</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {TASK_STATUS_OPTIONS.map((statusOption) => {
-                      const isSelected = selectedStatus === statusOption;
-                      return (
-                        <button
-                          key={statusOption}
-                          type="button"
-                          onClick={() => setSelectedStatus(statusOption)}
-                          className={cn(
-                            "px-3 py-1.5 rounded-lg text-xs font-bold border transition",
-                            isSelected 
-                              ? "bg-primary text-white border-primary shadow-sm"
-                              : "bg-white text-gray-600 border-gray-200 hover:bg-slate-50"
-                          )}
-                        >
-                          {statusOption}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Expected Completion Date */}
-                <div className="grid gap-1.5">
-                  <Label className="text-xs uppercase font-bold text-gray-400">Expected Completion Date</Label>
-                  <Input
-                    type="date"
-                    value={expectedDate}
-                    onChange={(e) => setExpectedDate(e.target.value)}
-                  />
-                </div>
-
-                {/* Remarks Field */}
-                <div className="grid gap-1.5">
-                  <Label className="text-xs uppercase font-bold text-gray-400">Add Remark / Update Progress</Label>
-                  <Textarea
-                    placeholder="Enter latest status update remarks..."
-                    value={remarkInput}
-                    onChange={(e) => setRemarkInput(e.target.value)}
-                  />
-                </div>
-
-                {/* Save & Complete Buttons */}
-                <div className="flex gap-2 border-t pt-3">
-                  <Button type="button" onClick={handleSaveProgress} className="flex-1">
-                    Save Progress
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={handleMarkCompleted} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
-                    Mark Completed
-                  </Button>
-                </div>
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {/* Task Information Section */}
-          <CollapsibleSection title="Task Information" defaultOpen={true}>
+          {/* 1. Task Progress Section */}
+          <CollapsibleSection title="Task Progress" defaultOpen={true}>
             <div className="space-y-4">
+              {/* Status Selection Buttons */}
               <div>
-                <Label className="text-xs uppercase font-bold text-gray-400">Description</Label>
-                <p className="text-sm text-gray-700 bg-slate-50 p-3 rounded-lg border whitespace-pre-wrap mt-1">
-                  {activeTask.description?.trim() ? activeTask.description : "No description."}
-                </p>
+                <Label className="text-xs uppercase font-bold text-gray-400 block mb-2">Status Stages</Label>
+                <div className="flex flex-wrap gap-2">
+                  {TASK_STATUS_OPTIONS.map((statusOption) => {
+                    const isSelected = selectedStatus === statusOption;
+                    return (
+                      <button
+                        key={statusOption}
+                        type="button"
+                        onClick={() => setSelectedStatus(statusOption)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold border transition",
+                          isSelected 
+                            ? "bg-primary text-white border-primary shadow-sm"
+                            : "bg-white text-gray-600 border-gray-200 hover:bg-slate-50"
+                        )}
+                      >
+                        {statusOption}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div>
-                <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
-                <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
-                  <Meta label="Assigned to" value={activeTask.assignedEmployeeName || "Former Employee"} />
-                  {assignedEmp && (
-                    <>
-                      <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
-                      <Meta label="Email" value={assignedEmp.email || "—"} />
-                    </>
-                  )}
-                  <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
-                  <Meta label="Due" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
-                  <Meta label="Appointment Date" value={activeTask.appointmentDate ? formatDate(activeTask.appointmentDate) : "—"} />
-                  <Meta label="Application ID" value={activeTask.applicationId || "—"} />
-                  <Meta label="Application Type" value={activeTask.applicationType || "—"} />
-                  <Meta
-                    label="Reminder"
-                    value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
-                  />
-                  <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
-                  <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
-                  {activeTask.readBy && (
-                    <>
-                      <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
-                      <Meta
-                        label="Read On"
-                        value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
-                      />
-                    </>
-                  )}
-                  {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
-                    <>
-                      <Meta
-                        label="Last Updated By"
-                        value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
-                      />
-                      <Meta
-                        label="Last Updated At"
-                        value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
-                      />
-                    </>
-                  )}
-                </dl>
+              {/* Expected Completion Date */}
+              <div className="grid gap-1.5">
+                <Label className="text-xs uppercase font-bold text-gray-400">Expected Completion Date</Label>
+                <Input
+                  type="date"
+                  value={expectedDate}
+                  onChange={(e) => setExpectedDate(e.target.value)}
+                />
               </div>
 
-              {activeTask.recordId && (
-                <ClientRelationshipPanel clientId={activeTask.recordId} />
-              )}
+              {/* Remarks Field */}
+              <div className="grid gap-1.5">
+                <Label className="text-xs uppercase font-bold text-gray-400">Add Remark / Update Progress</Label>
+                <Textarea
+                  placeholder="Enter latest status update remarks..."
+                  value={remarkInput}
+                  onChange={(e) => setRemarkInput(e.target.value)}
+                />
+              </div>
+
+              {/* Save & Complete Buttons */}
+              <div className="flex gap-2 border-t pt-3">
+                <Button type="button" onClick={handleSaveProgress} className="flex-1">
+                  Save Progress
+                </Button>
+                <Button type="button" variant="secondary" onClick={handleMarkCompleted} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+                  Mark Completed
+                </Button>
+              </div>
             </div>
           </CollapsibleSection>
 
-          {/* Subtasks Collapsible Section */}
+          {/* 2. Subtasks Collapsible Section */}
           {activeTask.subtasks && activeTask.subtasks.length > 0 && (
             <CollapsibleSection title="Subtasks checklist" defaultOpen={true}>
               <div className="space-y-4">
@@ -2565,6 +2502,69 @@ function TaskDetailsSheet({
               </div>
             </CollapsibleSection>
           )}
+
+          {/* 3. Task Information Section */}
+          <CollapsibleSection title="Task Information" defaultOpen={true}>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs uppercase font-bold text-gray-400">Description</Label>
+                <p className="text-sm text-gray-700 bg-slate-50 p-3 rounded-lg border whitespace-pre-wrap mt-1">
+                  {activeTask.description?.trim() ? activeTask.description : "No description."}
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
+                <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
+                  <Meta label="Appointment Date" value={activeTask.appointmentDate ? formatDate(activeTask.appointmentDate) : "—"} />
+                  <Meta label="Application ID" value={activeTask.applicationId || "—"} />
+                  <Meta label="Application Type" value={activeTask.applicationType || "—"} />
+                  <Meta label="Assigned Employee" value={activeTask.assignedEmployeeName || activeTask.assignee || "Former Employee"} />
+                  <Meta label="Due Date" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
+
+                  {/* Remaining Details */}
+                  {assignedEmp && (
+                    <>
+                      <Meta label="Role" value={assignedEmp.role ? (assignedEmp.role.charAt(0).toUpperCase() + assignedEmp.role.slice(1)) : "—"} />
+                      <Meta label="Email" value={assignedEmp.email || "—"} />
+                    </>
+                  )}
+                  <Meta label="Created by" value={staffLabel(activeTask.createdBy) || activeTask.createdBy} />
+                  <Meta
+                    label="Reminder"
+                    value={activeTask.reminderMinutes ? `${activeTask.reminderMinutes} min before` : "None"}
+                  />
+                  <Meta label="Created" value={new Date(activeTask.createdAt).toLocaleString()} />
+                  <Meta label="Type" value={activeTask.manual ? "Manual" : "Auto from record"} />
+                  {activeTask.readBy && (
+                    <>
+                      <Meta label="Read By" value={staffLabel(activeTask.readBy) || activeTask.readBy} />
+                      <Meta
+                        label="Read On"
+                        value={activeTask.readAt ? new Date(activeTask.readAt).toLocaleString() : "—"}
+                      />
+                    </>
+                  )}
+                  {activeTask.lastUpdatedBy && activeTask.lastUpdatedAt && (
+                    <>
+                      <Meta
+                        label="Last Updated By"
+                        value={staffLabel(activeTask.lastUpdatedBy) || activeTask.lastUpdatedBy}
+                      />
+                      <Meta
+                        label="Last Updated At"
+                        value={new Date(activeTask.lastUpdatedAt).toLocaleString()}
+                      />
+                    </>
+                  )}
+                </dl>
+              </div>
+
+              {activeTask.recordId && (
+                <ClientRelationshipPanel clientId={activeTask.recordId} />
+              )}
+            </div>
+          </CollapsibleSection>
 
           {/* Remarks collapsible section */}
           <CollapsibleSection title="Remarks & Note History" defaultOpen={false}>

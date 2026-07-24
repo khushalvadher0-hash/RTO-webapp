@@ -25,6 +25,7 @@ import {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  getEmployeeAssignedTasksCount,
   setEmployeeStatus,
   resetEmployeePassword,
   logEmployeeAction,
@@ -55,6 +56,8 @@ import {
   Copy,
   Printer,
   EyeOff,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/employees")({
@@ -98,9 +101,12 @@ function EmployeesPage() {
     }
   }, [selectedEmployee]);
   
-  // Delete PIN verification
+  // Delete PIN verification & confirmation modal
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [employeeToDelete, setEmployeeToDelete] = useState<UserRecord | null>(null);
+  const [assignedTaskCount, setAssignedTaskCount] = useState<number>(0);
+  const [fetchingTaskCount, setFetchingTaskCount] = useState(false);
 
   // Form states for Create/Edit
   const [addForm, setAddForm] = useState({
@@ -118,11 +124,16 @@ function EmployeesPage() {
 
   const [editForm, setEditForm] = useState({
     fullName: "",
+    username: "",
+    password: "",
+    confirmPassword: "",
     email: "",
     mobile: "",
+    employeeId: "",
     department: "",
     designation: "",
-    role: "employee" as "manager" | "employee",
+    role: "employee" as "admin" | "manager" | "employee" | "viewer",
+    status: "active" as "active" | "inactive",
   });
 
   const refreshData = async () => {
@@ -273,11 +284,16 @@ function EmployeesPage() {
     setEditEmployee(emp);
     setEditForm({
       fullName: emp.fullName || "",
+      username: emp.username || "",
+      password: "",
+      confirmPassword: "",
       email: emp.email || "",
       mobile: emp.mobile || "",
+      employeeId: emp.employeeId || "",
       department: emp.department || "",
       designation: emp.designation || "",
-      role: emp.role === "manager" ? "manager" : "employee",
+      role: emp.role || "employee",
+      status: emp.status || "active",
     });
   };
 
@@ -285,10 +301,51 @@ function EmployeesPage() {
     e.preventDefault();
     if (!editEmployee) return;
 
+    // Username uniqueness check
+    const trimmedUsername = editForm.username.trim().toLowerCase();
+    if (!trimmedUsername) {
+      toast.error("Username is required.");
+      return;
+    }
+    const isDupUsername = employees.some(
+      (emp) => emp.uid !== editEmployee.uid && (emp.username || "").toLowerCase() === trimmedUsername
+    );
+    if (isDupUsername) {
+      toast.error(`Username "${editForm.username.trim()}" is already taken by another employee.`);
+      return;
+    }
+
+    // Employee ID uniqueness check
+    const trimmedEmpId = editForm.employeeId.trim().toLowerCase();
+    if (!trimmedEmpId) {
+      toast.error("Employee ID is required.");
+      return;
+    }
+    const isDupEmpId = employees.some(
+      (emp) => emp.uid !== editEmployee.uid && (emp.employeeId || "").toLowerCase() === trimmedEmpId
+    );
+    if (isDupEmpId) {
+      toast.error(`Employee ID "${editForm.employeeId.trim()}" is already assigned to another employee.`);
+      return;
+    }
+
+    // Password validation if entered
+    if (editForm.password.trim() !== "") {
+      if (editForm.password.trim().length < 6) {
+        toast.error("Password must be at least 6 characters long.");
+        return;
+      }
+      if (editForm.password !== editForm.confirmPassword) {
+        toast.error("Passwords do not match.");
+        return;
+      }
+    }
+
     try {
       await updateEmployee(editEmployee.uid, editForm);
       setEditEmployee(null);
       toast.success("Employee updated successfully");
+      refreshData();
     } catch (err: any) {
       toast.error(err.message || "Failed to update employee");
     }
@@ -299,41 +356,37 @@ function EmployeesPage() {
     try {
       await setEmployeeStatus(emp.uid, newStatus);
       toast.success(`Employee ${newStatus === "active" ? "activated" : "deactivated"}`);
+      refreshData();
     } catch (err: any) {
       toast.error("Failed to update status");
     }
   };
 
-  const handleResetPasswordClick = async (emp: UserRecord) => {
-    if (!confirm(`Are you sure you want to reset password for ${emp.fullName}?`)) return;
-    try {
-      const newPassword = await resetEmployeePassword(emp.uid);
-      setShowSuccessCredentials({
-        show: true,
-        employeeId: emp.employeeId,
-        username: emp.username,
-        password: newPassword,
-      });
-      toast.success("Password reset successfully!");
-    } catch (err: any) {
-      toast.error("Failed to reset password");
-    }
-  };
-
-  const handleDeleteClick = (emp: UserRecord) => {
+  const handleDeleteClick = async (emp: UserRecord) => {
     setEmployeeToDelete(emp);
-    setPinModalOpen(true);
+    setDeleteConfirmOpen(true);
+    setFetchingTaskCount(true);
+    try {
+      const count = await getEmployeeAssignedTasksCount(emp.uid);
+      setAssignedTaskCount(count);
+    } catch (err) {
+      setAssignedTaskCount(0);
+    } finally {
+      setFetchingTaskCount(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
     if (!employeeToDelete) return;
     try {
       await deleteEmployee(employeeToDelete.uid);
-      toast.success("Employee deleted and archived successfully");
+      toast.success(`Employee deleted and ${assignedTaskCount} tasks unassigned successfully`);
+      refreshData();
     } catch (err: any) {
-      toast.error("Deletion failed");
+      toast.error(err.message || "Deletion failed");
     } finally {
       setEmployeeToDelete(null);
+      setAssignedTaskCount(0);
     }
   };
 
@@ -525,14 +578,6 @@ function EmployeesPage() {
                           title="Edit"
                         >
                           <Edit2 className="size-4 text-amber-600" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleResetPasswordClick(e)}
-                          title="Reset Password"
-                        >
-                          <KeyRound className="size-4 text-purple-600" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -740,15 +785,32 @@ function EmployeesPage() {
 
       {/* Edit Employee Dialog */}
       <Dialog open={!!editEmployee} onOpenChange={() => setEditEmployee(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg overflow-y-auto max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle>Edit Employee Details</DialogTitle>
+            <DialogTitle>Edit Employee Profile & Credentials</DialogTitle>
+            <DialogDescription>
+              Update employee information, username, role, status, or credentials.
+            </DialogDescription>
           </DialogHeader>
           {editEmployee && (
-            <form onSubmit={handleEditEmployee} className="space-y-4">
-              <div className="space-y-1">
-                <Label>Employee ID (Read Only)</Label>
-                <Input value={editEmployee.employeeId} disabled className="bg-muted" />
+            <form onSubmit={handleEditEmployee} className="space-y-4 pt-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Employee ID *</Label>
+                  <Input
+                    value={editForm.employeeId}
+                    onChange={(e) => setEditForm({ ...editForm, employeeId: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Username *</Label>
+                  <Input
+                    value={editForm.username}
+                    onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                    required
+                  />
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -795,20 +857,63 @@ function EmployeesPage() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <Label>Role *</Label>
-                <Select
-                  value={editForm.role}
-                  onValueChange={(val) => setEditForm({ ...editForm, role: val as "manager" | "employee" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="employee">Employee</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Role *</Label>
+                  <Select
+                    value={editForm.role}
+                    onValueChange={(val) => setEditForm({ ...editForm, role: val as any })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="employee">Employee</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Status *</Label>
+                  <Select
+                    value={editForm.status}
+                    onValueChange={(val) => setEditForm({ ...editForm, status: val as any })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="border-t pt-3 space-y-3">
+                <Label className="text-xs uppercase font-bold text-gray-400 block">Change Credentials (Optional)</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">New Password</Label>
+                    <Input
+                      type="password"
+                      placeholder="Leave blank to keep current"
+                      value={editForm.password}
+                      onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Confirm New Password</Label>
+                    <Input
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={editForm.confirmPassword}
+                      onChange={(e) => setEditForm({ ...editForm, confirmPassword: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
 
               <DialogFooter className="pt-2">
@@ -840,13 +945,15 @@ function EmployeesPage() {
                 </div>
               </div>
 
-              <div className="space-y-2.5 text-sm">
+              {/* Basic Information */}
+              <div className="space-y-2 text-sm">
+                <h5 className="text-xs font-bold uppercase text-gray-400 tracking-wider">Basic Information</h5>
                 <div className="flex justify-between border-b py-1">
                   <span className="text-muted-foreground">Employee ID</span>
                   <span className="font-semibold">{selectedEmployee.employeeId ?? "N/A"}</span>
                 </div>
                 <div className="flex justify-between border-b py-1">
-                  <span className="text-muted-foreground">Name</span>
+                  <span className="text-muted-foreground">Full Name</span>
                   <span className="font-medium">{selectedEmployee.fullName ?? (selectedEmployee as any).name ?? "N/A"}</span>
                 </div>
                 <div className="flex justify-between border-b py-1">
@@ -887,7 +994,44 @@ function EmployeesPage() {
                       : "N/A"}
                   </span>
                 </div>
+                <div className="flex justify-between border-b py-1">
+                  <span className="text-muted-foreground">Last Updated</span>
+                  <span className="font-medium">
+                    {(selectedEmployee as any).updatedAt
+                      ? new Date((selectedEmployee as any).updatedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
+                      : "N/A"}
+                  </span>
+                </div>
               </div>
+
+              {/* Login Credentials (Admin Only) */}
+              {session?.role === "admin" && (
+                <div className="bg-slate-50 border p-3 rounded-xl space-y-2">
+                  <h5 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Login Credentials (Admin Only)</h5>
+                  <div className="flex justify-between items-center text-sm border-b pb-1">
+                    <span className="text-muted-foreground">Username:</span>
+                    <span className="font-mono font-bold text-gray-800">{selectedEmployee.username ?? "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Password:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border">
+                        {showPassword ? (selectedEmployee.password || "••••••••") : "••••••••"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        onClick={() => setShowPassword(!showPassword)}
+                        title={showPassword ? "Hide Password" : "Show Password"}
+                      >
+                        {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <DialogFooter className="pt-2">
                 <Button onClick={() => setViewEmployeeOpen(false)}>Close</Button>
@@ -998,6 +1142,61 @@ function EmployeesPage() {
               onClick={() => setShowSuccessCredentials(null)}
             >
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Employee Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <AlertTriangle className="size-5" />
+              Confirm Employee Deletion
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-sm text-gray-700">
+            <p>
+              Are you sure you want to delete employee{" "}
+              <strong className="text-gray-900 font-bold">
+                {employeeToDelete?.fullName || employeeToDelete?.username}
+              </strong>
+              ?
+            </p>
+
+            {fetchingTaskCount ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-3 bg-slate-50 rounded-lg border">
+                <Loader2 className="size-3.5 animate-spin" />
+                Checking assigned tasks...
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-900 text-xs font-medium">
+                {assignedTaskCount > 0 ? (
+                  <span>
+                    This employee currently has <strong>{assignedTaskCount} assigned tasks</strong>. These tasks will automatically become <strong>Unassigned</strong>. Continue?
+                  </span>
+                ) : (
+                  <span>This employee has 0 assigned tasks. Account will be deleted and archived.</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={fetchingTaskCount}
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setPinModalOpen(true);
+              }}
+            >
+              Delete Employee
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -138,6 +138,28 @@ export function getProgressFromStatus(status: ServiceTaskStatus): number {
 
 // ─── Client Operations ────────────────────────────────────────────────────────
 
+export function sortClientsNewestFirst<T extends { createdAt?: string; createdOn?: string; timestamp?: any; id?: string; name?: string }>(clients: T[]): T[] {
+  return clients.sort((a, b) => {
+    const getTs = (c: T) => {
+      if (!c) return 0;
+      const val = c.createdAt || c.createdOn || c.timestamp;
+      if (!val) return 0;
+      if (typeof val === "string") {
+        const parsed = Date.parse(val);
+        return isNaN(parsed) ? 0 : parsed;
+      }
+      if (typeof val === "number") return val;
+      if ((val as any)?.seconds) return (val as any).seconds * 1000;
+      if (typeof (val as any)?.toDate === "function") return (val as any).toDate().getTime();
+      return 0;
+    };
+    const tA = getTs(a);
+    const tB = getTs(b);
+    if (tA !== tB) return tB - tA; // Newest first
+    return (a.name || "").localeCompare(b.name || "");
+  });
+}
+
 /** Subscribe to clients of a specific type (client/lead). */
 export function subscribeToClients(
   type: "client" | "lead",
@@ -149,7 +171,7 @@ export function subscribeToClients(
     q,
     (snap) => {
       const clients = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Client);
-      cb(clients.sort((a, b) => a.name.localeCompare(b.name)));
+      cb(sortClientsNewestFirst(clients));
     },
     (error) => {
       console.error(`[subscribeToClients] type=${type} failed:`, error);
@@ -169,7 +191,7 @@ export function subscribeAllClients(
     q,
     (snap) => {
       const clients = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Client);
-      cb(clients.sort((a, b) => a.name.localeCompare(b.name)));
+      cb(sortClientsNewestFirst(clients));
     },
     (error) => {
       console.error("[subscribeAllClients] failed:", error);

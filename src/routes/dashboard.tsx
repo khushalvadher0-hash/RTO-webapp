@@ -230,21 +230,13 @@ function DashboardLayout() {
           className="flex-1 overflow-y-auto p-3 space-y-5"
         >
           {GROUPS.map((group) => {
-            const isEmployee = user?.role === "employee";
             const isAdmin = user?.role === "admin";
             
-            if (isEmployee && group.heading === "Financial") return null;
-            
-            let filteredItems = group.items.filter(
-              (item) => item.to !== "/dashboard/employees" || isAdmin
-            );
-            
-            if (isEmployee) {
-              filteredItems = filteredItems.filter(
-                (item) =>
-                  item.to !== "/dashboard/settings"
-              );
-            }
+            let filteredItems = group.items.filter((item) => {
+              if (item.to === "/dashboard/employees") return isAdmin;
+              if (item.to === "/dashboard/settings" || item.to.startsWith("/dashboard/settings/")) return isAdmin;
+              return true;
+            });
 
             if (filteredItems.length === 0) return null;
 

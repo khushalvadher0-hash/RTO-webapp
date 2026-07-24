@@ -1,11 +1,19 @@
 // Auth — Firebase Auth + Firestore user profiles.
 // Maintains the same public API as the old localStorage auth so routes
 // don't need major changes.
-import { signInWithEmailAndPassword,
+import { 
+  signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  createUserWithEmailAndPassword as secondaryCreate,
+  signInWithEmailAndPassword as secondarySignIn,
+  updatePassword as secondaryUpdate,
+  signOut as secondarySignOut,
+  getAuth,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch } from "firebase/firestore";
+import { initializeApp, getApps } from "firebase/app";
+import { doc, getDoc, setDoc, collection, getDocs, writeBatch, onSnapshot, query } from "firebase/firestore";
+import { toast } from "sonner";
 import { auth, db } from "./firebase";
 import { STAFF_USERS } from "./records";
 
@@ -30,6 +38,22 @@ let _initialized = false;
 
 const EMAIL_DOMAIN = "staff-focus-hub.app";
 export const toEmail = (username: string) => `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+
+function getSecondaryAuth() {
+  const apps = getApps();
+  const existing = apps.find(a => a.name === 'SecondaryEmployeeAuth');
+  const secondaryApp = existing || initializeApp(firebaseConfig, 'SecondaryEmployeeAuth');
+  return getAuth(secondaryApp);
+}
 
 // ─── Staff account definitions ────────────────────────────────────────────────
 
@@ -64,31 +88,61 @@ export const STAFF_CREDENTIALS = ALL_ACCOUNTS.map((a) => ({
 
 // ─── First-run provisioning ───────────────────────────────────────────────────
 
-// Migration: ensure every user document has required fields
+// Migration: ensure seed users and required document fields exist in Firestore
 async function migrateUsers(): Promise<void> {
   const usersCol = collection(db, "users");
   const snapshot = await getDocs(usersCol);
+
+  const existingUsernames = new Set(
+    snapshot.docs.map((d) => (d.data().username || "").toLowerCase())
+  );
+
   const batch = writeBatch(db);
+  let batchCount = 0;
+
+  // 1. Pre-seed default staff accounts if missing in Firestore
+  for (const account of ALL_ACCOUNTS) {
+    if (!existingUsernames.has(account.username.toLowerCase())) {
+      const docRef = doc(usersCol);
+      batch.set(docRef, {
+        uid: docRef.id,
+        userId: docRef.id,
+        fullName: account.name,
+        name: account.name,
+        username: account.username,
+        password: account.password,
+        role: account.role,
+        status: "active",
+        isActive: true,
+        employeeId: account.employeeId,
+        createdBy: "system",
+        createdAt: new Date().toISOString(),
+      });
+      batchCount++;
+    }
+  }
+
+  // 2. Ensure default fields on existing docs
   snapshot.forEach((docSnap) => {
     const data = docSnap.data() as any;
     const updates: any = {};
-    // Role default
     if (!data.role) updates.role = "employee";
-    // Permissions default
     if (!data.permissions) updates.permissions = {};
-    // Status default based on username
     if (!data.status) {
-      const privileged = ["admin", "priya", "rahul", "staff"]; // same as privileged admins list
+      const privileged = ["admin", "priya", "rahul", "staff"];
       updates.status = privileged.includes(data.username) ? "active" : "inactive";
     }
-    // Add missing audit fields if needed
     if (!data.createdAt) updates.createdAt = new Date().toISOString();
     if (!data.createdBy) updates.createdBy = "system";
     if (Object.keys(updates).length) {
       batch.update(doc(db, "users", docSnap.id), updates);
+      batchCount++;
     }
   });
-  await batch.commit();
+
+  if (batchCount > 0) {
+    await batch.commit();
+  }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -98,53 +152,93 @@ async function migrateUsers(): Promise<void> {
  * The callback fires every time the signed-in user changes.
  * Returns an unsubscribe function for cleanup.
  */
+let _userDocUnsub: (() => void) | null = null;
+
 export function initAuth(onChange: (user: StaffUser | null) => void): () => void {
-  // Run background migration only; do not create auth accounts during normal page load.
   (async () => {
     await migrateUsers().catch(console.error);
   })();
 
-  return onAuthStateChanged(auth, async (firebaseUser) => {
+  const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (_userDocUnsub) {
+      _userDocUnsub();
+      _userDocUnsub = null;
+    }
+
     if (firebaseUser) {
-      const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-      if (snap.exists()) {
+      _userDocUnsub = onSnapshot(doc(db, "users", firebaseUser.uid), async (snap) => {
+        if (!snap.exists()) {
+          await logout();
+          onChange(null);
+          return;
+        }
+
         const data = snap.data();
+        const isInactive = data.status === "inactive" || data.isActive === false;
+
+        if (isInactive) {
+          toast.error("Your account has been deactivated by an administrator.");
+          await logout();
+          onChange(null);
+          return;
+        }
+
+        // Active session check for credential changes
+        if (_session && _session.uid === firebaseUser.uid && _session.role !== "admin") {
+          const credsChanged =
+            (data.username && data.username !== _session.username) ||
+            (data.credentialsChangedAt && data.credentialsChangedAt !== (_session as any).credentialsChangedAt);
+
+          if (credsChanged) {
+            toast.error("Your login credentials have been changed by an administrator. Please log in again.");
+            await logout();
+            onChange(null);
+            return;
+          }
+        }
+
         _session = {
           uid: firebaseUser.uid,
           username: data.username,
           name: data.fullName || data.name || data.username || "",
           role: data.role,
           employeeId: data.employeeId,
-          ...data
+          ...data,
         } as StaffUser;
-      } else {
-        _session = null;
-      }
+
+        _initialized = true;
+        try {
+          localStorage.setItem(
+            "rp_session",
+            JSON.stringify({
+              uid: _session.uid,
+              username: _session.username,
+              name: _session.name,
+              role: _session.role,
+              employeeId: _session.employeeId,
+              credentialsChangedAt: data.credentialsChangedAt,
+            }),
+          );
+        } catch {}
+        onChange(_session);
+      });
     } else {
       _session = null;
-    }
-    _initialized = true;
-    // Keep a lightweight session in localStorage for immediate restores
-    try {
-      if (_session) {
-        localStorage.setItem(
-          "rp_session",
-          JSON.stringify({
-            uid: _session.uid,
-            username: _session.username,
-            name: _session.name,
-            role: _session.role,
-            employeeId: _session.employeeId,
-          }),
-        );
-      } else {
+      _initialized = true;
+      try {
         localStorage.removeItem("rp_session");
-      }
-    } catch {
-      // ignore storage errors
+      } catch {}
+      onChange(null);
     }
-    onChange(_session);
   });
+
+  return () => {
+    if (_userDocUnsub) {
+      _userDocUnsub();
+      _userDocUnsub = null;
+    }
+    authUnsub();
+  };
 }
 
 /** Synchronous getter — populated after initAuth fires. */
@@ -171,25 +265,108 @@ export function isAuthReady(): boolean {
   return _initialized;
 }
 
-/** Sign in by username + password (maps to Firebase email internally). */
-export async function login(username: string, password: string): Promise<StaffUser> {
-  const cred = await signInWithEmailAndPassword(auth, toEmail(username), password);
-  const snap = await getDoc(doc(db, "users", cred.user.uid));
-  if (!snap.exists()) throw new Error("User profile not found — contact admin.");
-  const profile = snap.data();
-  if (!(profile.isActive ?? (profile.status === 'active'))) {
-    await signOut(auth);
-    if (profile.isActive === false || profile.status === 'inactive') {
-      throw new Error('Your account is inactive. Please contact the Administrator.');
-    }
-    if (profile.status === 'suspended') {
-      throw new Error('Your account has been suspended.');
-    }
-    // Fallback for any other disabled state
-    throw new Error('Account disabled');
+/** Sign in by username, employeeId, or email + password (maps to Firebase email internally). */
+export async function login(usernameInput: string, passwordInput: string): Promise<StaffUser> {
+  const cleanInput = usernameInput.trim();
+  const cleanPass = passwordInput.trim();
+
+  if (!cleanInput || !cleanPass) {
+    throw new Error("Username and password are required.");
   }
+
+  // 1. Search Firestore users collection by username, employeeId, or email
+  const usersCol = collection(db, "users");
+  const snapshot = await getDocs(query(usersCol));
+  const userDocSnap = snapshot.docs.find((d) => {
+    const data = d.data();
+    const uName = (data.username || "").toLowerCase();
+    const eId = (data.employeeId || "").toLowerCase();
+    const emailStr = (data.email || "").toLowerCase();
+    const target = cleanInput.toLowerCase();
+    return uName === target || eId === target || emailStr === target;
+  });
+
+  let targetUsername = cleanInput;
+  let userProfile: any = null;
+
+  if (userDocSnap) {
+    userProfile = userDocSnap.data();
+    targetUsername = userProfile.username || cleanInput;
+
+    // Check account status
+    const isInactive = userProfile.status === "inactive" || userProfile.isActive === false;
+    if (isInactive) {
+      throw new Error("Your account is inactive. Please contact the Administrator.");
+    }
+    if (userProfile.status === "suspended") {
+      throw new Error("Your account has been suspended.");
+    }
+
+    // Check password matching against Firestore user record or default seed account
+    const expectedPassword = userProfile.password;
+    if (expectedPassword && expectedPassword !== cleanPass) {
+      const seedAccount = ALL_ACCOUNTS.find(
+        (a) => a.username.toLowerCase() === targetUsername.toLowerCase()
+      );
+      if (!seedAccount || seedAccount.password !== cleanPass) {
+        throw new Error("Invalid username or password.");
+      }
+    }
+  }
+
+  // 2. Authenticate with Firebase Auth
+  const firebaseEmail = toEmail(targetUsername);
+  let cred;
+
+  try {
+    cred = await signInWithEmailAndPassword(auth, firebaseEmail, cleanPass);
+  } catch (err: any) {
+    console.warn("Primary sign-in failed, checking secondary auth auto-provisioning fallback...", err);
+    if (userProfile) {
+      try {
+        const secAuth = getSecondaryAuth();
+        try {
+          await secondaryCreate(secAuth, firebaseEmail, cleanPass);
+        } catch (createErr: any) {
+          if (createErr?.code === "auth/email-already-in-use") {
+            try {
+              const secCred = await secondarySignIn(secAuth, firebaseEmail, userProfile.password || cleanPass);
+              if (secCred.user) {
+                await secondaryUpdate(secCred.user, cleanPass);
+              }
+            } catch {}
+          }
+        }
+        await secondarySignOut(secAuth);
+        cred = await signInWithEmailAndPassword(auth, firebaseEmail, cleanPass);
+      } catch (fallbackErr) {
+        throw new Error("Invalid username or password.");
+      }
+    } else {
+      throw new Error("Invalid username or password.");
+    }
+  }
+
+  // 3. Resolve Firestore profile doc
+  let docId = cred.user.uid;
+  let snap = await getDoc(doc(db, "users", docId));
+  if (!snap.exists() && userDocSnap) {
+    docId = userDocSnap.id;
+    snap = userDocSnap;
+  }
+
+  if (!snap.exists()) {
+    throw new Error("User profile not found — contact admin.");
+  }
+
+  const profile = snap.data() as any;
+  if (profile.status === "inactive" || profile.isActive === false) {
+    await signOut(auth);
+    throw new Error("Your account is inactive. Please contact the Administrator.");
+  }
+
   _session = {
-    uid: cred.user.uid,
+    uid: docId,
     username: profile.username,
     name: profile.fullName || profile.name || profile.username || "",
     role: profile.role,

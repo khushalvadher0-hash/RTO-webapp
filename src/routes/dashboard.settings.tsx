@@ -48,10 +48,10 @@ function SettingsPage() {
   const [changePinOpen, setChangePinOpen] = useState(false);
 
   const session = getSession();
-  if (session?.role === "employee") {
+  if (session?.role !== "admin") {
     return <Navigate to="/dashboard" replace />;
   }
-  const isAdmin = session?.role === "admin";
+  const isAdmin = true;
 
   useEffect(() => {
     try {

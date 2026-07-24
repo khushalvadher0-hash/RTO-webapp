@@ -8,7 +8,7 @@ import {
   type Bucket,
   type PaymentStatus,
 } from "./records";
-import { subscribeAllClients, subscribeAllVehicles, subscribeAllServices } from "./hierarchy";
+import { subscribeAllClients, subscribeAllVehicles, subscribeAllServices, sortClientsNewestFirst } from "./hierarchy";
 
 export type CustomerProfile = any;
 
@@ -272,7 +272,7 @@ export function aggregateAllClients(
     }
   }
 
-  return clients.sort((a, b) => a.name.localeCompare(b.name));
+  return sortClientsNewestFirst(clients);
 }
 
 /**
@@ -432,7 +432,7 @@ export function subscribeToAllClients(callback: (clients: AggregatedClient[]) =>
       };
     });
 
-    callback(aggregated.sort((a, b) => a.name.localeCompare(b.name)));
+    callback(sortClientsNewestFirst(aggregated));
   };
 
   const unsubClients = subscribeAllClients((clients) => {

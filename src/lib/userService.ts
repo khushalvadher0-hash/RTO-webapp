@@ -7,6 +7,7 @@ import {
   createUserWithEmailAndPassword as secondaryCreate, 
   signInWithEmailAndPassword as secondarySignIn, 
   updatePassword as secondaryUpdate, 
+  updateEmail as secondaryUpdateEmail,
   signOut as secondarySignOut,
   deleteUser as secondaryDelete
 } from 'firebase/auth';
@@ -36,7 +37,7 @@ export type UserRecord = {
 
 export type EmployeeAuditLog = {
   id: string;
-  action: 'Employee Created' | 'Employee Edited' | 'Password Reset' | 'Employee Deactivated' | 'Employee Deleted';
+  action: 'Employee Created' | 'Employee Edited' | 'Employee Credentials Updated' | 'Password Reset' | 'Employee Deactivated' | 'Employee Deleted';
   performedBy: string;
   timestamp: string; // ISO
   details?: string;
@@ -239,29 +240,213 @@ export async function createEmployee(input: {
   };
 }
 
-/** Edit Employee Details */
-export async function updateEmployee(
-  uid: string,
-  updates: Partial<Omit<UserRecord, 'uid' | 'userId' | 'password' | 'employeeId' | 'createdBy' | 'createdAt'>>
+export interface UpdateEmployeeInput {
+  fullName?: string;
+  username?: string;
+  password?: string;
+  email?: string;
+  mobile?: string;
+  employeeId?: string;
+  department?: string;
+  designation?: string;
+  role?: 'admin' | 'manager' | 'employee' | 'viewer';
+  status?: 'active' | 'inactive';
+}
+
+/** Helper to synchronize employee email (username) and password in Firebase Auth */
+async function syncEmployeeFirebaseAuth(
+  oldUsername: string,
+  oldPassword: string | undefined,
+  newUsername: string,
+  newPassword: string | undefined
 ) {
+  const secAuth = getSecondaryAuth();
+  const oldEmail = toEmail(oldUsername);
+  const newEmail = toEmail(newUsername);
+  const effectiveOldPass = oldPassword || `${oldUsername}123`;
+  const effectiveNewPass = newPassword || effectiveOldPass;
+
+  let signedInUser: any = null;
+
+  // Try signing in with various combination fallbacks to locate the user in Firebase Auth
+  const attemptCombos = [
+    { email: oldEmail, pass: effectiveOldPass },
+    { email: newEmail, pass: effectiveOldPass },
+    { email: newEmail, pass: effectiveNewPass },
+    { email: oldEmail, pass: effectiveNewPass },
+  ];
+
+  for (const combo of attemptCombos) {
+    try {
+      const cred = await secondarySignIn(secAuth, combo.email, combo.pass);
+      signedInUser = cred.user;
+      break;
+    } catch {
+      // Continue to next combination fallback
+    }
+  }
+
+  if (signedInUser) {
+    try {
+      if (signedInUser.email?.toLowerCase() !== newEmail.toLowerCase()) {
+        await secondaryUpdateEmail(signedInUser, newEmail);
+      }
+      if (newPassword && newPassword.trim() !== '') {
+        await secondaryUpdate(signedInUser, newPassword.trim());
+      }
+      await secondarySignOut(secAuth);
+      return;
+    } catch (err) {
+      console.warn("Secondary auth user update error:", err);
+      try {
+        await secondarySignOut(secAuth);
+      } catch {}
+    }
+  }
+
+  // Fallback: If user didn't exist in Firebase Auth yet, create the user with new credentials
+  try {
+    await secondaryCreate(secAuth, newEmail, effectiveNewPass);
+    await secondarySignOut(secAuth);
+  } catch (createErr: any) {
+    if (createErr?.code !== "auth/email-already-in-use") {
+      console.warn("Secondary auth user creation fallback notice:", createErr);
+    }
+  }
+}
+
+/** Edit Employee Details with full field validation, Firebase Auth sync, and detailed audit logging */
+export async function updateEmployee(uid: string, input: UpdateEmployeeInput) {
   const userRef = doc(USERS_COL, uid);
   const snap = await getDoc(userRef);
   if (!snap.exists()) throw new Error('Employee not found');
   const oldData = snap.data() as UserRecord;
 
-  const actor = getSession()?.username || 'system';
-  const data = { 
-    ...updates, 
-    updatedBy: actor, 
-    updatedAt: new Date().toISOString() 
+  const actor = getSession()?.username || getSession()?.name || 'system';
+  const changes: string[] = [];
+  const now = new Date().toISOString();
+
+  const docUpdates: any = {
+    updatedBy: actor,
+    updatedAt: now,
   };
 
-  await updateDoc(userRef, data);
-  await logEmployeeAction(
-    'Employee Edited', 
-    `Edited details for employee ${oldData.fullName} (${oldData.employeeId})`, 
-    actor
-  );
+  const oldUsername = oldData.username || '';
+  const rawNewUsername = input.username !== undefined ? input.username.trim() : oldUsername;
+  const usernameChanged = rawNewUsername.toLowerCase() !== oldUsername.toLowerCase();
+
+  const oldPassword = oldData.password || '';
+  const rawNewPassword = input.password !== undefined ? input.password.trim() : '';
+  const passwordChanged = Boolean(rawNewPassword && rawNewPassword !== oldPassword);
+
+  // 1. Full Name
+  if (input.fullName !== undefined && input.fullName.trim() !== '') {
+    const newName = input.fullName.trim();
+    if (newName !== oldData.fullName) {
+      docUpdates.fullName = newName;
+      docUpdates.name = newName;
+      changes.push(`Full Name: "${oldData.fullName || ''}" → "${newName}"`);
+    }
+  }
+
+  // 2. Username
+  if (usernameChanged) {
+    const allUsersSnap = await getDocs(query(USERS_COL));
+    const duplicateUser = allUsersSnap.docs.find(
+      (d) => d.id !== uid && (d.data().username || '').toLowerCase() === rawNewUsername.toLowerCase()
+    );
+    if (duplicateUser) {
+      throw new Error(`Username "${rawNewUsername}" is already taken by another employee.`);
+    }
+    docUpdates.username = rawNewUsername;
+    changes.push(`Username: "${oldUsername}" → "${rawNewUsername}"`);
+  }
+
+  // 3. Employee ID
+  if (input.employeeId !== undefined && input.employeeId.trim() !== '') {
+    const newEmpId = input.employeeId.trim();
+    if (newEmpId.toLowerCase() !== (oldData.employeeId || '').toLowerCase()) {
+      const allUsersSnap = await getDocs(query(USERS_COL));
+      const duplicateEmpId = allUsersSnap.docs.find(
+        (d) => d.id !== uid && (d.data().employeeId || '').toLowerCase() === newEmpId.toLowerCase()
+      );
+      if (duplicateEmpId) {
+        throw new Error(`Employee ID "${newEmpId}" is already assigned to another employee.`);
+      }
+      docUpdates.employeeId = newEmpId;
+      changes.push(`Employee ID: "${oldData.employeeId || ''}" → "${newEmpId}"`);
+    }
+  }
+
+  // 4. Password
+  if (passwordChanged) {
+    if (rawNewPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+    docUpdates.password = rawNewPassword;
+    changes.push('Password updated');
+  }
+
+  if (usernameChanged || passwordChanged) {
+    docUpdates.credentialsChangedAt = now;
+  }
+
+  // 5. Email & Mobile
+  if (input.email !== undefined && input.email !== oldData.email) {
+    docUpdates.email = input.email.trim();
+    changes.push(`Email: "${oldData.email || ''}" → "${input.email.trim()}"`);
+  }
+  if (input.mobile !== undefined && input.mobile !== oldData.mobile) {
+    docUpdates.mobile = input.mobile.trim();
+    changes.push(`Mobile: "${oldData.mobile || ''}" → "${input.mobile.trim()}"`);
+  }
+
+  // 6. Department & Designation
+  if (input.department !== undefined && input.department !== oldData.department) {
+    docUpdates.department = input.department.trim();
+    changes.push(`Department: "${oldData.department || ''}" → "${input.department.trim()}"`);
+  }
+  if (input.designation !== undefined && input.designation !== oldData.designation) {
+    docUpdates.designation = input.designation.trim();
+    changes.push(`Designation: "${oldData.designation || ''}" → "${input.designation.trim()}"`);
+  }
+
+  // 7. Role
+  if (input.role && input.role !== oldData.role) {
+    docUpdates.role = input.role;
+    changes.push(`Role: "${oldData.role || ''}" → "${input.role}"`);
+  }
+
+  // 8. Status
+  if (input.status && input.status !== oldData.status) {
+    docUpdates.status = input.status;
+    docUpdates.isActive = input.status === 'active';
+    changes.push(`Status: "${oldData.status || ''}" → "${input.status}"`);
+  }
+
+  // Synchronize to Firebase Auth
+  if (usernameChanged || passwordChanged) {
+    await syncEmployeeFirebaseAuth(
+      oldUsername,
+      oldPassword,
+      rawNewUsername,
+      passwordChanged ? rawNewPassword : undefined
+    );
+  }
+
+  // Update Firestore
+  await updateDoc(userRef, docUpdates);
+
+  // Formulate Audit Details
+  const isCredUpdate = usernameChanged || passwordChanged;
+  const auditAction = isCredUpdate ? 'Employee Credentials Updated' : 'Employee Edited';
+
+  let auditDetails = `Updated by Admin (${actor}). Previous Username: "${oldUsername}", New Username: "${rawNewUsername}", Password Changed: ${passwordChanged ? 'Yes' : 'No'}.`;
+  if (changes.length > 0) {
+    auditDetails += ` Details: ${changes.join('; ')}`;
+  }
+
+  await logEmployeeAction(auditAction, auditDetails, actor);
 }
 
 /** Reset Password */
@@ -335,13 +520,57 @@ export async function setEmployeeStatus(uid: string, status: 'active' | 'inactiv
   );
 }
 
-/** Delete Employee (Archives then Deletes) */
+/** Fetch assigned tasks count for an employee before deletion dialog */
+export async function getEmployeeAssignedTasksCount(uid: string): Promise<number> {
+  try {
+    const userRef = doc(USERS_COL, uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) return 0;
+    const userData = snap.data() as UserRecord;
+
+    const identifiers = [
+      uid,
+      userData.userId,
+      userData.employeeId,
+      userData.username,
+      userData.fullName,
+    ]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+
+    const tasksSnap = await getDocs(collection(db, "registry_tasks"));
+    let count = 0;
+
+    tasksSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const taskAssignees = [
+        data.assignee,
+        data.assignedEmployeeId,
+        data.assignedEmployeeUid,
+        data.assignedEmployeeName,
+      ]
+        .filter(Boolean)
+        .map((s) => String(s).trim().toLowerCase());
+
+      if (taskAssignees.some((val) => identifiers.includes(val))) {
+        count++;
+      }
+    });
+
+    return count;
+  } catch (err) {
+    console.error("Failed to get employee assigned tasks count:", err);
+    return 0;
+  }
+}
+
+/** Delete Employee (Archives employee, unassigns all assigned tasks with activity logs, and deletes user doc) */
 export async function deleteEmployee(uid: string) {
   const userRef = doc(USERS_COL, uid);
   const snap = await getDoc(userRef);
   if (!snap.exists()) throw new Error('Employee not found');
   const userData = snap.data() as UserRecord;
-  const actor = getSession()?.username || 'system';
+  const actor = getSession()?.username || getSession()?.name || 'system';
 
   // 1. Delete from Firebase Auth using secondary auth
   if (userData.password) {
@@ -356,20 +585,118 @@ export async function deleteEmployee(uid: string) {
     }
   }
 
-  // 2. Move to archive collection
+  const identifiers = [
+    uid,
+    userData.userId,
+    userData.employeeId,
+    userData.username,
+    userData.fullName,
+  ]
+    .filter(Boolean)
+    .map((s) => String(s).trim().toLowerCase());
+
+  const empName = userData.fullName || userData.username || "Employee";
+  const now = new Date().toISOString();
+
+  const batch = writeBatch(db);
+
+  // 2. Unassign and log activity on matching registry_tasks
+  const tasksSnap = await getDocs(collection(db, "registry_tasks"));
+  let unassignedCount = 0;
+
+  tasksSnap.forEach((docSnap) => {
+    const data = docSnap.data();
+    const taskAssignees = [
+      data.assignee,
+      data.assignedEmployeeId,
+      data.assignedEmployeeUid,
+      data.assignedEmployeeName,
+    ]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+
+    if (taskAssignees.some((val) => identifiers.includes(val))) {
+      unassignedCount++;
+      const existingActivity = Array.isArray(data.activityLogs)
+        ? data.activityLogs
+        : Array.isArray(data.activity)
+          ? data.activity
+          : [];
+
+      const activityMessage = `Assigned employee "${empName}" was removed because the employee account was deleted.`;
+      const newActivityLog = {
+        id: crypto.randomUUID(),
+        action: activityMessage,
+        performedBy: actor,
+        performedAt: now,
+        at: now,
+        actor: actor,
+        message: activityMessage,
+      };
+
+      batch.update(docSnap.ref, {
+        assignee: "",
+        assignedEmployeeId: "",
+        assignedEmployeeUid: "",
+        assignedEmployeeName: "Unassigned",
+        assignedEmployeeRole: "",
+        assignmentStatus: "Unassigned",
+        activityLogs: [...existingActivity, newActivityLog],
+        activity: [...existingActivity, newActivityLog],
+        lastUpdatedAt: now,
+        lastUpdatedBy: actor,
+      });
+    }
+  });
+
+  // 3. Unassign matching registry_services_v2
+  const servicesSnap = await getDocs(collection(db, "registry_services_v2"));
+  servicesSnap.forEach((docSnap) => {
+    const data = docSnap.data();
+    const serviceAssignees = [
+      data.assignee,
+      data.assignedTo,
+      data.employeeId,
+      data.assignedStaff,
+      data.assignedEmployeeId,
+      data.assignedEmployeeUid,
+      data.assignedEmployeeName,
+    ]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+
+    if (serviceAssignees.some((val) => identifiers.includes(val))) {
+      batch.update(docSnap.ref, {
+        assignee: "",
+        assignedTo: "",
+        employeeId: "",
+        assignedStaff: "",
+        assignedEmployeeId: "",
+        assignedEmployeeUid: "",
+        assignedEmployeeName: "Unassigned",
+        assignedEmployeeRole: "",
+        updatedAt: now,
+        updatedBy: actor,
+      });
+    }
+  });
+
+  // 4. Move to archive collection
   const archiveRef = doc(db, 'employee_archive', uid);
-  await setDoc(archiveRef, {
+  batch.set(archiveRef, {
     ...userData,
-    archivedAt: new Date().toISOString(),
+    archivedAt: now,
     archivedBy: actor,
   });
 
-  // 3. Delete from users collection
-  await deleteDoc(userRef);
+  // 5. Delete from users collection
+  batch.delete(userRef);
+
+  await batch.commit();
 
   await logEmployeeAction(
     'Employee Deleted', 
-    `Deleted and archived employee ${userData.fullName} (${userData.employeeId})`, 
+    `Deleted and archived employee ${userData.fullName} (${userData.employeeId}) and unassigned ${unassignedCount} tasks`, 
     actor
   );
 }
