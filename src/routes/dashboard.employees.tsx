@@ -116,7 +116,7 @@ function EmployeesPage() {
     mobile: "",
     department: "",
     designation: "",
-    role: "employee" as "manager" | "employee" | "admin",
+    role: "employee" as "admin" | "manager" | "employee" | "viewer",
     password: "",
     confirmPassword: "",
     status: "active" as "active" | "inactive",
@@ -477,8 +477,10 @@ function EmployeesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="employee">Employee</SelectItem>
+                <SelectItem value="viewer">Viewer</SelectItem>
               </SelectContent>
             </Select>
 
@@ -539,8 +541,19 @@ function EmployeesPage() {
                     <td className="p-3 font-medium">{e.fullName}</td>
                     <td className="p-3 text-muted-foreground font-mono">{e.username}</td>
                     <td className="p-3">
-                      <Badge variant={e.role === "manager" ? "default" : "secondary"}>
-                        {e.role === "manager" ? "Manager" : "Employee"}
+                      <Badge
+                        variant={
+                          e.role === "admin"
+                            ? "destructive"
+                            : e.role === "manager"
+                            ? "default"
+                            : e.role === "viewer"
+                            ? "outline"
+                            : "secondary"
+                        }
+                        className="capitalize"
+                      >
+                        {e.role || "employee"}
                       </Badge>
                     </td>
                     <td className="p-3">{e.mobile || "—"}</td>

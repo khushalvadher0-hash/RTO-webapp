@@ -139,7 +139,7 @@ export async function createEmployee(input: {
   mobile?: string;
   department?: string;
   designation?: string;
-  role: 'manager' | 'employee' | 'admin';
+  role: 'admin' | 'manager' | 'employee' | 'viewer';
   status?: 'active' | 'inactive';
 }) {
   const employeeId = await generateEmployeeId();
