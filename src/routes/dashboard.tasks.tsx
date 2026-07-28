@@ -173,6 +173,7 @@ function TasksPage() {
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [v2Services, setV2Services] = useState<any[]>([]);
+  const [applications, setApplications] = useState<any[]>([]);
 
   const isAdmin = session?.role === "admin" || session?.role === "manager";
   const canSeeAllTasks = isAdmin;
@@ -232,31 +233,11 @@ function TasksPage() {
     });
     const u6 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
       const services = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      // Background auto-healing
-      services.forEach((s: any) => {
-        const uid = s.assignedEmployeeUid || s.assignedTo || s.employeeId || s.assignee || s.assignedStaff;
-        if (uid && uid.length > 15 && !s.assignedEmployeeName) {
-          import("@/lib/tasks").then(({ resolveAssigneeIdentity }) => {
-            resolveAssigneeIdentity(uid).then((info) => {
-              if (info.assignedEmployeeName) {
-                updateDoc(doc(db, "registry_services_v2", s.id), {
-                  assignee: info.assignedEmployeeUid,
-                  assignedTo: info.assignedEmployeeUid,
-                  employeeId: info.assignedEmployeeUid,
-                  assignedStaff: info.assignedEmployeeUid,
-                  assignedEmployeeId: info.assignedEmployeeId,
-                  assignedEmployeeUid: info.assignedEmployeeUid,
-                  assignedEmployeeName: info.assignedEmployeeName,
-                  assignedEmployeeRole: info.assignedEmployeeRole,
-                }).catch(console.error);
-              }
-            });
-          });
-        }
-      });
-
       setV2Services(services);
+    });
+    const u7 = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
+      const apps = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setApplications(apps);
     });
     return () => {
       u1();
@@ -264,6 +245,7 @@ function TasksPage() {
       u4();
       u5();
       u6();
+      u7();
     };
   }, []);
 
@@ -326,8 +308,71 @@ function TasksPage() {
       };
     });
 
-    return [...manualTasksMapped, ...serviceTasks];
-  }, [tasks, v2Services, vehicles, clients, leads]);
+    // 3. Generate task objects dynamically from registry_applications_v1 (1 application per row)
+    const appTasks: Task[] = [];
+    applications.forEach((app: any) => {
+      const srvList: string[] = app.services || [];
+      const servicesCombined = srvList.length > 0 ? srvList.join(", ") : "General Service";
+      const appNum = app.applicationId || app.id || "";
+      const vehNo = app.vehicleNumber || "";
+      const clientName = app.ownerName || "Unknown Client";
+      const mobNo = app.mobileNumber || "";
+      const assignedEmp = app.assignedEmployeeName || "Unassigned";
+
+      const taskId = `task-app-${app.id}`;
+      appTasks.push({
+        id: taskId,
+        taskId,
+        title: `${servicesCombined} - ${vehNo || appNum}`,
+        serviceName: servicesCombined,
+        serviceType: servicesCombined,
+        description: `Application for ${servicesCombined} on vehicle ${vehNo}`,
+        assignee: assignedEmp,
+        assignedEmployeeId: assignedEmp,
+        assignedEmployeeName: assignedEmp,
+        assignedEmployeeUid: assignedEmp,
+        status: (app.applicationStatus === "Approved" ? "Completed" : app.applicationStatus === "On Hold" ? "On Hold" : "Assigned") as TaskStatus,
+        priority: (app.priority || "Medium") as TaskPriority,
+        done: app.applicationStatus === "Approved",
+        createdAt: app.createdAt || new Date().toISOString(),
+        createdBy: app.createdBy || "System",
+        dueDate: app.expiryDate || "",
+        associationType: "client",
+        bucket: "clients",
+        recordId: app.id,
+        clientId: app.id,
+        clientName: clientName,
+        manual: false,
+        progress: app.applicationStatus === "Approved" ? 100 : 0,
+        reminderMinutes: 0,
+        remarks: app.remarks || "",
+        applicationId: appNum,
+        applicationType: "Home",
+        appointmentDate: app.appointmentDate || "",
+        vehicleNumber: vehNo,
+        mobileNumber: mobNo,
+        phone: mobNo,
+        reference: `${appNum} - ${vehNo}`,
+        issueDate: app.createdAt || "",
+        subtasks: [],
+      });
+    });
+
+    const activeTasksOnly = manualTasksMapped.filter((t) => t.status !== "Completed" && !t.done);
+    const activeServiceTasksOnly = serviceTasks.filter((s) => s.status !== "Completed" && !s.done);
+    const activeAppTasksOnly = appTasks.filter((a) => a.status !== "Completed" && !a.done);
+
+    // Deduplicate by ID & Application reference to avoid double counts
+    const map = new Map<string, Task>();
+    [...activeTasksOnly, ...activeServiceTasksOnly, ...activeAppTasksOnly].forEach((item) => {
+      const key = item.taskId || item.id || `${item.applicationId}-${item.serviceName}`;
+      if (!map.has(key)) {
+        map.set(key, item);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [tasks, v2Services, vehicles, clients, leads, applications]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
 
@@ -361,12 +406,28 @@ function TasksPage() {
 
     if (query.trim()) {
       const q = query.toLowerCase();
-      list = list.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          (t.description ?? "").toLowerCase().includes(q) ||
-          (t.assignedEmployeeName || "Former Employee").toLowerCase().includes(q),
-      );
+      list = list.filter((t) => {
+        const info = getTaskInfoHelper(t, clients, leads, vehicles);
+        const titleMatch = t.title.toLowerCase().includes(q);
+        const descMatch = (t.description ?? "").toLowerCase().includes(q);
+        const empMatch = (t.assignedEmployeeName || t.assignee || "").toLowerCase().includes(q);
+        const vehicleMatch = (info.vehicleNum || t.vehicleId || "").toLowerCase().includes(q);
+        const appNoMatch = (t.applicationId || "").toLowerCase().includes(q);
+        const clientMatch = (info.clientName || t.clientName || "").toLowerCase().includes(q);
+        const phoneMatch = (info.clientPhone || "").toLowerCase().includes(q);
+        const refMatch = (t.reference || t.title || "").toLowerCase().includes(q);
+
+        return (
+          titleMatch ||
+          descMatch ||
+          empMatch ||
+          vehicleMatch ||
+          appNoMatch ||
+          clientMatch ||
+          phoneMatch ||
+          refMatch
+        );
+      });
     }
     if (statusFilter !== "all") list = list.filter((t) => t.status === statusFilter);
     if (priorityFilter !== "all") list = list.filter((t) => t.priority === priorityFilter);
@@ -471,20 +532,133 @@ function TasksPage() {
     }
   };
 
+  // On Hold Modal State
+  const [holdTask, setHoldTask] = useState<Task | null>(null);
+  const [holdReason, setHoldReason] = useState("");
+  const [holdRemarks, setHoldRemarks] = useState("");
+  const [savingHold, setSavingHold] = useState(false);
+
+  // Complete Task Modal State
+  const [completeModalTask, setCompleteModalTask] = useState<Task | null>(null);
+  const [completeAppointmentDate, setCompleteAppointmentDate] = useState("");
+  const [completeRtoExpense, setCompleteRtoExpense] = useState<string>("");
+  const [completeRemarks, setCompleteRemarks] = useState("");
+  const [savingComplete, setSavingComplete] = useState(false);
+
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
+    if (s === "On Hold") {
+      setHoldTask(task);
+      setHoldReason(task.holdReason || "");
+      setHoldRemarks(task.holdRemarks || task.remarks || "");
+      return;
+    }
+    if (s === "Completed") {
+      setCompleteModalTask(task);
+      setCompleteAppointmentDate(task.appointmentDate || new Date().toISOString().split("T")[0]);
+      setCompleteRtoExpense(task.rtoExpense ? String(task.rtoExpense) : "");
+      setCompleteRemarks(task.remarks || "");
+      return;
+    }
+
     try {
       await updateTask(
         task.id,
-        { status: s, done: s === "Completed" },
+        { status: s, done: false },
         session?.username || "system",
         `Status → ${s}`,
       );
-      if (s === "Completed") {
-        await setTaskDone(task.id, true, session?.username || "system");
-      }
       toast.success(`Status updated to ${s}`);
     } catch (err: any) {
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleSaveHoldStatus = async () => {
+    if (!holdTask) return;
+    if (!holdReason.trim()) {
+      toast.error("Hold Reason is required");
+      return;
+    }
+    if (!holdRemarks.trim()) {
+      toast.error("Remarks are required");
+      return;
+    }
+
+    setSavingHold(true);
+    try {
+      await updateTask(
+        holdTask.id,
+        {
+          status: "On Hold",
+          done: false,
+          holdReason: holdReason.trim(),
+          holdRemarks: holdRemarks.trim(),
+          remarks: holdRemarks.trim(),
+        },
+        session?.username || "system",
+        `Status → On Hold (Reason: ${holdReason.trim()})`,
+      );
+      toast.success("Task updated to On Hold");
+      setHoldTask(null);
+      setHoldReason("");
+      setHoldRemarks("");
+    } catch (err: any) {
+      toast.error("Failed to set task on hold");
+    } finally {
+      setSavingHold(false);
+    }
+  };
+
+  const handleSaveCompleteStatus = async () => {
+    if (!completeModalTask) return;
+
+    setSavingComplete(true);
+    try {
+      const expNum = parseFloat(completeRtoExpense) || 0;
+      await updateTask(
+        completeModalTask.id,
+        {
+          status: "Completed",
+          done: true,
+          appointmentDate: completeAppointmentDate,
+          rtoExpense: expNum,
+          remarks: completeRemarks.trim(),
+        },
+        session?.username || "system",
+        `Status → Completed`,
+      );
+      await setTaskDone(completeModalTask.id, true, session?.username || "system");
+
+      // Sync to registry_services_v2 collection if exists or create service record
+      try {
+        const serviceRef = doc(db, "registry_services_v2", completeModalTask.id);
+        await setDoc(
+          serviceRef,
+          removeUndefined({
+            id: completeModalTask.id,
+            status: "Completed",
+            taskStatus: "Completed",
+            appointmentDate: completeAppointmentDate,
+            rtoExpense: expNum,
+            remarks: completeRemarks.trim(),
+            notes: completeRemarks.trim(),
+            updatedAt: new Date().toISOString(),
+          }),
+          { merge: true }
+        );
+      } catch (svcErr) {
+        console.warn("Service doc sync notice:", svcErr);
+      }
+
+      toast.success("Task completed and transferred to Services!");
+      setCompleteModalTask(null);
+      setCompleteAppointmentDate("");
+      setCompleteRtoExpense("");
+      setCompleteRemarks("");
+    } catch (err: any) {
+      toast.error("Failed to complete task");
+    } finally {
+      setSavingComplete(false);
     }
   };
 
@@ -545,7 +719,7 @@ function TasksPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Search tasks by title, description, assignee…"
+                placeholder="Search by Vehicle No, Application No, Client Name, Reference, Employee, Phone…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -937,8 +1111,7 @@ function TasksPage() {
               <Textarea
                 id="remarkText"
                 rows={4}
-                required
-                placeholder="e.g. Documents collected from client."
+                placeholder="Type operational update remarks here..."
                 value={quickRemarkText}
                 onChange={(e) => setQuickRemarkText(e.target.value)}
               />
@@ -958,27 +1131,155 @@ function TasksPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Status = On Hold Modal */}
+      {holdTask && (
+        <Dialog open={!!holdTask} onOpenChange={(v) => !v && setHoldTask(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-amber-700 flex items-center gap-2">
+                <AlertTriangle className="size-5" /> Put Task On Hold
+              </DialogTitle>
+              <DialogDescription>
+                Please provide the required hold reason and remarks before setting task to On Hold.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="holdReason" className="text-xs uppercase font-bold text-gray-600">
+                  Hold Reason *
+                </Label>
+                <Input
+                  id="holdReason"
+                  placeholder="e.g. Waiting for Client Documents, RTO Query..."
+                  value={holdReason}
+                  onChange={(e) => setHoldReason(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="holdRemarks" className="text-xs uppercase font-bold text-gray-600">
+                  Remarks *
+                </Label>
+                <Textarea
+                  id="holdRemarks"
+                  rows={3}
+                  placeholder="Additional details regarding why task is on hold..."
+                  value={holdRemarks}
+                  onChange={(e) => setHoldRemarks(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setHoldTask(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveHoldStatus}
+                disabled={savingHold || !holdReason.trim() || !holdRemarks.trim()}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {savingHold ? <Loader2 className="size-4 animate-spin" /> : "Save On Hold Status"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Status = Complete Task Modal (Matching closing popup UI) */}
+      {completeModalTask && (
+        <Dialog open={!!completeModalTask} onOpenChange={(v) => !v && setCompleteModalTask(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-slate-900 font-bold text-lg">Complete Task</DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                Fill in the closing details
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                  APPOINTMENT DATE
+                </Label>
+                <Input
+                  type="date"
+                  value={completeAppointmentDate}
+                  onChange={(e) => setCompleteAppointmentDate(e.target.value)}
+                  className="bg-slate-50 font-medium text-slate-900"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                  RTO EXPENSE
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₹</span>
+                  <Input
+                    type="number"
+                    placeholder="Enter RTO Expense"
+                    value={completeRtoExpense}
+                    onChange={(e) => setCompleteRtoExpense(e.target.value)}
+                    className="pl-8 bg-slate-50 font-medium text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                  REMARKS
+                </Label>
+                <Textarea
+                  rows={3}
+                  placeholder="Add closing remarks..."
+                  value={completeRemarks}
+                  onChange={(e) => setCompleteRemarks(e.target.value)}
+                  className="bg-slate-50 text-slate-900 text-xs"
+                />
+              </div>
+            </div>
+            <DialogFooter className="flex sm:justify-between gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setCompleteModalTask(null)}
+                className="w-full sm:w-auto rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveCompleteStatus}
+                disabled={savingComplete}
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md shadow-blue-500/20"
+              >
+                {savingComplete ? <Loader2 className="size-4 animate-spin" /> : "Transfer to Services"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
 function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRecord[], vehicles: any[]) {
   let clientName = t.clientName || "Standalone";
+  let clientPhone = "";
   const targetId = t.clientId || t.recordId;
   if (targetId) {
     const foundClient = clients.find((c) => c.id === targetId);
     if (foundClient) {
       clientName = foundClient.name;
+      clientPhone = foundClient.phone || foundClient.mobile || "";
     } else {
       const foundLead = leads.find((l) => l.id === targetId);
       if (foundLead) {
         clientName = foundLead.name;
+        clientPhone = foundLead.phone || foundLead.mobile || "";
       }
     }
   }
 
   let taskName = t.title || "General Follow Up";
-  let service = t.serviceName || "";
+  let service = t.serviceName || t.serviceType || "";
 
   if (
     taskName.startsWith("Client:") ||
@@ -1001,15 +1302,24 @@ function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRe
   }
 
   // Resolve vehicle details if linked
-  let vehicleNum = "";
-  if (t.vehicleId) {
+  let vehicleNum = t.vehicleNumber || "";
+  if (!vehicleNum && t.vehicleId) {
     const found = vehicles.find((v) => v.id === t.vehicleId);
     if (found) {
-      vehicleNum = found.vehicleNumber || "";
+      vehicleNum = found.vehicleNumber || found.id || "";
+    } else {
+      vehicleNum = t.vehicleId;
     }
   }
 
-  return { taskName, clientName, service, vehicleNum };
+  if (!vehicleNum && t.title) {
+    const match = t.title.match(/[A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{1,4}/i);
+    if (match) {
+      vehicleNum = match[0].toUpperCase();
+    }
+  }
+
+  return { taskName, clientName, clientPhone, service, vehicleNum };
 }
 
 // ─── Professional Task Table Component ──────────────────────────────────────
@@ -1043,7 +1353,7 @@ function TaskTable({
   onDuplicate: (t: Task) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 15;
 
   const totalPages = Math.ceil(tasks.length / pageSize);
   const paginatedTasks = useMemo(() => {
@@ -1055,14 +1365,6 @@ function TaskTable({
     return getTaskInfoHelper(t, clients, leads, vehicles);
   };
 
-  const getSubtasksProgress = (t: Task) => {
-    const list = t.subtasks ?? [];
-    if (list.length === 0) return null;
-    const completed = list.filter((s) => s.completed).length;
-    const pct = Math.round((completed / list.length) * 100);
-    return `${completed} / ${list.length} (${pct}%)`;
-  };
-
   return (
     <div className="space-y-4">
       <div className="border rounded-xl bg-white overflow-hidden shadow-sm">
@@ -1070,29 +1372,31 @@ function TaskTable({
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b z-10">
               <tr>
-                <th className="p-3">Client</th>
-                <th className="p-3">Vehicle</th>
-                <th className="p-3">Task Name</th>
-                <th className="p-3">Assigned Employee</th>
-                <th className="p-3">Appointment Date</th>
-                <th className="p-3">Application ID</th>
-                <th className="p-3">Application Type</th>
-                <th className="p-3">Due Date</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-center">Actions</th>
+                <th className="p-3">SR NO</th>
+                <th className="p-3">TASK CREATED DATE</th>
+                <th className="p-3">VEHICLE NUMBER</th>
+                <th className="p-3">SERVICE</th>
+                <th className="p-3">CLIENT NAME</th>
+                <th className="p-3">NUMBER</th>
+                <th className="p-3">STATUS</th>
+                <th className="p-3">APPLICATION NUMBER</th>
+                <th className="p-3">REFERENCE</th>
+                <th className="p-3">ASSIGNED EMPLOYEE</th>
+                <th className="p-3 text-center">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-700 font-medium">
-              {paginatedTasks.map((t) => {
+              {paginatedTasks.map((t, idx) => {
                 const info = getTaskInfo(t);
+                const srNo = (currentPage - 1) * pageSize + idx + 1;
+                const creationDate = t.createdDate || t.createdAt
+                  ? new Date(t.createdDate || t.createdAt).toLocaleDateString("en-IN")
+                  : "—";
+
                 return (
                   <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/20">
-                    <td
-                      className="p-3 max-w-[130px] truncate text-primary font-bold"
-                      title={info.clientName}
-                    >
-                      {info.clientName}
-                    </td>
+                    <td className="p-3 font-mono text-gray-500 font-semibold">{srNo}</td>
+                    <td className="p-3 font-mono">{creationDate}</td>
                     <td className="p-3 font-mono text-[11px] text-gray-600">
                       {info.vehicleNum ? (
                         <span className="flex items-center gap-1">
@@ -1102,33 +1406,14 @@ function TaskTable({
                         "—"
                       )}
                     </td>
-                    <td
-                      className="p-3 font-semibold text-gray-900 max-w-[160px] truncate"
-                      title={info.taskName}
-                    >
-                      {info.taskName}
+                    <td className="p-3 font-semibold text-gray-900 max-w-[150px] truncate" title={info.service}>
+                      {info.service}
                     </td>
-                    <td className="p-3">{t.assignedEmployeeName || "Former Employee"}</td>
-                    <td className="p-3 font-mono">
-                      {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                    <td className="p-3 max-w-[130px] truncate text-primary font-bold" title={info.clientName}>
+                      {info.clientName}
                     </td>
-                    <td className="p-3 font-mono font-semibold text-slate-800">
-                      {t.applicationId || "—"}
-                    </td>
-                    <td className="p-3">
-                      {t.applicationType ? (
-                        <span
-                          className="px-2 py-0.5 rounded text-[10px] font-bold border shadow-xs"
-                          style={getApplicationTypeStyle(t.applicationType)}
-                        >
-                          {t.applicationType}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="p-3 font-mono">
-                      {t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN") : "—"}
+                    <td className="p-3 font-mono text-gray-600">
+                      {info.clientPhone || "—"}
                     </td>
                     <td className="p-3">
                       <select
@@ -1145,6 +1430,15 @@ function TaskTable({
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="p-3 font-mono font-semibold text-slate-800">
+                      {t.applicationId || "—"}
+                    </td>
+                    <td className="p-3 text-gray-600 truncate max-w-[120px]" title={info.taskName}>
+                      {info.taskName}
+                    </td>
+                    <td className="p-3 text-gray-800 font-medium truncate max-w-[120px]" title={t.assignedEmployeeName || t.assignee || "Unassigned"}>
+                      {t.assignedEmployeeName || t.assignee || "Unassigned"}
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -1202,7 +1496,7 @@ function TaskTable({
               })}
               {paginatedTasks.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={10} className="p-6 text-center text-muted-foreground">
                     No tasks match the active filters.
                   </td>
                 </tr>
@@ -2516,10 +2810,28 @@ function TaskDetailsSheet({
               <div>
                 <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
                 <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
-                  <Meta label="Appointment Date" value={activeTask.appointmentDate ? formatDate(activeTask.appointmentDate) : "—"} />
-                  <Meta label="Application ID" value={activeTask.applicationId || "—"} />
-                  <Meta label="Application Type" value={activeTask.applicationType || "—"} />
-                  <Meta label="Assigned Employee" value={activeTask.assignedEmployeeName || activeTask.assignee || "Former Employee"} />
+                  <Meta label="Application Number" value={activeTask.applicationId || "—"} />
+                  <Meta label="Reference" value={activeTask.reference || activeTask.title || "—"} />
+                  <Meta label="Vehicle Number" value={linkedVehicle?.vehicleNumber || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).vehicleNum || "—"} />
+                  <Meta label="Client Name" value={(getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientName || "—"} />
+                  <Meta label="Mobile Number" value={(getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientPhone || "—"} />
+                  <Meta label="Service" value={(getTaskInfoHelper(activeTask, clients, leads, vehicles)).service || "—"} />
+                  <Meta label="Assigned Employee" value={activeTask.assignedEmployeeName || activeTask.assignee || "Unassigned"} />
+                  {activeTask.appointmentDate && (
+                    <Meta label="Appointment Date" value={formatDate(activeTask.appointmentDate)} />
+                  )}
+                  {activeTask.status === "On Hold" && activeTask.holdReason && (
+                    <Meta label="Hold Reason" value={activeTask.holdReason} />
+                  )}
+                  {activeTask.status === "On Hold" && activeTask.holdRemarks && (
+                    <Meta label="Hold Remarks" value={activeTask.holdRemarks} />
+                  )}
+                  {activeTask.remarks && (
+                    <Meta label="Remarks" value={activeTask.remarks} />
+                  )}
+                  {activeTask.rtoExpense !== undefined && activeTask.rtoExpense > 0 && (
+                    <Meta label="RTO Expense" value={`₹${activeTask.rtoExpense}`} />
+                  )}
                   <Meta label="Due Date" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
 
                   {/* Remaining Details */}
@@ -2559,6 +2871,33 @@ function TaskDetailsSheet({
                   )}
                 </dl>
               </div>
+
+              {/* Full Application & Vehicle Specification Details */}
+              {linkedVehicle && (
+                <div>
+                  <Label className="text-xs uppercase font-bold text-gray-400 block mb-1">Full Application Specifications</Label>
+                  <div className="bg-slate-50 p-3.5 rounded-lg border text-xs space-y-3">
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div><span className="text-gray-400">Father/Husband:</span> <span className="font-semibold text-gray-800">{linkedVehicle.fatherHusbandName || "—"}</span></div>
+                      <div><span className="text-gray-400">Chassis No:</span> <span className="font-mono font-semibold text-gray-800">{linkedVehicle.chassisNumber || "—"}</span></div>
+                      <div><span className="text-gray-400">Engine No:</span> <span className="font-mono font-semibold text-gray-800">{linkedVehicle.engineNumber || "—"}</span></div>
+                      <div><span className="text-gray-400">Fuel Type:</span> <span className="font-semibold text-gray-800">{linkedVehicle.fuelType || "—"}</span></div>
+                      <div><span className="text-gray-400">Maker Name:</span> <span className="font-semibold text-gray-800">{linkedVehicle.makerName || "—"}</span></div>
+                      <div><span className="text-gray-400">Model Name:</span> <span className="font-semibold text-gray-800">{linkedVehicle.modelName || "—"}</span></div>
+                      <div><span className="text-gray-400">Vehicle Class:</span> <span className="font-semibold text-gray-800">{linkedVehicle.vehicleClass || "—"}</span></div>
+                      <div><span className="text-gray-400">Seating Cap:</span> <span className="font-semibold text-gray-800">{linkedVehicle.seatingCapacity || "—"}</span></div>
+                    </div>
+                    <div className="border-t pt-2 grid grid-cols-2 gap-2 text-[10px]">
+                      <div><span className="text-gray-400 uppercase font-semibold">Insurance Expiry:</span> <span className="font-mono font-bold text-slate-800 block">{linkedVehicle.insuranceDetails?.expiryDate || "—"}</span></div>
+                      <div><span className="text-gray-400 uppercase font-semibold">Fitness Expiry:</span> <span className="font-mono font-bold text-slate-800 block">{linkedVehicle.fitnessDetails?.expiryDate || "—"}</span></div>
+                      <div><span className="text-gray-400 uppercase font-semibold">Permit Expiry:</span> <span className="font-mono font-bold text-slate-800 block">{linkedVehicle.permitDetails?.expiryDate || "—"}</span></div>
+                      <div><span className="text-gray-400 uppercase font-semibold">Tax Expiry:</span> <span className="font-mono font-bold text-slate-800 block">{linkedVehicle.taxDetails?.expiryDate || "—"}</span></div>
+                      <div><span className="text-gray-400 uppercase font-semibold">PUC Expiry:</span> <span className="font-mono font-bold text-slate-800 block">{linkedVehicle.pucExpiryDate || "—"}</span></div>
+                      <div><span className="text-gray-400 uppercase font-semibold">Reg Validity:</span> <span className="font-mono font-bold text-slate-800 block">{linkedVehicle.registrationDetails?.registrationValidity || "—"}</span></div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {activeTask.recordId && (
                 <ClientRelationshipPanel clientId={activeTask.recordId} />

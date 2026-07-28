@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { getSession } from "@/lib/auth";
+import { collection, onSnapshot, doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import {
   getServiceClientsAll,
   getServiceStats,
@@ -34,6 +37,7 @@ import {
   ChevronRight,
   Search,
   Plus,
+  Eye,
 } from "lucide-react";
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
 
@@ -166,8 +170,9 @@ function aggregateServiceRecords(recs: RegistryRecord[], serviceType: ServiceTyp
   };
 }
 
-export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
+export function ServiceDashboard({ serviceType, title, description }: ServiceDashboardProps) {
   const [records, setRecords] = useState<RegistryRecord[]>([]);
+  const [completedTasks, setCompletedTasks] = useState<any[]>([]);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -189,6 +194,57 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
 
+  // Subscribe to Firestore tasks & registry_services_v2 to dynamically display Completed Services
+  useEffect(() => {
+    const session = getSession();
+    const isAdmin = session?.role === "admin" || session?.role === "manager";
+    const userName = session?.name || session?.username || "";
+    const userUid = session?.uid || session?.employeeId || "";
+
+    const handleDocsUpdate = (snap1: any, snap2: any) => {
+      const docs1 = snap1 ? snap1.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+      const docs2 = snap2 ? snap2.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+
+      const combined = [...docs1, ...docs2];
+      const completedList = combined.filter((t: any) => t.status === "Completed" || t.taskStatus === "Completed" || t.done === true);
+
+      // Deduplicate by ID
+      const uniqueMap = new Map();
+      completedList.forEach((item: any) => uniqueMap.set(item.id, item));
+      const uniqueCompleted = Array.from(uniqueMap.values());
+
+      // Permission filtering for Completed Services
+      const allowed = uniqueCompleted.filter((t: any) => {
+        if (isAdmin) return true;
+        const taskAssignee = t.assignedEmployeeName || t.assignee || t.assignedEmployeeId || t.assignedEmployeeUid || "";
+        return (
+          taskAssignee.toLowerCase() === userName.toLowerCase() ||
+          taskAssignee.toLowerCase() === userUid.toLowerCase()
+        );
+      });
+
+      setCompletedTasks(allowed);
+    };
+
+    let snap1Data: any = null;
+    let snap2Data: any = null;
+
+    const unsub1 = onSnapshot(collection(db, "registry_tasks"), (snap) => {
+      snap1Data = snap;
+      handleDocsUpdate(snap1Data, snap2Data);
+    });
+
+    const unsub2 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
+      snap2Data = snap;
+      handleDocsUpdate(snap1Data, snap2Data);
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, []);
+
   const filteredRecords = useMemo(() => {
     if (!searchQuery.trim()) return records;
     const q = searchQuery.toLowerCase().trim();
@@ -207,31 +263,29 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
     });
   }, [records, searchQuery]);
 
+  const filteredCompletedTasks = useMemo(() => {
+    if (!searchQuery.trim()) return completedTasks;
+    const q = searchQuery.toLowerCase().trim();
+    return completedTasks.filter((t: any) => {
+      const matchTitle = (t.title || "").toLowerCase().includes(q);
+      const matchVehicle = (t.vehicleNumber || t.vehicleId || "").toLowerCase().includes(q);
+      const matchClient = (t.clientName || "").toLowerCase().includes(q);
+      const matchPhone = (t.mobileNumber || t.phone || "").toLowerCase().includes(q);
+      const matchAppNo = (t.applicationId || "").toLowerCase().includes(q);
+      const matchService = (t.serviceName || t.serviceType || "").toLowerCase().includes(q);
+      return matchTitle || matchVehicle || matchClient || matchPhone || matchAppNo || matchService;
+    });
+  }, [completedTasks, searchQuery]);
+
   const openWorkflow = (record: RegistryRecord) => {
     setSelectedRecord(record);
     setProfileOpen(true);
   };
 
-  const toggleExpand = (clientId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedClients((prev) => ({
-      ...prev,
-      [clientId]: !prev[clientId],
-    }));
-  };
-
   const refreshData = async () => {
     try {
       setLoading(true);
-      console.log(`[ServiceDashboard] LOADING: serviceType="${serviceType}"`);
-
       const [recs] = await Promise.all([getServiceClientsAll(serviceType)]);
-
-      console.log(`[ServiceDashboard] LOADED: ${recs.length} records for "${serviceType}"`, {
-        serviceType,
-        totalRecords: recs.length,
-      });
-
       const agg = aggregateServiceRecords(recs, serviceType);
 
       setRecords(agg.aggregatedRecords);
@@ -240,7 +294,7 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
       setTotalReceived(agg.receivedTotal);
       setTotalPending(agg.pendingTotal);
     } catch (error) {
-      console.error(`[ServiceDashboard] ERROR loading service data for "${serviceType}":`, error);
+      console.error(`[ServiceDashboard] ERROR loading service data:`, error);
     } finally {
       setLoading(false);
     }
@@ -250,102 +304,64 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
     refreshData();
   }, [serviceType]);
 
-  const handleExportServicePDF = async () => {
-    try {
-      const data = {
-        records,
-        stats,
-        totals: {
-          totalServiceAmount,
-          totalReceived,
-          totalPending,
-        },
-      };
-      await generateServicePDF(serviceType, data, "user");
-      console.log("Service PDF export triggered");
-    } catch (error) {
-      console.error("Error exporting service PDF:", error);
-    }
-  };
-
   const statCards = [
     {
       label: "Total Clients",
       value: stats.total,
       icon: Users,
-      color: "bg-blue-500/10 text-blue-600",
-      description: `${stats.vehicleCount} Vehicles • ${stats.serviceCount} Services`,
+      color: "bg-blue-500/10 text-blue-500",
+      description: `${stats.vehicleCount} vehicles registered`,
     },
     {
-      label: "Active Cases",
+      label: "Active Services",
       value: stats.active,
       icon: TrendingUp,
-      color: "bg-green-500/10 text-green-600",
-      description: "Services in progress",
+      color: "bg-green-500/10 text-green-500",
+      description: `${stats.serviceCount} total services`,
     },
     {
       label: "Completed",
       value: stats.completed,
       icon: Package,
-      color: "bg-purple-500/10 text-purple-600",
-      description: "Services completed",
+      color: "bg-emerald-500/10 text-emerald-500",
+      description: "Successfully processed",
     },
     {
       label: "Pending",
       value: stats.pending,
-      icon: DollarSign,
-      color: "bg-yellow-500/10 text-yellow-600",
-      description: "Services pending",
+      icon: AlertCircle,
+      color: "bg-amber-500/10 text-amber-500",
+      description: "Awaiting action",
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            {serviceLabel(serviceType)}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage all {serviceType.toLowerCase()} service requests and renewals.
+          <h2 className="text-2xl font-bold tracking-tight">{title || `${serviceType} Services`}</h2>
+          <p className="text-sm text-muted-foreground">
+            {description || `Manage and track ${serviceType.toLowerCase()} applications and client records`}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <Button
-            onClick={() => setWizardOpen(true)}
-            className="h-9 gap-1.5 bg-primary text-primary-foreground font-semibold shadow-sm"
-          >
-            <Plus className="size-4" /> Add Client
-          </Button>
-          <Link to="/dashboard/clients" className="inline-flex">
-            <Button variant="outline" size="sm" className="h-9">
-              <ArrowRight className="size-4 mr-2" /> All Clients
-            </Button>
-          </Link>
-          <Button
-            onClick={handleExportServicePDF}
             variant="outline"
             size="sm"
-            className="h-9 gap-1.5"
+            onClick={() => generateServicePDF(serviceType, { records, stats, totals: { totalServiceAmount, totalReceived, totalPending } }, "user")}
           >
-            <Download className="size-4" /> Export PDF
+            <Download className="size-4 mr-1.5" />
+            Export PDF
+          </Button>
+          <Button size="sm" onClick={() => setWizardOpen(true)}>
+            <Plus className="size-4 mr-1.5" />
+            Add Client
           </Button>
         </div>
       </div>
 
-      {/* Legacy Accounting warning banner */}
-      {records.some(hasLegacyAccounting) && (
-        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 flex gap-3">
-          <AlertCircle className="size-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-yellow-900">
-              Legacy accounting detected. Please migrate client to service-wise accounting.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Statistics Grid */}
+      {/* Stats Overview */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((card) => (
           <Card key={card.label}>
@@ -357,367 +373,132 @@ export function ServiceDashboard({ serviceType }: ServiceDashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{card.value}</div>
-              {card.description && (
-                <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
-              )}
+              <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Revenue Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSign className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{totalServiceAmount.toLocaleString("en-IN")}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              From {stats.serviceCount} {serviceType} services
+      {/* Completed Services Module Table (Transferred Automatically from Task Module) */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold tracking-tight text-slate-900">Completed Services</h3>
+            <p className="text-xs text-slate-500">
+              Real-time completed applications transferred automatically from Task Module
             </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Amount Received</CardTitle>
-            <TrendingUp className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              ₹{totalReceived.toLocaleString("en-IN")}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {totalServiceAmount > 0
-                ? `${((totalReceived / totalServiceAmount) * 100).toFixed(1)}% collected`
-                : "No revenue yet"}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Amount</CardTitle>
-            <Package className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              ₹{totalPending.toLocaleString("en-IN")}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {totalServiceAmount > 0
-                ? `${((totalPending / totalServiceAmount) * 100).toFixed(1)}% pending`
-                : "No pending amounts"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Client Table */}
-      <div>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <h3 className="text-lg font-semibold">Clients</h3>
+          </div>
           <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
-              placeholder="Search by Name, Mobile, or Vehicle No..."
+              placeholder="Search Completed Services..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 h-9 text-xs"
             />
           </div>
         </div>
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <p className="text-muted-foreground">Loading clients...</p>
-          </div>
-        ) : filteredRecords.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-8 gap-4">
-              <Package className="size-12 text-muted-foreground/50 mb-2" />
-              <p className="text-muted-foreground">
-                No clients found for {serviceType.toLowerCase()}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={async () => {
-                    setDiagRunning(true);
-                    setDiagOutput(null);
-                    try {
-                      const recs = await getServiceClientsAll(serviceType);
-                      const summary = await getServiceDistributionSummary();
 
-                      const agg = aggregateServiceRecords(recs, serviceType);
-
-                      setRecords(agg.aggregatedRecords);
-                      setStats(agg.stats);
-                      setTotalServiceAmount(agg.serviceTotal);
-                      setTotalReceived(agg.receivedTotal);
-                      setTotalPending(agg.pendingTotal);
-
-                      setDiagOutput(
-                        JSON.stringify(
-                          {
-                            requested: serviceType,
-                            found: recs.length,
-                            sample: recs
-                              .slice(0, 5)
-                              .map((r) => ({
-                                id: r.id,
-                                name: r.name,
-                                services: getRecordServices(r),
-                              })),
-                            summary,
-                            stats: agg.stats,
-                            revenue: agg.serviceTotal,
-                            received: agg.receivedTotal,
-                            pending: agg.pendingTotal,
-                          },
-                          null,
-                          2,
-                        ),
-                      );
-                    } catch (err) {
-                      setDiagOutput(String(err));
-                    } finally {
-                      setDiagRunning(false);
-                    }
-                  }}
-                >
-                  {diagRunning ? "Running..." : "Run diagnostics"}
-                </Button>
-                <Button variant="ghost" onClick={() => setDiagOutput(null)}>
-                  Clear
-                </Button>
-              </div>
-              {diagOutput ? (
-                <pre className="text-xs mt-4 max-h-56 overflow-auto w-full bg-slate-50 p-3 rounded text-left">
-                  {diagOutput}
-                </pre>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="rounded-xl border bg-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+        <div className="border rounded-2xl bg-white overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse min-w-[1100px]">
+              <thead className="bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b">
+                <tr>
+                  <th className="p-3 text-center">SR NO</th>
+                  <th className="p-3">APPOINTMENT DATE</th>
+                  <th className="p-3">DAYS</th>
+                  <th className="p-3">DAYS AFTER APPOINTMENT</th>
+                  <th className="p-3">VEHICLE NUMBER</th>
+                  <th className="p-3">SERVICE</th>
+                  <th className="p-3">CLIENT NAME</th>
+                  <th className="p-3">NUMBER</th>
+                  <th className="p-3">APPLICATION NUMBER</th>
+                  <th className="p-3">REFERENCE</th>
+                  <th className="p-3">ASSIGNED EMPLOYEE</th>
+                  <th className="p-3">RTO EXPENSE</th>
+                  <th className="p-3">STATUS</th>
+                  <th className="p-3 text-center">ACTION</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-700 font-medium">
+                {filteredCompletedTasks.length === 0 ? (
                   <tr>
-                    <th className="w-10 px-3 py-3"></th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">SR NO</th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">NAME</th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">
-                      VEHICLES
-                    </th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">
-                      SERVICES
-                    </th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">STATUS</th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">
-                      DUE DATE
-                    </th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">
-                      SERVICE AMOUNT
-                    </th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">
-                      RECEIVED
-                    </th>
-                    <th className="text-left font-semibold px-3 py-3 whitespace-nowrap">PENDING</th>
+                    <td colSpan={14} className="p-8 text-center text-slate-400">
+                      No completed services found. Complete a task in the Task Module to transfer automatically.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredRecords.map((r) => {
-                    const details = getRecordServiceDetails(r);
-                    const matchingServices = details.filter((s) => s.serviceType === serviceType);
-                    const servicePrice = matchingServices.reduce(
-                      (sum, s) => sum + (s.price ?? 0),
-                      0,
-                    );
-                    const serviceReceived = matchingServices.reduce(
-                      (sum, s) => sum + (s.amountReceived ?? 0),
-                      0,
-                    );
-                    const servicePending = Math.max(0, servicePrice - serviceReceived);
+                ) : (
+                  filteredCompletedTasks.map((t: any, idx: number) => {
+                    // Days calculation: Appointment Date - Application Issue Date
+                    const apptDate = t.appointmentDate ? new Date(t.appointmentDate) : null;
+                    const issueDate = t.issueDate || t.createdDate || t.createdAt ? new Date(t.issueDate || t.createdDate || t.createdAt) : null;
 
-                    const serviceStatus = (r as any).status || "Pending";
-                    const serviceDueDate = (r as any).serviceDueDate;
+                    let daysTaken = "—";
+                    if (apptDate && issueDate && !isNaN(apptDate.getTime()) && !isNaN(issueDate.getTime())) {
+                      const diffTime = apptDate.getTime() - issueDate.getTime();
+                      const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+                      daysTaken = `${diffDays} Days`;
+                    }
 
-                    const vehicleCount = (r as any).vehicleCount ?? 1;
-                    const serviceCount = (r as any).serviceCount ?? 1;
-                    const vehiclesList: string[] = (r as any).aggregatedVehicles || [];
-
-                    const q = searchQuery.toLowerCase().trim();
-                    const isVehicleSearchMatch = q.length > 0 && vehiclesList.some((v) => v.toLowerCase().includes(q));
-                    const isExpanded = expandedClients[r.id] ?? isVehicleSearchMatch;
+                    // Days After Appointment calculation: Today's Date - Appointment Date
+                    let daysAfterAppt = "—";
+                    if (apptDate && !isNaN(apptDate.getTime())) {
+                      const today = new Date();
+                      const diffTime = today.getTime() - apptDate.getTime();
+                      const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+                      daysAfterAppt = `${diffDays} Days After Appointment`;
+                    }
 
                     return (
-                      <React.Fragment key={r.id}>
-                        <tr
-                          className="border-t hover:bg-muted/30 cursor-pointer"
-                          onClick={() => openWorkflow(r)}
-                        >
-                          <td
-                            className="px-3 py-3 text-center"
-                            onClick={(e) => toggleExpand(r.id, e)}
+                      <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                        <td className="p-3 font-mono font-semibold text-slate-900">
+                          {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                        </td>
+                        <td className="p-3 font-semibold text-indigo-600">{daysTaken}</td>
+                        <td className="p-3 font-semibold text-amber-600">{daysAfterAppt}</td>
+                        <td className="p-3 font-mono font-bold text-slate-900">{t.vehicleNumber || t.vehicleId || "—"}</td>
+                        <td className="p-3 font-semibold text-slate-800">{t.serviceName || t.serviceType || "—"}</td>
+                        <td className="p-3 text-blue-600 font-bold">{t.clientName || "—"}</td>
+                        <td className="p-3 font-mono text-slate-500">{t.mobileNumber || t.phone || "—"}</td>
+                        <td className="p-3 font-mono font-semibold text-slate-800">{t.applicationId || "—"}</td>
+                        <td className="p-3 text-slate-600 whitespace-nowrap" title={t.reference || t.title}>
+                          {t.reference || t.title || "—"}
+                        </td>
+                        <td className="p-3 font-medium text-slate-700">{t.assignedEmployeeName || t.assignee || "Unassigned"}</td>
+                        <td className="p-3 font-mono font-bold text-emerald-700">
+                          {t.rtoExpense ? `₹${t.rtoExpense}` : "₹0"}
+                        </td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Completed
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (t.recordId || t.clientId) {
+                                setSelectedRecord({ id: t.recordId || t.clientId } as any);
+                                setProfileOpen(true);
+                              }
+                            }}
+                            title="View Client Workspace"
                           >
-                            {isExpanded ? (
-                              <ChevronDown className="size-4 text-muted-foreground mx-auto hover:text-foreground cursor-pointer" />
-                            ) : (
-                              <ChevronRight className="size-4 text-muted-foreground mx-auto hover:text-foreground cursor-pointer" />
-                            )}
-                          </td>
-                          <td className="px-3 py-3 font-medium">{r.srNo}</td>
-                          <td className="px-3 py-3 font-medium text-sky-600 underline decoration-dotted underline-offset-2">
-                            {r.name}
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="font-semibold text-xs text-foreground">
-                              {vehicleCount} {vehicleCount === 1 ? "Vehicle" : "Vehicles"}
-                            </div>
-                            {vehiclesList.length > 0 && (
-                              <div
-                                className="text-[10px] font-mono text-muted-foreground mt-0.5 max-w-[150px] truncate"
-                                title={vehiclesList.join(", ")}
-                              >
-                                {vehiclesList.join(", ")}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-gray-500/10">
-                              {serviceCount} {serviceCount === 1 ? "Service" : "Services"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span
-                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
-                                serviceStatus === "Completed"
-                                  ? "bg-green-500/15 text-green-700 border-green-500/30"
-                                  : serviceStatus === "In Progress" || serviceStatus === "Active"
-                                    ? "bg-blue-500/15 text-blue-700 border-blue-500/30"
-                                    : "bg-muted text-muted-foreground border-border"
-                              }`}
-                            >
-                              {serviceStatus}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap text-xs">
-                            {serviceDueDate
-                              ? new Date(serviceDueDate).toLocaleDateString("en-IN")
-                              : "—"}
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs">
-                            ₹{servicePrice.toLocaleString("en-IN")}
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs text-green-600">
-                            ₹{serviceReceived.toLocaleString("en-IN")}
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs text-red-600">
-                            ₹{servicePending.toLocaleString("en-IN")}
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="bg-slate-50/70 border-t">
-                            <td colSpan={10} className="px-4 py-3">
-                              <div className="rounded-lg border bg-white overflow-hidden shadow-xs">
-                                <table className="w-full text-xs">
-                                  <thead className="bg-slate-100 uppercase tracking-wider text-slate-500 text-[10px] font-semibold border-b">
-                                    <tr>
-                                      <th className="text-left px-3 py-2">Vehicle Number</th>
-                                      <th className="text-left px-3 py-2">Vehicle Type</th>
-                                      <th className="text-left px-3 py-2">Application ID</th>
-                                      <th className="text-left px-3 py-2">Application Type</th>
-                                      <th className="text-left px-3 py-2">Assigned Staff</th>
-                                      <th className="text-left px-3 py-2">Task Status</th>
-                                      <th className="text-left px-3 py-2">Due Date</th>
-                                      <th className="text-left px-3 py-2">Service Amount</th>
-                                      <th className="text-left px-3 py-2">Advance</th>
-                                      <th className="text-left px-3 py-2">Received</th>
-                                      <th className="text-left px-3 py-2">Pending</th>
-                                      <th className="text-left px-3 py-2">Notes</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {matchingServices.map((s: any, idx: number) => {
-                                      const pendingAmt = Math.max(
-                                        0,
-                                        (s.price ?? 0) - (s.amountReceived ?? 0),
-                                      );
-                                      const advanceAmt = s.advancePayment ?? s.advance ?? 0;
-                                      return (
-                                        <tr
-                                          key={s.serviceId || idx}
-                                          className="border-t hover:bg-slate-50 font-mono text-[11px]"
-                                        >
-                                          <td className="px-3 py-2 font-bold text-sky-700 font-mono">
-                                            {s.vehicleNumber || "—"}
-                                          </td>
-                                          <td className="px-3 py-2 text-slate-700 font-sans">
-                                            {s.vehicleType || "—"}
-                                          </td>
-                                          <td className="px-3 py-2 text-indigo-700 font-mono font-semibold">
-                                            {s.applicationId || "—"}
-                                          </td>
-                                          <td className="px-3 py-2 font-sans font-semibold text-slate-800">
-                                            {s.applicationType || "Home"}
-                                          </td>
-                                          <td className="px-3 py-2 text-slate-700 font-sans">
-                                            {s.assignedEmployeeName || s.assignee || "Unassigned"}
-                                          </td>
-                                          <td className="px-3 py-2 font-sans">
-                                            <span
-                                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                                s.status === "Completed"
-                                                  ? "bg-green-100 text-green-800 border-green-200"
-                                                  : s.status === "In Progress" ||
-                                                      s.status === "Active"
-                                                    ? "bg-blue-100 text-blue-800 border-blue-200"
-                                                    : "bg-slate-100 text-slate-700 border-slate-200"
-                                              }`}
-                                            >
-                                              {s.status || "Pending"}
-                                            </span>
-                                          </td>
-                                          <td className="px-3 py-2 font-sans">
-                                            {s.dueDate
-                                              ? new Date(s.dueDate).toLocaleDateString("en-IN")
-                                              : "—"}
-                                          </td>
-                                          <td className="px-3 py-2 text-slate-900 font-bold">
-                                            ₹{(s.price ?? 0).toLocaleString("en-IN")}
-                                          </td>
-                                          <td className="px-3 py-2 text-amber-700 font-semibold">
-                                            ₹{advanceAmt.toLocaleString("en-IN")}
-                                          </td>
-                                          <td className="px-3 py-2 text-green-700 font-semibold">
-                                            ₹{(s.amountReceived ?? 0).toLocaleString("en-IN")}
-                                          </td>
-                                          <td className="px-3 py-2 text-red-700 font-bold">
-                                            ₹{pendingAmt.toLocaleString("en-IN")}
-                                          </td>
-                                          <td className="px-3 py-2 text-slate-600 font-sans max-w-[150px] truncate" title={s.notes || ""}>
-                                            {s.notes || "—"}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
+                            <Eye className="size-3.5 text-blue-600" />
+                          </Button>
+                        </td>
+                      </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+        </div>
       </div>
+
       {selectedRecord && (
         <ClientDetailWorkspace
           clientId={selectedRecord.id}

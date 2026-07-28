@@ -193,11 +193,13 @@ export async function saveApplicationAndVehicle(
   let finalAppId = existingAppId;
   let docRef;
 
+  let generatedAppIdStr = "";
   if (!finalAppId) {
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const generatedId = `APL-2026-${randomNum}`;
     docRef = doc(collection(db, APPLICATIONS_COL));
     finalAppId = docRef.id;
+    generatedAppIdStr = generatedId;
 
     const newAppPayload = removeUndefined({
       ...appData,
@@ -212,6 +214,13 @@ export async function saveApplicationAndVehicle(
     await setDoc(docRef, newAppPayload);
   } else {
     docRef = doc(db, APPLICATIONS_COL, finalAppId);
+    const existingSnap = await getDoc(docRef);
+    if (existingSnap.exists()) {
+      generatedAppIdStr = existingSnap.data()?.applicationId || finalAppId;
+    } else {
+      generatedAppIdStr = finalAppId;
+    }
+
     const updatePayload = removeUndefined({
       ...appData,
       vehicleId: cleanVehicleNo,
@@ -222,5 +231,82 @@ export async function saveApplicationAndVehicle(
     await setDoc(docRef, updatePayload, { merge: true });
   }
 
+  // ─── AUTOMATIC TASK GENERATION & SYNC FOR APPLICATION SERVICES ──────────
+  try {
+    const servicesList = appData.services || [];
+    for (const srv of servicesList) {
+      // Check if task already exists for this application and service
+      const tasksQuery = query(
+        collection(db, "registry_tasks"),
+        where("applicationDocId", "==", finalAppId),
+        where("serviceName", "==", srv)
+      );
+      const existingTasksSnap = await getDocs(tasksQuery);
+
+      const taskPayload = removeUndefined({
+        title: `${srv} - ${appData.vehicleNumber}`,
+        serviceName: srv,
+        serviceType: srv,
+        applicationDocId: finalAppId,
+        applicationId: generatedAppIdStr,
+        applicationType: "Home", // Default application type
+        vehicleId: cleanVehicleNo,
+        vehicleNumber: appData.vehicleNumber,
+        clientName: appData.ownerName || "Unknown Client",
+        mobileNumber: appData.mobileNumber || "",
+        phone: appData.mobileNumber || "",
+        assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+        assignee: appData.assignedEmployeeName || "Unassigned",
+        assignedEmployeeId: appData.assignedEmployeeId || "",
+        assignedEmployeeUid: appData.assignedEmployeeId || "",
+        reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
+        issueDate: appData.createdAt || now,
+        createdDate: now,
+        createdAt: now,
+        createdBy: session?.name || "System",
+        manual: false,
+        status: "Assigned", // Not Started / Assigned
+        priority: appData.priority || "Medium",
+        done: false,
+        associationType: "client",
+        bucket: "clients",
+        remarks: appData.remarks || "",
+      });
+
+      if (existingTasksSnap.empty) {
+        const newTaskRef = doc(collection(db, "registry_tasks"));
+        await setDoc(newTaskRef, {
+          id: newTaskRef.id,
+          taskId: newTaskRef.id,
+          ...taskPayload,
+        });
+      } else {
+        // Update existing task details (e.g. employee assignment change, mobile, vehicle update)
+        for (const tDoc of existingTasksSnap.docs) {
+          await setDoc(tDoc.ref, {
+            assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+            assignee: appData.assignedEmployeeName || "Unassigned",
+            assignedEmployeeId: appData.assignedEmployeeId || "",
+            assignedEmployeeUid: appData.assignedEmployeeId || "",
+            ownerName: appData.ownerName,
+            clientName: appData.ownerName,
+            mobileNumber: appData.mobileNumber,
+            phone: appData.mobileNumber,
+            vehicleNumber: appData.vehicleNumber,
+            reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
+            updatedAt: now,
+          }, { merge: true });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error auto-generating tasks for application:", err);
+  }
+
   return finalAppId;
+}
+
+export async function deleteApplication(id: string): Promise<void> {
+  const { deleteDoc } = await import("firebase/firestore");
+  await deleteDoc(doc(db, APPLICATIONS_COL, id));
 }

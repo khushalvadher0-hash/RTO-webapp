@@ -139,6 +139,11 @@ export interface Task {
   applicationType?: string;
   serviceId?: string;
   activityLog?: any[];
+  holdReason?: string;
+  holdRemarks?: string;
+  rtoExpense?: number;
+  issueDate?: string;
+  reference?: string;
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -563,28 +568,24 @@ export function subscribeToTasks(cb: (tasks: Task[]) => void): () => void {
         .map((d) => ({ id: d.id, ...d.data() }) as Task)
         .filter((t) => !t.isDeleted); // Hide soft-deleted tasks
 
-      // Background healing
-      tasks.forEach((t) => {
-        const uid = t.assignedEmployeeUid || t.assignee;
-        if (uid && uid.length > 15 && !t.assignedEmployeeName) {
-          resolveAssigneeIdentity(uid).then((info) => {
-            if (info.assignedEmployeeName) {
-              updateDoc(doc(db, COL, t.id), {
-                assignedEmployeeUid: info.assignedEmployeeUid,
-                assignedEmployeeId: info.assignedEmployeeId,
-                assignedEmployeeName: info.assignedEmployeeName,
-                assignedEmployeeRole: info.assignedEmployeeRole,
-              }).catch(console.error);
-            }
-          });
-        }
-      });
-
       cb(tasks);
     },
     (err) => {
-      handleFirestoreError(err, "subscribeToTasks");
-      cb([]);
+      console.warn("subscribeToTasks orderBy failed, falling back to simple query:", err);
+      // Fallback query without orderBy to ensure tasks are always loaded even if index is building
+      return onSnapshot(
+        collection(db, COL),
+        (snap) => {
+          const tasks = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }) as Task)
+            .filter((t) => !t.isDeleted);
+          cb(tasks);
+        },
+        (fallbackErr) => {
+          handleFirestoreError(fallbackErr, "subscribeToTasks");
+          cb([]);
+        }
+      );
     }
   );
 }
@@ -930,7 +931,35 @@ export async function updateTask(
       invalidateCache();
       return;
     }
-    throw new Error("Task not found");
+
+    // Check if it's an application task ID (e.g. task-app-...)
+    if (taskId.startsWith("task-app-")) {
+      const cleanUpdates = removeUndefined({
+        id: taskId,
+        taskId: taskId,
+        ...patch,
+        lastUpdatedBy: actor,
+        lastUpdatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+      await setDoc(doc(db, COL, taskId), cleanUpdates);
+      console.log("✅ Application task doc created and updated in registry_tasks:", taskId);
+      invalidateCache();
+      return;
+    }
+
+    // Upsert task document directly
+    const cleanUpdates = removeUndefined({
+      id: taskId,
+      taskId: taskId,
+      ...patch,
+      lastUpdatedBy: actor,
+      lastUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+    await setDoc(doc(db, COL, taskId), cleanUpdates);
+    invalidateCache();
+    return;
   }
 
   const existing = taskDoc.data() as Task;

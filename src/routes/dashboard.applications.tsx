@@ -17,10 +17,13 @@ import {
   Receipt,
   Eye,
   CheckCircle,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import {
   subscribeApplications,
   saveApplicationAndVehicle,
+  deleteApplication,
   fetchVehicleByNumber,
   computePermitExpiry,
   type ApplicationRecord,
@@ -98,7 +101,34 @@ function ApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingApp, setEditingApp] = useState<ApplicationRecord | null>(null);
   const [viewingApp, setViewingApp] = useState<ApplicationRecord | null>(null);
+
+  // Delete modal state
+  const [deletingApp, setDeletingApp] = useState<ApplicationRecord | null>(null);
+  const [deletePasscode, setDeletePasscode] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteConfirm = async () => {
+    if (deletePasscode !== "1234") {
+      toast.error("Invalid password! Default passcode is 1234.");
+      return;
+    }
+    if (!deletingApp) return;
+
+    setDeleting(true);
+    try {
+      await deleteApplication(deletingApp.id);
+      toast.success("Application deleted successfully!");
+      setDeletingApp(null);
+      setDeletePasscode("");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete application");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     const unsub = subscribeApplications((data) => {
@@ -134,7 +164,10 @@ function ApplicationsPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              setEditingApp(null);
+              setIsModalOpen(true);
+            }}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-all shadow-md shadow-blue-500/20 active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
@@ -320,13 +353,35 @@ function ApplicationsPage() {
                       <td className="py-3.5 px-4 font-mono text-slate-600">{pucExpiry}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{regValidity}</td>
                       <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => setViewingApp(app)}
-                          className="p-1.5 hover:bg-slate-100 rounded-lg text-blue-600 transition-all"
-                          title="View Application Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => setViewingApp(app)}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-blue-600 transition-all"
+                            title="View Application Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingApp(app);
+                              setIsModalOpen(true);
+                            }}
+                            className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600 transition-all"
+                            title="Edit Application"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDeletingApp(app);
+                              setDeletePasscode("");
+                            }}
+                            className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-600 transition-all"
+                            title="Delete Application"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -337,8 +392,62 @@ function ApplicationsPage() {
         </div>
       </div>
 
-      {/* New Application Modal */}
-      {isModalOpen && <ApplicationFormModal onClose={() => setIsModalOpen(false)} />}
+      {/* Delete Passcode Confirmation Dialog */}
+      {deletingApp && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-slate-900">Delete Application</h3>
+              <button
+                onClick={() => setDeletingApp(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Are you sure you want to delete application for vehicle{" "}
+              <strong className="text-slate-900 font-mono">{deletingApp.vehicleNumber}</strong>?
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700">Enter Passcode to Confirm</label>
+              <input
+                type="password"
+                placeholder="Passcode (Default: 1234)"
+                value={deletePasscode}
+                onChange={(e) => setDeletePasscode(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setDeletingApp(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className="px-4 py-2 text-xs font-medium bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow transition disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete Application"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New / Edit Application Modal */}
+      {isModalOpen && (
+        <ApplicationFormModal
+          editingApp={editingApp}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingApp(null);
+          }}
+        />
+      )}
 
       {/* View Application Details Popup Modal */}
       {viewingApp && <ApplicationDetailsModal app={viewingApp} onClose={() => setViewingApp(null)} />}
@@ -346,78 +455,93 @@ function ApplicationsPage() {
   );
 }
 
-function ApplicationFormModal({ onClose }: { onClose: () => void }) {
+function ApplicationFormModal({
+  editingApp,
+  onClose,
+}: {
+  editingApp?: ApplicationRecord | null;
+  onClose: () => void;
+}) {
   const [saving, setSaving] = useState(false);
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [phone, setPhone] = useState("");
-  const [ownerName, setOwnerName] = useState("");
-  const [fatherHusbandName, setFatherHusbandName] = useState("");
-  const [address, setAddress] = useState("");
-  const [registrationDate, setRegistrationDate] = useState("");
-  const [chassisNumber, setChassisNumber] = useState("");
-  const [engineNumber, setEngineNumber] = useState("");
-  const [fuelType, setFuelType] = useState("Petrol");
-  const [vehicleClass, setVehicleClass] = useState("LMV");
-  const [makerName, setMakerName] = useState("");
-  const [modelName, setModelName] = useState("");
-  const [colour, setColour] = useState("");
-  const [bodyType, setBodyType] = useState("");
-  const [seatingCapacity, setSeatingCapacity] = useState<number>(5);
-  const [grossWeight, setGrossWeight] = useState<number>(4990);
-  const [unladenWeight, setUnladenWeight] = useState<number>(1620);
-  const [payload, setPayload] = useState<number>(3370);
-  const [horsePower, setHorsePower] = useState("");
-  const [cylinderCount, setCylinderCount] = useState<number>(4);
-  const [pucExpiryDate, setPucExpiryDate] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState(editingApp?.vehicleNumber || "");
+  const [phone, setPhone] = useState(editingApp?.mobileNumber || editingApp?.vehicleDetails?.phone || "");
+  const [ownerName, setOwnerName] = useState(editingApp?.ownerName || editingApp?.vehicleDetails?.ownerName || "");
+  const [fatherHusbandName, setFatherHusbandName] = useState(editingApp?.vehicleDetails?.fatherHusbandName || "");
+  const [address, setAddress] = useState(editingApp?.vehicleDetails?.address || "");
+  const [registrationDate, setRegistrationDate] = useState(editingApp?.vehicleDetails?.registrationDate || "");
+  const [chassisNumber, setChassisNumber] = useState(editingApp?.vehicleDetails?.chassisNumber || "");
+  const [engineNumber, setEngineNumber] = useState(editingApp?.vehicleDetails?.engineNumber || "");
+  const [fuelType, setFuelType] = useState(editingApp?.vehicleDetails?.fuelType || "Petrol");
+  const [vehicleClass, setVehicleClass] = useState(editingApp?.vehicleDetails?.vehicleClass || "LMV");
+  const [makerName, setMakerName] = useState(editingApp?.vehicleDetails?.makerName || "");
+  const [modelName, setModelName] = useState(editingApp?.vehicleDetails?.modelName || "");
+  const [colour, setColour] = useState(editingApp?.vehicleDetails?.colour || "");
+  const [bodyType, setBodyType] = useState(editingApp?.vehicleDetails?.bodyType || "");
+  const [seatingCapacity, setSeatingCapacity] = useState<number>(editingApp?.vehicleDetails?.seatingCapacity || 5);
+  const [grossWeight, setGrossWeight] = useState<number>(editingApp?.vehicleDetails?.grossWeight || 4990);
+  const [unladenWeight, setUnladenWeight] = useState<number>(editingApp?.vehicleDetails?.unladenWeight || 1620);
+  const [payload, setPayload] = useState<number>(editingApp?.vehicleDetails?.payload || 3370);
+  const [horsePower, setHorsePower] = useState(editingApp?.vehicleDetails?.horsePower || "");
+  const [cylinderCount, setCylinderCount] = useState<number>(editingApp?.vehicleDetails?.cylinderCount || 4);
+  const [pucExpiryDate, setPucExpiryDate] = useState(editingApp?.vehicleDetails?.pucExpiryDate || "");
 
   // Tax Section
-  const [isLumpsumTax, setIsLumpsumTax] = useState(false);
-  const [taxIssueDate, setTaxIssueDate] = useState("");
-  const [taxExpiryDate, setTaxExpiryDate] = useState("");
-  const [taxAmount, setTaxAmount] = useState<number>(0);
+  const [isLumpsumTax, setIsLumpsumTax] = useState(editingApp?.vehicleDetails?.taxDetails?.isLumpsum || false);
+  const [taxIssueDate, setTaxIssueDate] = useState(editingApp?.vehicleDetails?.taxDetails?.issueDate || "");
+  const [taxExpiryDate, setTaxExpiryDate] = useState(editingApp?.vehicleDetails?.taxDetails?.expiryDate || "");
+  const [taxAmount, setTaxAmount] = useState<number>(editingApp?.vehicleDetails?.taxDetails?.amount || 0);
 
   // Fitness Section
-  const [fitnessIssueDate, setFitnessIssueDate] = useState("");
-  const [fitnessExpiryDate, setFitnessExpiryDate] = useState("");
+  const [fitnessIssueDate, setFitnessIssueDate] = useState(editingApp?.vehicleDetails?.fitnessDetails?.issueDate || "");
+  const [fitnessExpiryDate, setFitnessExpiryDate] = useState(editingApp?.vehicleDetails?.fitnessDetails?.expiryDate || "");
 
   // Insurance Section
-  const [insuranceCompany, setInsuranceCompany] = useState("");
-  const [insurancePolicyNo, setInsurancePolicyNo] = useState("");
-  const [insurancePolicyType, setInsurancePolicyType] = useState("Comprehensive");
-  const [insuranceIssueDate, setInsuranceIssueDate] = useState("");
-  const [insuranceExpiryDate, setInsuranceExpiryDate] = useState("");
-  const [insuranceAmount, setInsuranceAmount] = useState<number>(0);
-  const [insurancePlace, setInsurancePlace] = useState("");
+  const [insuranceCompany, setInsuranceCompany] = useState(editingApp?.vehicleDetails?.insuranceDetails?.company || "");
+  const [insurancePolicyNo, setInsurancePolicyNo] = useState(editingApp?.vehicleDetails?.insuranceDetails?.policyNumber || "");
+  const [insurancePolicyType, setInsurancePolicyType] = useState(editingApp?.vehicleDetails?.insuranceDetails?.policyType || "Comprehensive");
+  const [insuranceIssueDate, setInsuranceIssueDate] = useState(editingApp?.vehicleDetails?.insuranceDetails?.issueDate || "");
+  const [insuranceExpiryDate, setInsuranceExpiryDate] = useState(editingApp?.vehicleDetails?.insuranceDetails?.expiryDate || "");
+  const [insuranceAmount, setInsuranceAmount] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.amount || 0);
+  const [insurancePlace, setInsurancePlace] = useState(editingApp?.vehicleDetails?.insuranceDetails?.insurancePlace || "");
 
   // Permit Section
-  const [permitType, setPermitType] = useState("Gujarat Permit");
-  const [permitIssueDate, setPermitIssueDate] = useState("");
-  const [permitExpiryDate, setPermitExpiryDate] = useState("");
+  const [permitType, setPermitType] = useState(editingApp?.vehicleDetails?.permitDetails?.permitType || "Gujarat Permit");
+  const [permitIssueDate, setPermitIssueDate] = useState(editingApp?.vehicleDetails?.permitDetails?.issueDate || "");
+  const [permitExpiryDate, setPermitExpiryDate] = useState(editingApp?.vehicleDetails?.permitDetails?.expiryDate || "");
 
   // Registration Renewal Section
-  const [dateOfRegistration, setDateOfRegistration] = useState("");
-  const [registrationValidity, setRegistrationValidity] = useState("");
+  const [dateOfRegistration, setDateOfRegistration] = useState(editingApp?.vehicleDetails?.registrationDetails?.dateOfRegistration || "");
+  const [registrationValidity, setRegistrationValidity] = useState(editingApp?.vehicleDetails?.registrationDetails?.registrationValidity || "");
 
   // Services Selected
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [selectedServices, setSelectedServices] = useState<string[]>(editingApp?.services || []);
 
   // Service Accounting Map (Service Name -> Total Amount & Advance Payment)
   const [serviceAccountingMap, setServiceAccountingMap] = useState<
     Record<string, { totalAmount: number; advancePayment: number }>
-  >({});
+  >(() => {
+    if (editingApp?.serviceAccounting) {
+      const map: Record<string, { totalAmount: number; advancePayment: number }> = {};
+      Object.entries(editingApp.serviceAccounting).forEach(([key, item]) => {
+        map[key] = { totalAmount: item.totalAmount, advancePayment: item.advancePayment };
+      });
+      return map;
+    }
+    return {};
+  });
 
   // Generate Invoice Checkbox
-  const [shouldGenerateInvoice, setShouldGenerateInvoice] = useState(true);
+  const [shouldGenerateInvoice, setShouldGenerateInvoice] = useState(!editingApp);
 
   // Remarks / Internal Notes
-  const [employeeRemarks, setEmployeeRemarks] = useState("");
-  const [reminder, setReminder] = useState("");
-  const [priority, setPriority] = useState<"Low" | "Medium" | "High" | "Urgent">("Low");
-  const [assignedEmployee, setAssignedEmployee] = useState("");
+  const [employeeRemarks, setEmployeeRemarks] = useState(editingApp?.remarks || "");
+  const [reminder, setReminder] = useState(editingApp?.reminder || "");
+  const [priority, setPriority] = useState<"Low" | "Medium" | "High" | "Urgent">(editingApp?.priority || "Low");
+  const [assignedEmployee, setAssignedEmployee] = useState(editingApp?.assignedEmployeeName || "");
   const [activeEmployees, setActiveEmployees] = useState<{ id: string; name: string }[]>([]);
 
   // Document Uploads State (Simulated upload status map for color backgrounds)
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, string>>({});
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, string>>(editingApp?.vehicleDetails?.documents || {});
 
   useEffect(() => {
     fetchAllUsers()
@@ -427,7 +551,7 @@ function ApplicationFormModal({ onClose }: { onClose: () => void }) {
           .map((u) => ({ id: u.uid || u.userId, name: u.fullName || u.username }));
 
         setActiveEmployees(active);
-        if (active.length > 0) {
+        if (active.length > 0 && !assignedEmployee) {
           setAssignedEmployee(active[0].name);
         }
       })
@@ -439,7 +563,9 @@ function ApplicationFormModal({ onClose }: { onClose: () => void }) {
           { id: "4", name: "Priya Verma" },
         ];
         setActiveEmployees(fallbacks);
-        setAssignedEmployee(fallbacks[0].name);
+        if (!assignedEmployee) {
+          setAssignedEmployee(fallbacks[0].name);
+        }
       });
   }, []);
 
@@ -702,29 +828,36 @@ function ApplicationFormModal({ onClose }: { onClose: () => void }) {
     }
 
     try {
-      await saveApplicationAndVehicle({
-        vehicleId: vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, ""),
-        vehicleNumber,
-        ownerName,
-        mobileNumber: phone,
-        services: selectedServices,
-        serviceAccounting: serviceAccountingPayload,
-        assignedEmployeeName: assignedEmployee,
-        applicationStatus: status,
-        paymentStatus: overallTotals.payStatus,
-        amount: overallTotals.totalAmt,
-        totalPaid: overallTotals.totalAdv,
-        pendingAmount: overallTotals.pending,
-        invoiceId: generatedInvoiceId,
-        invoiceNumber: generatedInvoiceNumber,
-        expiryDate: permitExpiryDate || insuranceExpiryDate || taxExpiryDate || pucExpiryDate,
-        remarks: employeeRemarks,
-        reminder,
-        priority,
-        vehicleDetails,
-      });
+      await saveApplicationAndVehicle(
+        {
+          vehicleId: vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, ""),
+          vehicleNumber,
+          ownerName,
+          mobileNumber: phone,
+          services: selectedServices,
+          serviceAccounting: serviceAccountingPayload,
+          assignedEmployeeName: assignedEmployee,
+          applicationStatus: status,
+          paymentStatus: overallTotals.payStatus,
+          amount: overallTotals.totalAmt,
+          totalPaid: overallTotals.totalAdv,
+          pendingAmount: overallTotals.pending,
+          invoiceId: generatedInvoiceId || editingApp?.invoiceId,
+          invoiceNumber: generatedInvoiceNumber || editingApp?.invoiceNumber,
+          expiryDate: permitExpiryDate || insuranceExpiryDate || taxExpiryDate || pucExpiryDate,
+          remarks: employeeRemarks,
+          reminder,
+          priority,
+          vehicleDetails,
+        },
+        editingApp?.id
+      );
 
-      toast.success("Application Created & Connected to Accounting!");
+      toast.success(
+        editingApp
+          ? "Application Updated Successfully!"
+          : "Application Created & Connected to Accounting!"
+      );
       setSaving(false);
       onClose();
     } catch (err) {
@@ -758,7 +891,9 @@ function ApplicationFormModal({ onClose }: { onClose: () => void }) {
         {/* Modal Top Bar */}
         <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center sticky top-0 z-20">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">New Application</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              {editingApp ? "Edit Application" : "New Application"}
+            </h2>
             <p className="text-xs text-slate-500">Services workflow • All in one scroll</p>
           </div>
           <div className="flex items-center gap-3">
@@ -773,7 +908,7 @@ function ApplicationFormModal({ onClose }: { onClose: () => void }) {
               disabled={saving}
               className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 transition-all"
             >
-              {saving ? "Creating..." : "Create Application"}
+              {saving ? "Saving..." : editingApp ? "Save Application" : "Create Application"}
             </button>
           </div>
         </div>
