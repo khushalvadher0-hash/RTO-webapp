@@ -58,7 +58,7 @@ import {
   Copy,
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { collection, onSnapshot, doc, query, where, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, query, where, updateDoc, getDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { getSession } from "@/lib/auth";
 import {
@@ -114,19 +114,19 @@ const PRIORITY_RANK: Record<TaskPriority, number> = { Urgent: 0, High: 1, Medium
 
 const priorityBadgeClass = (p: TaskPriority) =>
   ({
-    Urgent: "bg-red-100 text-red-700 border-red-200",
-    High: "bg-orange-100 text-orange-700 border-orange-200",
-    Medium: "bg-blue-100 text-blue-700 border-blue-200",
-    Low: "bg-slate-100 text-slate-600 border-slate-200",
+    Urgent: "bg-red-50 text-red-700 border-red-200/80 rounded-full",
+    High: "bg-amber-50 text-amber-700 border-amber-200/80 rounded-full",
+    Medium: "bg-blue-50 text-blue-700 border-blue-200/80 rounded-full",
+    Low: "bg-slate-100 text-slate-600 border-slate-200/80 rounded-full",
   })[p];
 
 const statusBadgeClass = (s: TaskStatus) =>
   ({
-    Assigned: "bg-orange-100 text-orange-700 border-orange-200",
-    Read: "bg-cyan-100 text-cyan-700 border-cyan-200",
-    "In Progress": "bg-indigo-100 text-indigo-700 border-indigo-200",
-    Completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    "On Hold": "bg-zinc-100 text-zinc-700 border-zinc-200",
+    Assigned: "bg-blue-50 text-blue-700 border-blue-200/80 rounded-full font-semibold",
+    Read: "bg-cyan-50 text-cyan-700 border-cyan-200/80 rounded-full font-semibold",
+    "In Progress": "bg-purple-50 text-purple-700 border-purple-200/80 rounded-full font-semibold",
+    Completed: "bg-emerald-50 text-emerald-700 border-emerald-200/80 rounded-full font-semibold",
+    "On Hold": "bg-amber-50 text-amber-700 border-amber-200/80 rounded-full font-semibold",
   })[s];
 
 const getApplicationTypeStyle = (appType?: string) => {
@@ -974,34 +974,34 @@ function TasksPage() {
           <div className="rounded-xl border bg-card p-3">
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
               <div className="flex items-center gap-2">
-                <Badge className="bg-orange-100 text-orange-700 border-orange-200">
+                <Badge className="bg-blue-50 text-blue-700 border-blue-200/80 rounded-full font-bold">
                   {stats.statusCounts["Assigned"]}
                 </Badge>
-                <span className="text-muted-foreground">Assigned</span>
+                <span className="text-slate-600 font-medium">Assigned</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-cyan-100 text-cyan-700 border-cyan-200">
+                <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200/80 rounded-full font-bold">
                   {stats.statusCounts["Read"]}
                 </Badge>
-                <span className="text-muted-foreground">Read</span>
+                <span className="text-slate-600 font-medium">Read</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">
+                <Badge className="bg-purple-50 text-purple-700 border-purple-200/80 rounded-full font-bold">
                   {stats.statusCounts["In Progress"]}
                 </Badge>
-                <span className="text-muted-foreground">In Progress</span>
+                <span className="text-slate-600 font-medium">In Progress</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200/80 rounded-full font-bold">
                   {stats.statusCounts["Completed"]}
                 </Badge>
-                <span className="text-muted-foreground">Completed</span>
+                <span className="text-slate-600 font-medium">Completed</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-zinc-100 text-zinc-700 border-zinc-200">
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200/80 rounded-full font-bold">
                   {stats.statusCounts["On Hold"]}
                 </Badge>
-                <span className="text-muted-foreground">On Hold</span>
+                <span className="text-slate-600 font-medium">On Hold</span>
               </div>
             </div>
           </div>
@@ -1261,25 +1261,26 @@ function TasksPage() {
 }
 
 function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRecord[], vehicles: any[]) {
-  let clientName = t.clientName || "Standalone";
-  let clientPhone = "";
-  const targetId = t.clientId || t.recordId;
-  if (targetId) {
+  let clientName = (t as any).ownerName || (t as any).clientName || "";
+  let clientPhone = (t as any).ownerPhone || (t as any).mobileNumber || t.phone || "";
+  
+  if (!clientName && (t.clientId || t.recordId)) {
+    const targetId = t.clientId || t.recordId;
     const foundClient = clients.find((c) => c.id === targetId);
     if (foundClient) {
       clientName = foundClient.name;
-      clientPhone = foundClient.phone || foundClient.mobile || "";
+      if (!clientPhone) clientPhone = foundClient.phone || foundClient.mobile || "";
     } else {
       const foundLead = leads.find((l) => l.id === targetId);
       if (foundLead) {
         clientName = foundLead.name;
-        clientPhone = foundLead.phone || foundLead.mobile || "";
+        if (!clientPhone) clientPhone = foundLead.phone || foundLead.mobile || "";
       }
     }
   }
 
-  let taskName = t.title || "General Follow Up";
-  let service = t.serviceName || t.serviceType || "";
+  let taskName = t.reference || t.title || "Application Task";
+  let service = t.serviceName || t.serviceType || t.description || "";
 
   if (
     taskName.startsWith("Client:") ||
@@ -1293,12 +1294,8 @@ function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRe
         service = extracted;
       }
     } else {
-      taskName = "General Follow Up";
+      taskName = service || "Application Task";
     }
-  }
-
-  if (!service) {
-    service = t.description || "Follow Up";
   }
 
   // Resolve vehicle details if linked
@@ -2400,9 +2397,12 @@ function TaskDetailsSheet({
     );
   }, [liveTask, initialTask.assignee, employees]);
 
+  const [linkedApp, setLinkedApp] = useState<any>(null);
+
   useEffect(() => {
     if (!open || !initialTask.id) return;
     setLiveTask(null);
+    setLinkedApp(null);
     setRemarkInput("");
     
     setSelectedStatus(initialTask.status || "Assigned");
@@ -2422,6 +2422,16 @@ function TaskDetailsSheet({
           setExpectedDate(new Date(t.dueDate).toISOString().slice(0, 10));
         } else {
           setExpectedDate("");
+        }
+
+        // Fetch linked application record if applicationDocId or recordId exists
+        const targetAppId = (t as any).applicationDocId || t.recordId || t.clientId || t.id.replace("task-app-", "");
+        if (targetAppId) {
+          getDoc(doc(db, "registry_applications_v1", targetAppId)).then((aSnap) => {
+            if (aSnap.exists()) {
+              setLinkedApp({ id: aSnap.id, ...aSnap.data() });
+            }
+          }).catch(console.error);
         }
       } else {
         // Fallback: Subscribe to registry_services_v2
@@ -2810,13 +2820,13 @@ function TaskDetailsSheet({
               <div>
                 <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
                 <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
-                  <Meta label="Application Number" value={activeTask.applicationId || "—"} />
-                  <Meta label="Reference" value={activeTask.reference || activeTask.title || "—"} />
-                  <Meta label="Vehicle Number" value={linkedVehicle?.vehicleNumber || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).vehicleNum || "—"} />
-                  <Meta label="Client Name" value={(getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientName || "—"} />
-                  <Meta label="Mobile Number" value={(getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientPhone || "—"} />
-                  <Meta label="Service" value={(getTaskInfoHelper(activeTask, clients, leads, vehicles)).service || "—"} />
-                  <Meta label="Assigned Employee" value={activeTask.assignedEmployeeName || activeTask.assignee || "Unassigned"} />
+                  <Meta label="Application Number" value={linkedApp?.applicationId || activeTask.applicationId || "—"} />
+                  <Meta label="Reference" value={activeTask.reference || (linkedApp ? `${linkedApp.applicationId} - ${linkedApp.vehicleNumber}` : activeTask.title) || "—"} />
+                  <Meta label="Vehicle Number" value={linkedApp?.vehicleNumber || linkedVehicle?.vehicleNumber || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).vehicleNum || "—"} />
+                  <Meta label="Client Name" value={linkedApp?.ownerName || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientName || "—"} />
+                  <Meta label="Mobile Number" value={linkedApp?.mobileNumber || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientPhone || "—"} />
+                  <Meta label="Service" value={(linkedApp?.services && linkedApp.services.join(", ")) || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).service || "—"} />
+                  <Meta label="Assigned Employee" value={linkedApp?.assignedEmployeeName || activeTask.assignedEmployeeName || activeTask.assignee || "Unassigned"} />
                   {activeTask.appointmentDate && (
                     <Meta label="Appointment Date" value={formatDate(activeTask.appointmentDate)} />
                   )}

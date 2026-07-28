@@ -542,6 +542,7 @@ function ApplicationFormModal({
 
   // Document Uploads State (Simulated upload status map for color backgrounds)
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, string>>(editingApp?.vehicleDetails?.documents || {});
+  const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string } | null>(null);
 
   useEffect(() => {
     fetchAllUsers()
@@ -1440,25 +1441,77 @@ function ApplicationFormModal({
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {documentItems.map((docName) => {
-                const isUploaded = !!uploadedDocs[docName];
+                const docUrl = uploadedDocs[docName];
+                const isUploaded = !!docUrl;
                 return (
                   <div
                     key={docName}
-                    onClick={() => handleDocSimulateUpload(docName)}
                     className={cn(
-                      "p-3 rounded-xl border text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5 min-h-[90px]",
+                      "p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 min-h-[100px] relative group",
                       isUploaded
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
-                        : "bg-rose-50/70 border-rose-200 text-rose-800 hover:bg-rose-100/70"
+                        ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                        : "bg-rose-50/80 border-rose-200 text-rose-800"
                     )}
                   >
-                    <Upload
-                      className={cn("w-5 h-5", isUploaded ? "text-emerald-600" : "text-rose-500")}
-                    />
-                    <span className="text-[11px] font-semibold leading-tight">{docName}</span>
-                    <span className="text-[9px] opacity-75 font-mono">
-                      {isUploaded ? "Uploaded" : "PDF / JPG"}
-                    </span>
+                    <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center gap-1">
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 15 * 1024 * 1024) {
+                            toast.error("File size must be under 15MB");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = (evt) => {
+                            const result = evt.target?.result as string;
+                            setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
+                            toast.success(`${docName} file uploaded!`);
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                      <Upload
+                        className={cn("w-5 h-5", isUploaded ? "text-emerald-600" : "text-rose-500")}
+                      />
+                      <span className="text-[11px] font-bold leading-tight px-1">{docName}</span>
+                      <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded-full border bg-white/80">
+                        {isUploaded ? "✓ Uploaded" : "Click to Upload"}
+                      </span>
+                    </label>
+
+                    {isUploaded && (
+                      <div className="flex gap-1 mt-1 z-10">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewDoc({ name: docName, url: docUrl });
+                          }}
+                          className="text-[9px] underline font-bold text-emerald-700 hover:text-emerald-900 bg-white/90 px-1.5 py-0.5 rounded border border-emerald-200"
+                        >
+                          View File
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadedDocs((prev) => {
+                              const next = { ...prev };
+                              delete next[docName];
+                              return next;
+                            });
+                            toast.info(`${docName} removed`);
+                          }}
+                          className="text-[9px] font-bold text-rose-600 hover:text-rose-900 ml-1 bg-white/90 px-1.5 py-0.5 rounded border border-rose-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1685,6 +1738,41 @@ function ApplicationFormModal({
             </div>
           </div>
         </div>
+
+        {/* Document Preview Modal */}
+        {previewDoc && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">{previewDoc.name}</h3>
+                  <p className="text-[10px] text-slate-500 font-mono">Document Preview</p>
+                </div>
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-1.5 rounded-full hover:bg-slate-200 text-slate-500 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 p-4 overflow-auto flex items-center justify-center bg-slate-100 min-h-[350px]">
+                {previewDoc.url.startsWith("data:application/pdf") ? (
+                  <iframe src={previewDoc.url} className="w-full h-[500px] rounded-xl border" title="PDF Preview" />
+                ) : (
+                  <img src={previewDoc.url} alt={previewDoc.name} className="max-h-[500px] max-w-full object-contain rounded-xl shadow-md border" />
+                )}
+              </div>
+              <div className="p-3 border-t border-slate-100 flex justify-end bg-slate-50">
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition"
+                >
+                  Close Preview
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

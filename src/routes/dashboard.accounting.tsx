@@ -47,7 +47,7 @@ import jsPDF from "jspdf";
 import { subscribeToAllInvoices, type Invoice } from "@/lib/billing";
 import { subscribeToRecords, type RegistryRecord } from "@/lib/records";
 import { verifyAdminPin } from "@/lib/adminSecurity";
-import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, getDoc, updateDoc } from "firebase/firestore";
+import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, getDoc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { InvoiceViewer } from "@/components/InvoiceViewer";
 import { generateInvoicePDF } from "@/lib/pdfGenerator";
@@ -115,6 +115,8 @@ function AccountingDashboardPage() {
   const isAdmin = userRole === "admin" || userRole === "manager";
   const isStaff = userRole === "employee" || userRole === "viewer";
 
+  const [applications, setApplications] = useState<any[]>([]);
+
   // Subscriptions
   useEffect(() => {
     setLoading(true);
@@ -131,6 +133,9 @@ function AccountingDashboardPage() {
     const unsubClients = subscribeAllClients(setV2Clients);
     const unsubVehicles = subscribeAllVehicles(setV2Vehicles);
     const unsubServices = subscribeAllServices(setV2Services);
+    const unsubApps = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
+      setApplications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
 
     return () => {
       unsubFinance();
@@ -139,6 +144,7 @@ function AccountingDashboardPage() {
       unsubClients();
       unsubVehicles();
       unsubServices();
+      unsubApps();
     };
   }, []);
 
@@ -391,6 +397,63 @@ function AccountingDashboardPage() {
       });
     });
 
+    // Include applications directly into accounting metrics
+    applications.forEach((app) => {
+      const appKey = `app-fin-${app.id}`;
+      const appServicesStr = (app.services && app.services.join(", ")) || "General Service";
+      
+      let totAmt = app.amount || 0;
+      let totPaid = app.totalPaid || 0;
+      
+      // Calculate from serviceAccounting if available
+      if (app.serviceAccounting) {
+        let calcTot = 0;
+        let calcPaid = 0;
+        Object.values(app.serviceAccounting).forEach((sa: any) => {
+          calcTot += sa.totalAmount || 0;
+          calcPaid += sa.advancePayment || 0;
+        });
+        if (calcTot > 0) {
+          totAmt = calcTot;
+          totPaid = calcPaid;
+        }
+      }
+
+      const balAmt = Math.max(0, totAmt - totPaid);
+      const paymentStatus = balAmt === 0 && totAmt > 0 ? "Paid" : totPaid > 0 ? "Partially Paid" : "Pending";
+
+      rows.push({
+        id: appKey,
+        applicationId: app.applicationId || app.id,
+        vehicleId: app.vehicleId || app.vehicleNumber,
+        clientId: app.id,
+        clientName: app.ownerName || "Unknown Owner",
+        clientMobile: app.mobileNumber || "",
+        vehicleNumber: app.vehicleNumber || "—",
+        invoiceId: app.invoiceId || app.id,
+        invoiceNumber: app.invoiceNumber || app.applicationId || "Application Invoice",
+        invoiceAmount: totAmt,
+        receivedAmount: totPaid,
+        balanceAmount: balAmt,
+        collectionDate: app.expiryDate || app.createdAt?.slice(0, 10) || "",
+        paymentStatus: paymentStatus,
+        askBhaylubha: false,
+        assignedEmployee: app.assignedEmployeeName || "Unassigned",
+        services: appServicesStr,
+        serviceList: (app.services || []).map((srv: string) => ({
+          id: `${app.id}-${srv}`,
+          serviceType: srv,
+          amount: totAmt,
+          received: totPaid,
+          outstanding: balAmt,
+          status: app.applicationStatus || "Pending",
+          dueDate: app.createdAt?.slice(0, 10) || "",
+        })),
+        hasInvoice: true,
+        daysOverdue: 0,
+      });
+    });
+
     // Add clients with no services as Pending Invoice fallback
     v2Clients.forEach((c) => {
       if (!clientsWithServices.has(c.id)) {
@@ -421,7 +484,7 @@ function AccountingDashboardPage() {
     });
 
     return rows;
-  }, [v2Clients, v2Vehicles, v2Services]);
+  }, [v2Clients, v2Vehicles, v2Services, applications]);
 
   const filteredRecords = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -566,6 +629,33 @@ function AccountingDashboardPage() {
       }
     });
 
+    applications.forEach((app) => {
+      let totAmt = app.amount || 0;
+      let totPaid = app.totalPaid || 0;
+
+      if (app.serviceAccounting) {
+        let calcTot = 0;
+        let calcPaid = 0;
+        Object.values(app.serviceAccounting).forEach((sa: any) => {
+          calcTot += sa.totalAmount || 0;
+          calcPaid += sa.advancePayment || 0;
+        });
+        if (calcTot > 0) {
+          totAmt = calcTot;
+          totPaid = calcPaid;
+        }
+      }
+
+      totalReceivable += totAmt;
+      totalReceived += totPaid;
+
+      const pending = Math.max(0, totAmt - totPaid);
+      const colDate = app.expiryDate || app.createdAt?.slice(0, 10) || "";
+      if (pending > 0 && colDate && colDate < todayStr) {
+        overdueCollections += pending;
+      }
+    });
+
     const outstandingAmount = Math.max(0, totalReceivable - totalReceived);
 
     const todayCollections = paymentEntries
@@ -582,7 +672,7 @@ function AccountingDashboardPage() {
       todayCollections,
       overdueCollections,
     };
-  }, [v2Services, paymentEntries]);
+  }, [v2Services, applications, paymentEntries]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {

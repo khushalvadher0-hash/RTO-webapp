@@ -234,69 +234,76 @@ export async function saveApplicationAndVehicle(
   // ─── AUTOMATIC TASK GENERATION & SYNC FOR APPLICATION SERVICES ──────────
   try {
     const servicesList = appData.services || [];
-    for (const srv of servicesList) {
-      // Check if task already exists for this application and service
-      const tasksQuery = query(
-        collection(db, "registry_tasks"),
-        where("applicationDocId", "==", finalAppId),
-        where("serviceName", "==", srv)
-      );
-      const existingTasksSnap = await getDocs(tasksQuery);
+    const joinedServices = servicesList.join(", ");
+    
+    // Check if task already exists for this application
+    const tasksQuery = query(
+      collection(db, "registry_tasks"),
+      where("applicationDocId", "==", finalAppId)
+    );
+    const existingTasksSnap = await getDocs(tasksQuery);
 
-      const taskPayload = removeUndefined({
-        title: `${srv} - ${appData.vehicleNumber}`,
-        serviceName: srv,
-        serviceType: srv,
-        applicationDocId: finalAppId,
-        applicationId: generatedAppIdStr,
-        applicationType: "Home", // Default application type
-        vehicleId: cleanVehicleNo,
-        vehicleNumber: appData.vehicleNumber,
-        clientName: appData.ownerName || "Unknown Client",
-        mobileNumber: appData.mobileNumber || "",
-        phone: appData.mobileNumber || "",
-        assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
-        assignee: appData.assignedEmployeeName || "Unassigned",
-        assignedEmployeeId: appData.assignedEmployeeId || "",
-        assignedEmployeeUid: appData.assignedEmployeeId || "",
-        reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
-        issueDate: appData.createdAt || now,
-        createdDate: now,
-        createdAt: now,
-        createdBy: session?.name || "System",
-        manual: false,
-        status: "Assigned", // Not Started / Assigned
-        priority: appData.priority || "Medium",
-        done: false,
-        associationType: "client",
-        bucket: "clients",
-        remarks: appData.remarks || "",
+    const taskPayload = removeUndefined({
+      title: `${joinedServices || "Application Services"} - ${appData.vehicleNumber}`,
+      serviceName: joinedServices,
+      serviceType: joinedServices,
+      services: servicesList,
+      applicationDocId: finalAppId,
+      applicationId: generatedAppIdStr,
+      applicationType: "Home",
+      vehicleId: cleanVehicleNo,
+      vehicleNumber: appData.vehicleNumber,
+      ownerName: appData.ownerName,
+      ownerPhone: appData.mobileNumber,
+      clientName: appData.ownerName || "",
+      mobileNumber: appData.mobileNumber || "",
+      phone: appData.mobileNumber || "",
+      assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+      assignee: appData.assignedEmployeeName || "Unassigned",
+      assignedEmployeeId: appData.assignedEmployeeId || "",
+      assignedEmployeeUid: appData.assignedEmployeeId || "",
+      reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
+      issueDate: appData.createdAt || now,
+      createdDate: now,
+      createdAt: now,
+      createdBy: session?.name || "System",
+      manual: false,
+      status: appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned",
+      priority: appData.priority || "Medium",
+      done: false,
+      associationType: "application",
+      bucket: "applications",
+      remarks: appData.remarks || "",
+    });
+
+    if (existingTasksSnap.empty) {
+      const newTaskRef = doc(collection(db, "registry_tasks"));
+      await setDoc(newTaskRef, {
+        id: newTaskRef.id,
+        taskId: newTaskRef.id,
+        ...taskPayload,
       });
-
-      if (existingTasksSnap.empty) {
-        const newTaskRef = doc(collection(db, "registry_tasks"));
-        await setDoc(newTaskRef, {
-          id: newTaskRef.id,
-          taskId: newTaskRef.id,
-          ...taskPayload,
-        });
-      } else {
-        // Update existing task details (e.g. employee assignment change, mobile, vehicle update)
-        for (const tDoc of existingTasksSnap.docs) {
-          await setDoc(tDoc.ref, {
-            assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
-            assignee: appData.assignedEmployeeName || "Unassigned",
-            assignedEmployeeId: appData.assignedEmployeeId || "",
-            assignedEmployeeUid: appData.assignedEmployeeId || "",
-            ownerName: appData.ownerName,
-            clientName: appData.ownerName,
-            mobileNumber: appData.mobileNumber,
-            phone: appData.mobileNumber,
-            vehicleNumber: appData.vehicleNumber,
-            reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
-            updatedAt: now,
-          }, { merge: true });
-        }
+    } else {
+      for (const tDoc of existingTasksSnap.docs) {
+        await setDoc(tDoc.ref, {
+          title: `${joinedServices || "Application Services"} - ${appData.vehicleNumber}`,
+          serviceName: joinedServices,
+          serviceType: joinedServices,
+          services: servicesList,
+          applicationId: generatedAppIdStr,
+          assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+          assignee: appData.assignedEmployeeName || "Unassigned",
+          assignedEmployeeId: appData.assignedEmployeeId || "",
+          assignedEmployeeUid: appData.assignedEmployeeId || "",
+          ownerName: appData.ownerName,
+          ownerPhone: appData.mobileNumber,
+          clientName: appData.ownerName,
+          mobileNumber: appData.mobileNumber,
+          phone: appData.mobileNumber,
+          vehicleNumber: appData.vehicleNumber,
+          reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
+          updatedAt: now,
+        }, { merge: true });
       }
     }
   } catch (err) {

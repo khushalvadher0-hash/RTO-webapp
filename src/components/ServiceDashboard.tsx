@@ -228,20 +228,76 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
 
     let snap1Data: any = null;
     let snap2Data: any = null;
+    let snap3Data: any = null;
+
+    const handleDocsUpdateAll = () => {
+      const docs1 = snap1Data ? snap1Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+      const docs2 = snap2Data ? snap2Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+      const apps = snap3Data ? snap3Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+      const appsMap = new Map(apps.map((a: any) => [a.id, a]));
+
+      const combined = [...docs1, ...docs2];
+      const completedList = combined.filter((t: any) => t.status === "Completed" || t.taskStatus === "Completed" || t.done === true);
+
+      // Deduplicate by ID and enrich with Application record details
+      const uniqueMap = new Map();
+      completedList.forEach((item: any) => {
+        const appDocId = item.applicationDocId || item.recordId || item.clientId || item.id.replace("task-app-", "");
+        let app = appsMap.get(appDocId);
+        if (!app && item.applicationId) {
+          app = apps.find((a: any) => a.applicationId === item.applicationId);
+        }
+        if (!app && item.vehicleNumber) {
+          app = apps.find((a: any) => a.vehicleNumber === item.vehicleNumber);
+        }
+
+        const enriched = {
+          ...item,
+          applicationId: app?.applicationId || item.applicationId || "",
+          vehicleNumber: app?.vehicleNumber || item.vehicleNumber || item.vehicleId || "",
+          clientName: app?.ownerName || item.ownerName || item.clientName || "",
+          mobileNumber: app?.mobileNumber || item.ownerPhone || item.mobileNumber || item.phone || "",
+          serviceName: (app?.services && app.services.join(", ")) || item.serviceName || item.serviceType || "",
+          reference: item.reference || (app ? `${app.applicationId} - ${app.vehicleNumber}` : item.title) || "",
+          assignedEmployeeName: app?.assignedEmployeeName || item.assignedEmployeeName || item.assignee || "Unassigned",
+          rtoExpense: item.rtoExpense || app?.amount || 0,
+        };
+        uniqueMap.set(item.id, enriched);
+      });
+      const uniqueCompleted = Array.from(uniqueMap.values());
+
+      // Permission filtering for Completed Services
+      const allowed = uniqueCompleted.filter((t: any) => {
+        if (isAdmin) return true;
+        const taskAssignee = t.assignedEmployeeName || t.assignee || t.assignedEmployeeId || t.assignedEmployeeUid || "";
+        return (
+          taskAssignee.toLowerCase() === userName.toLowerCase() ||
+          taskAssignee.toLowerCase() === userUid.toLowerCase()
+        );
+      });
+
+      setCompletedTasks(allowed);
+    };
 
     const unsub1 = onSnapshot(collection(db, "registry_tasks"), (snap) => {
       snap1Data = snap;
-      handleDocsUpdate(snap1Data, snap2Data);
+      handleDocsUpdateAll();
     });
 
     const unsub2 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
       snap2Data = snap;
-      handleDocsUpdate(snap1Data, snap2Data);
+      handleDocsUpdateAll();
+    });
+
+    const unsub3 = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
+      snap3Data = snap;
+      handleDocsUpdateAll();
     });
 
     return () => {
       unsub1();
       unsub2();
+      unsub3();
     };
   }, []);
 
