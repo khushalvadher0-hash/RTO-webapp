@@ -1,1033 +1,334 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
-import { getSession } from "@/lib/auth";
+import {
+  subscribeApplications,
+  type ApplicationRecord,
+  type VehicleMaster,
+} from "@/lib/applications";
 import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { VEHICLES_CENTRIC_COL } from "@/lib/applications";
 import {
-  subscribeToRecords,
-  SERVICE_TYPES,
-  serviceLabel,
-  serviceToUrlParam,
-  type RegistryRecord,
-} from "@/lib/records";
-import { computeFollowUps, computeVehicleDocFollowUps } from "@/lib/followups";
-import { Button } from "@/components/ui/button";
-import { ClientDetailWorkspace } from "@/components/ClientDetailWorkspace";
-import {
-  getTotalRevenue,
-  getActiveServicesCount,
-  getRevenueByService,
-  getUpcomingRenewals,
-} from "@/lib/services";
-import { subscribeToAllPayments, type ClientPayment } from "@/lib/payments";
-import { subscribeToTasks, type Task } from "@/lib/tasks";
-import { subscribeToTargets, calculateTargetMetrics, type TargetMetrics } from "@/lib/targets";
-import { calculateBillingMetrics, subscribeToAllInvoices, type Invoice } from "@/lib/billing";
-import { subscribeAllClients } from "@/lib/hierarchy";
-import {
-  ArrowRight,
-  Users,
-  UserPlus,
-  CheckCircle2,
-  Clock,
-  TrendingUp,
-  DollarSign,
+  Shield,
+  FileCheck,
+  Calendar,
+  Building2,
+  FileText,
+  Lightbulb,
   AlertCircle,
-  Zap,
-  Target,
-  Receipt,
+  Clock,
+  ArrowRight,
+  Plus,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/dashboard/")({
   component: Overview,
 });
 
+interface ExpiryItem {
+  vehicleNumber: string;
+  ownerName: string;
+  phone: string;
+  expiryDate: string;
+  daysRemaining: number;
+  isCritical: boolean;
+}
+
+function computeDaysRemaining(expiryStr: string): number {
+  if (!expiryStr) return 999;
+  const exp = new Date(expiryStr);
+  if (isNaN(exp.getTime())) return 999;
+  const now = new Date();
+  const diffTime = exp.getTime() - now.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
 function Overview() {
-  const session = useMemo(() => getSession(), []);
-  const [clients, setClients] = useState<RegistryRecord[]>([]);
-  const [leads, setLeads] = useState<RegistryRecord[]>([]);
-  const [allPayments, setAllPayments] = useState<ClientPayment[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [targets, setTargets] = useState<TargetMetrics[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleMaster[]>([]);
+  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<{ type: string } | null>({ type: "today" });
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [collectionCategory, setCollectionCategory] = useState<
-    "today" | "7days" | "15days" | "30days" | "overdue"
-  >("7days");
-  const [vehicleDocuments, setVehicleDocuments] = useState<any[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-
-  const totalRevenue = useMemo(() => {
-    return services.reduce((sum, s: any) => sum + (s.serviceAmount || 0), 0);
-  }, [services]);
-
-  const activeServices = useMemo(() => {
-    const activeStatuses = ["In Progress", "Documents Collected", "Verification", "Submitted", "Approved", "Active"];
-    return services.filter((s: any) => activeStatuses.includes(s.taskStatus)).length;
-  }, [services]);
-
-  const revenueByService = useMemo(() => {
-    const serviceTypes = [
-      "Insurance",
-      "Fitness",
-      "Gujarat Permit",
-      "National Permit",
-      "Tax",
-      "PUC",
-      "License New",
-      "License Renew",
-      "RC Transfer",
-      "HP Addition",
-      "HP Termination",
-    ];
-
-    const result = serviceTypes.map((type) => {
-      const rev = services
-        .filter((s: any) => s.serviceType === type)
-        .reduce((sum, s: any) => sum + (s.serviceAmount || 0), 0);
-      return { service: type, revenue: rev };
-    });
-
-    return result.filter((r) => r.revenue > 0);
-  }, [services]);
-
-  const upcomingTasks = useMemo(() => {
-    const manualTasksMapped = tasks.map((t) => {
-      const client = clients.find((c) => c.id === t.clientId || c.id === t.recordId) || 
-                     leads.find((l) => l.id === t.clientId || l.id === t.recordId);
-      const vehicle = vehicles.find((v) => v.id === t.vehicleId);
-      
-      return {
-        id: t.id,
-        title: t.title || "Manual Task",
-        clientName: client?.name || t.clientName || "Unknown Client",
-        vehicleNo: vehicle?.vehicleNumber || "—",
-        assignee: t.assignedEmployeeName || t.assignee || "Unassigned",
-        dueDate: t.dueDate ? new Date(t.dueDate) : null,
-        status: t.status || "Assigned",
-        isManual: true,
-      };
-    });
-
-    const serviceTasksMapped = services.map((s: any) => {
-      const vehicle = vehicles.find((v) => v.id === s.vehicleId);
-      const vehicleNo = vehicle?.vehicleNumber || "—";
-      const clientId = vehicle?.clientId || s.clientId || "";
-      const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
-      const clientName = client?.name || s.clientName || "Unknown Client";
-
-      return {
-        id: s.id,
-        title: s.title || `${s.serviceType || "Service"} - ${vehicleNo}`,
-        clientName,
-        vehicleNo,
-        assignee: s.assignedEmployeeName || s.assignedStaff || s.assignee || "Unassigned",
-        dueDate: s.dueDate ? new Date(s.dueDate) : null,
-        status: s.taskStatus || "Assigned",
-        isManual: false,
-      };
-    });
-
-    return [...manualTasksMapped, ...serviceTasksMapped]
-      .filter((t) => t.dueDate !== null && !isNaN(t.dueDate.getTime()))
-      .sort((a, b) => a.dueDate!.getTime() - b.dueDate!.getTime());
-  }, [tasks, services, vehicles, clients, leads]);
-
-  const billingMetrics = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getUTCMonth();
-    const currentYear = now.getUTCFullYear();
-
-    let totalInvoiced = 0;
-    let totalCollected = 0;
-    let invoicesThisMonth = 0;
-    let pendingCount = 0;
-    let overdueCount = 0;
-
-    for (const invoice of invoices) {
-      totalInvoiced += invoice.totalAmount || 0;
-      totalCollected += invoice.totalPaid || 0;
-
-      const invoiceDate = invoice.invoiceDate ? new Date(invoice.invoiceDate) : null;
-      if (
-        invoiceDate &&
-        invoiceDate.getUTCMonth() === currentMonth &&
-        invoiceDate.getUTCFullYear() === currentYear
-      ) {
-        invoicesThisMonth += 1;
-      }
-
-      if (invoice.status === "Pending" || invoice.status === "Partially Paid") {
-        pendingCount += 1;
-        const endDate = invoice.billingPeriodEnd ? new Date(invoice.billingPeriodEnd) : null;
-        if (endDate && endDate.getTime() < now.getTime()) {
-          overdueCount += 1;
-        }
-      }
-    }
-
-    const outstandingAmount = Math.max(0, totalInvoiced - totalCollected);
-    const collectionRate = totalInvoiced > 0 ? (totalCollected / totalInvoiced) * 100 : 0;
-
-    return {
-      totalInvoiced,
-      totalCollected,
-      outstandingAmount,
-      invoicesThisMonth,
-      pendingInvoices: pendingCount,
-      overdueInvoices: overdueCount,
-      collectionRate,
-    };
-  }, [invoices]);
-
-  const categorizedCollections = useMemo(() => {
-    const today: any[] = [];
-    const next7: any[] = [];
-    const next15: any[] = [];
-    const next30: any[] = [];
-    const overdue: any[] = [];
-
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-    invoices.forEach((inv) => {
-      if (inv.status === "Paid" || inv.status === "Cancelled") return;
-      if (!inv.collectionDate) return;
-
-      const colDate = new Date(inv.collectionDate);
-      const pending = inv.totalAmount - (inv.totalPaid || 0);
-      if (pending <= 0) return;
-
-      const diffTime = colDate.getTime() - todayStart.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      const item = {
-        id: inv.id,
-        clientName: inv.clientName,
-        invoiceNumber: inv.invoiceNumber,
-        collectionDate: inv.collectionDate,
-        pendingAmount: pending,
-        daysRemaining: diffDays,
-      };
-
-      if (colDate >= todayStart && colDate <= todayEnd) {
-        today.push(item);
-      } else if (diffDays < 0) {
-        overdue.push(item);
-      } else if (diffDays > 0 && diffDays <= 7) {
-        next7.push(item);
-      } else if (diffDays > 0 && diffDays <= 15) {
-        next15.push(item);
-      } else if (diffDays > 0 && diffDays <= 30) {
-        next30.push(item);
-      }
-    });
-
-    return { today, next7, next15, next30, overdue };
-  }, [invoices]);
-
-  const activeCategoryList = useMemo(() => {
-    switch (collectionCategory) {
-      case "today":
-        return categorizedCollections.today;
-      case "7days":
-        return categorizedCollections.next7;
-      case "15days":
-        return categorizedCollections.next15;
-      case "30days":
-        return categorizedCollections.next30;
-      case "overdue":
-        return categorizedCollections.overdue;
-      default:
-        return [];
-    }
-  }, [categorizedCollections, collectionCategory]);
 
   useEffect(() => {
-    let clientsLoaded = false;
-    let tasksLoaded = false;
-    let targetsLoaded = false;
-    let invoicesLoaded = false;
-    let vehiclesLoaded = false;
-    let servicesLoaded = false;
-    let employeesLoaded = false;
-    let paymentsLoaded = false;
-
-    const checkLoaded = () => {
-      if (
-        clientsLoaded &&
-        tasksLoaded &&
-        targetsLoaded &&
-        invoicesLoaded &&
-        vehiclesLoaded &&
-        servicesLoaded &&
-        employeesLoaded &&
-        paymentsLoaded
-      ) {
-        setLoading(false);
-      }
-    };
-
-    const u1 = subscribeAllClients((items) => {
-      const parsedClients = items.filter((c) => c.type === "client").map((c) => ({
-        ...c,
-        id: c.id,
-        name: c.name,
-        status: "In Progress",
-      }));
-      const parsedLeads = items.filter((c) => c.type === "lead").map((c) => ({
-        ...c,
-        id: c.id,
-        name: c.name,
-        status: "In Progress",
-      }));
-      setClients(parsedClients as any);
-      setLeads(parsedLeads as any);
-      clientsLoaded = true;
-      checkLoaded();
+    // 1. Subscribe to master vehicles
+    const qV = query(collection(db, VEHICLES_CENTRIC_COL));
+    const unsubV = onSnapshot(qV, (snap) => {
+      const vList = snap.docs.map((d) => ({ id: d.id, ...d.data() } as VehicleMaster));
+      setVehicles(vList);
+      setLoading(false);
     });
 
-    const u4 = subscribeToTasks((allTasks) => {
-      setTasks(allTasks);
-      tasksLoaded = true;
-      checkLoaded();
-    });
-
-    const u5 = subscribeToTargets((allTargets) => {
-      const enriched = allTargets.map((t) => calculateTargetMetrics(t));
-      setTargets(enriched);
-      targetsLoaded = true;
-      checkLoaded();
-    });
-
-    const u6 = subscribeToAllInvoices((data) => {
-      setInvoices(data);
-      invoicesLoaded = true;
-      checkLoaded();
-    });
-
-    const { collection: firestoreCol, onSnapshot: firestoreOnSnapshot } = import.meta.env ? { collection, onSnapshot } : { collection: null, onSnapshot: null };
-    
-    const u7 = onSnapshot(collection(db, "registry_vehicles_v2"), (snap) => {
-      setVehicles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      vehiclesLoaded = true;
-      checkLoaded();
-    });
-
-    const u8 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
-      setServices(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      servicesLoaded = true;
-      checkLoaded();
-    });
-
-    const u9 = onSnapshot(collection(db, "users"), (snap) => {
-      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      employeesLoaded = true;
-      checkLoaded();
-    });
-
-    const u10 = subscribeToAllPayments((items) => {
-      setAllPayments(items);
-      paymentsLoaded = true;
-      checkLoaded();
-    });
-
-    const u11 = onSnapshot(collection(db, "vehicle_documents"), (snap) => {
-      setVehicleDocuments(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    // 2. Subscribe to applications
+    const unsubA = subscribeApplications((data) => {
+      setApplications(data);
     });
 
     return () => {
-      u1();
-      u4();
-      u5();
-      u6();
-      u7();
-      u8();
-      u9();
-      u10();
-      u11();
+      unsubV();
+      unsubA();
     };
   }, []);
 
-  // Compute follow-ups in real-time from all registry buckets
-  const [followups, setFollowups] = useState<any>(null);
-  useEffect(() => {
-    setFollowups(computeVehicleDocFollowUps(vehicleDocuments, vehicles, clients, leads));
-  }, [vehicleDocuments, vehicles, clients, leads]);
+  // Compute 8 Expiry Categories strictly matching reference
+  const expiryCategories = useMemo(() => {
+    const insuranceList: ExpiryItem[] = [];
+    const fitnessList: ExpiryItem[] = [];
+    const regRenewalList: ExpiryItem[] = [];
+    const natAuthList: ExpiryItem[] = [];
+    const natPermitList: ExpiryItem[] = [];
+    const gujPermitList: ExpiryItem[] = [];
+    const taxList: ExpiryItem[] = [];
+    const pucList: ExpiryItem[] = [];
 
-  const completed = clients.filter((c) => c.status === "Completed").length;
-  const inProgress = [...clients, ...leads].filter((c) => c.status === "In Progress").length;
+    vehicles.forEach((v) => {
+      const baseInfo = {
+        vehicleNumber: v.vehicleNumber || v.id,
+        ownerName: v.ownerName || "Unknown Owner",
+        phone: v.phone || "—",
+      };
 
-  const stats = [
-    { label: "Clients", value: clients.length, icon: Users, href: "/dashboard/clients" },
-    { label: "Active leads", value: leads.length, icon: UserPlus, href: "/dashboard/leads" },
-    { label: "In progress", value: inProgress, icon: Clock, href: "/dashboard/clients" },
-    { label: "Completed", value: completed, icon: CheckCircle2, href: "/dashboard/clients" },
-  ] as const;
+      // 1. Insurance
+      if (v.insuranceDetails?.expiryDate) {
+        const days = computeDaysRemaining(v.insuranceDetails.expiryDate);
+        insuranceList.push({
+          ...baseInfo,
+          expiryDate: v.insuranceDetails.expiryDate,
+          daysRemaining: days,
+          isCritical: days <= 15,
+        });
+      }
+
+      // 2. Fitness
+      if (v.fitnessDetails?.expiryDate) {
+        const days = computeDaysRemaining(v.fitnessDetails.expiryDate);
+        fitnessList.push({
+          ...baseInfo,
+          expiryDate: v.fitnessDetails.expiryDate,
+          daysRemaining: days,
+          isCritical: days <= 15,
+        });
+      }
+
+      // 3. Renewal of Registration
+      if (v.registrationDetails?.registrationValidity) {
+        const days = computeDaysRemaining(v.registrationDetails.registrationValidity);
+        regRenewalList.push({
+          ...baseInfo,
+          expiryDate: v.registrationDetails.registrationValidity,
+          daysRemaining: days,
+          isCritical: days <= 30,
+        });
+      }
+
+      // 4. National Authorization
+      if (
+        v.permitDetails?.permitType === "National Permit Authorization" &&
+        v.permitDetails?.expiryDate
+      ) {
+        const days = computeDaysRemaining(v.permitDetails.expiryDate);
+        natAuthList.push({
+          ...baseInfo,
+          expiryDate: v.permitDetails.expiryDate,
+          daysRemaining: days,
+          isCritical: days <= 15,
+        });
+      }
+
+      // 5. National Permit
+      if (v.permitDetails?.permitType === "National Permit" && v.permitDetails?.expiryDate) {
+        const days = computeDaysRemaining(v.permitDetails.expiryDate);
+        natPermitList.push({
+          ...baseInfo,
+          expiryDate: v.permitDetails.expiryDate,
+          daysRemaining: days,
+          isCritical: days <= 30,
+        });
+      }
+
+      // 6. Gujarat Permit
+      if (v.permitDetails?.permitType === "Gujarat Permit" && v.permitDetails?.expiryDate) {
+        const days = computeDaysRemaining(v.permitDetails.expiryDate);
+        gujPermitList.push({
+          ...baseInfo,
+          expiryDate: v.permitDetails.expiryDate,
+          daysRemaining: days,
+          isCritical: days <= 30,
+        });
+      }
+
+      // 7. Tax
+      if (!v.taxDetails?.isLumpsum && v.taxDetails?.expiryDate) {
+        const days = computeDaysRemaining(v.taxDetails.expiryDate);
+        taxList.push({
+          ...baseInfo,
+          expiryDate: v.taxDetails.expiryDate,
+          daysRemaining: days,
+          isCritical: days <= 10,
+        });
+      }
+
+      // 8. PUC
+      if (v.pucExpiryDate) {
+        const days = computeDaysRemaining(v.pucExpiryDate);
+        pucList.push({
+          ...baseInfo,
+          expiryDate: v.pucExpiryDate,
+          daysRemaining: days,
+          isCritical: days <= 7,
+        });
+      }
+    });
+
+    const sortFn = (a: ExpiryItem, b: ExpiryItem) => a.daysRemaining - b.daysRemaining;
+
+    return [
+      {
+        title: "Insurance Due",
+        icon: Shield,
+        items: insuranceList.sort(sortFn),
+        color: "text-rose-600 bg-rose-50 border-rose-100",
+      },
+      {
+        title: "Fitness Due",
+        icon: FileCheck,
+        items: fitnessList.sort(sortFn),
+        color: "text-amber-600 bg-amber-50 border-amber-100",
+      },
+      {
+        title: "Renewal of Registration Due",
+        icon: Calendar,
+        items: regRenewalList.sort(sortFn),
+        color: "text-blue-600 bg-blue-50 border-blue-100",
+      },
+      {
+        title: "National Authorization Due",
+        icon: Building2,
+        items: natAuthList.sort(sortFn),
+        color: "text-purple-600 bg-purple-50 border-purple-100",
+      },
+      {
+        title: "National Permit Due",
+        icon: Building2,
+        items: natPermitList.sort(sortFn),
+        color: "text-indigo-600 bg-indigo-50 border-indigo-100",
+      },
+      {
+        title: "Gujarat Permit Due",
+        icon: FileText,
+        items: gujPermitList.sort(sortFn),
+        color: "text-emerald-600 bg-emerald-50 border-emerald-100",
+      },
+      {
+        title: "Tax Due",
+        icon: FileText,
+        items: taxList.sort(sortFn),
+        color: "text-cyan-600 bg-cyan-50 border-cyan-100",
+      },
+      {
+        title: "PUC Due",
+        icon: Lightbulb,
+        items: pucList.sort(sortFn),
+        color: "text-teal-600 bg-teal-50 border-teal-100",
+      },
+    ];
+  }, [vehicles]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
-        <p className="text-sm text-muted-foreground">Snapshot of today's office activity.</p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((s) => (
+    <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Today's Operations</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Upcoming expiries and renewals across your entire fleet database.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
           <Link
-            key={s.label}
-            to={s.href}
-            className="group rounded-xl border bg-card p-5 hover:border-primary/50 transition-colors"
+            to="/dashboard/applications"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-all shadow-md shadow-blue-500/20 active:scale-[0.98]"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{s.label}</span>
-              <s.icon className="size-4 text-primary" />
-            </div>
-            <div className="mt-3 text-3xl font-bold">{s.value}</div>
-            <div className="mt-2 text-xs text-muted-foreground inline-flex items-center gap-1 group-hover:text-primary">
-              View <ArrowRight className="size-3" />
-            </div>
+            <Plus className="w-4 h-4" />
+            New Application
           </Link>
-        ))}
-      </div>
-
-      {/* Service Management Section */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Service Management</h3>
-
-        {/* Revenue and Services Cards */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              <DollarSign className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">₹{totalRevenue.toLocaleString("en-IN")}</div>
-              <p className="text-xs text-muted-foreground mt-1">All services combined</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Services</CardTitle>
-              <TrendingUp className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{activeServices}</div>
-              <p className="text-xs text-muted-foreground mt-1">In progress</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Upcoming Tasks</CardTitle>
-              <AlertCircle className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{upcomingTasks.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Pending tasks sorted by date</p>
-            </CardContent>
-          </Card>
-        </div>
-        {followups && (
-          <div className="space-y-4 mt-4">
-            <h3 className="text-lg font-semibold">Follow-Up Center</h3>
-
-            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-              <Card
-                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
-                onClick={() => setFilter({ type: "today" })}
-              >
-                <CardHeader>
-                  <CardTitle className="text-sm group-hover:text-orange-600">
-                    Today's Follow-Ups
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold group-hover:text-orange-600">
-                    {followups.totals.today}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
-                onClick={() => setFilter({ type: "upcoming7" })}
-              >
-                <CardHeader>
-                  <CardTitle className="text-sm group-hover:text-orange-600">
-                    Upcoming 7 Days
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold group-hover:text-orange-600">
-                    {followups.totals.upcoming7}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
-                onClick={() => setFilter({ type: "upcoming15" })}
-              >
-                <CardHeader>
-                  <CardTitle className="text-sm group-hover:text-orange-600">
-                    Upcoming 15 Days
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold group-hover:text-orange-600">
-                    {followups.totals.upcoming15}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
-                onClick={() => setFilter({ type: "upcoming30" })}
-              >
-                <CardHeader>
-                  <CardTitle className="text-sm group-hover:text-orange-600">
-                    Upcoming 30 Days
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold group-hover:text-orange-600">
-                    {followups.totals.upcoming30}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors"
-                onClick={() => setFilter({ type: "overdue" })}
-              >
-                <CardHeader>
-                  <CardTitle className="text-sm group-hover:text-orange-600">
-                    Overdue Services
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-red-600 group-hover:text-orange-600">
-                    {followups.totals.overdue}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="group cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:shadow-lg transition-colors">
-                <CardHeader>
-                  <CardTitle className="text-sm group-hover:text-orange-600">
-                    Total Active Services
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold group-hover:text-orange-600">
-                    {followups.totals.totalActiveServices}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Quick lists - show filtered entries when a card is clicked */}
-            <FollowUpLists 
-              followups={followups} 
-              filter={filter} 
-              setFilter={setFilter} 
-              onOpenClient={(id: string) => {
-                setSelectedClientId(id);
-                setDetailOpen(true);
-              }}
-            />
-          </div>
-        )}
-
-        {/* Revenue by Service */}
-        {revenueByService.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Revenue by Service</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {revenueByService.map((item) => (
-                  <Link
-                    key={item.service}
-                    to={`/dashboard/service/${serviceToUrlParam(item.service as any)}`}
-                    className="flex items-center justify-between p-2 rounded hover:bg-muted transition-colors"
-                  >
-                    <span className="text-sm font-medium">{serviceLabel(item.service as any)}</span>
-                    <span className="font-bold">₹{item.revenue.toLocaleString("en-IN")}</span>
-                  </Link>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Service Quick Links */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Quick Access Services</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {SERVICE_TYPES.map((service) => (
-                <Link
-                  key={service}
-                  to={`/dashboard/service/${serviceToUrlParam(service)}`}
-                  className="p-2 rounded border hover:border-primary hover:bg-muted transition-colors text-center text-xs font-medium"
-                >
-                  {serviceLabel(service)}
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Upcoming Tasks Table */}
-        {upcomingTasks.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Upcoming Tasks</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {upcomingTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg text-sm bg-background hover:bg-muted/5 transition-all gap-2"
-                  >
-                    <div>
-                      <p className="font-semibold text-foreground">{task.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Client: <span className="font-medium text-foreground">{task.clientName}</span>
-                        {task.vehicleNo && task.vehicleNo !== "—" && (
-                          <> • Vehicle: <span className="font-medium text-foreground">{task.vehicleNo}</span></>
-                        )}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Assigned: {task.assignee}
-                      </p>
-                    </div>
-                    <div className="text-left sm:text-right shrink-0">
-                      <p className="text-xs font-semibold text-foreground">
-                        {task.dueDate ? task.dueDate.toLocaleDateString("en-IN") : "—"}
-                      </p>
-                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1 bg-muted text-foreground border">
-                        {task.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Upcoming Collections Card */}
-        <Card className="col-span-1 md:col-span-2 lg:col-span-3">
-          <CardHeader className="pb-3 border-b flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Receipt className="size-4 text-primary" /> Upcoming Collections
-              </CardTitle>
-            </div>
-            <div className="flex gap-1 flex-wrap">
-              {(["overdue", "today", "7days", "15days", "30days"] as const).map((cat) => {
-                const labelMap = {
-                  overdue: "Overdue",
-                  today: "Today",
-                  "7days": "Next 7d",
-                  "15days": "Next 15d",
-                  "30days": "Next 30d",
-                };
-                const count =
-                  categorizedCollections[
-                    cat === "7days"
-                      ? "next7"
-                      : cat === "15days"
-                        ? "next15"
-                        : cat === "30days"
-                          ? "next30"
-                          : cat
-                  ].length;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setCollectionCategory(cat)}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-                      collectionCategory === cat
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    {labelMap[cat]} ({count})
-                  </button>
-                );
-              })}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            {activeCategoryList.length === 0 ? (
-              <div className="text-center py-6 text-xs text-muted-foreground">
-                No collections scheduled in this period.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b bg-slate-50 text-[9px] uppercase font-bold text-muted-foreground">
-                      <th className="p-2">Client Name</th>
-                      <th className="p-2">Invoice Number</th>
-                      <th className="p-2">Collection Date</th>
-                      <th className="p-2 text-right">Pending Amount</th>
-                      <th className="p-2 text-right">Days Remaining</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeCategoryList.map((item) => (
-                      <tr key={item.id} className="border-b hover:bg-muted/10">
-                        <td className="p-2 font-semibold text-foreground">{item.clientName}</td>
-                        <td className="p-2 font-mono text-muted-foreground">
-                          {item.invoiceNumber}
-                        </td>
-                        <td className="p-2 font-mono">
-                          {new Date(item.collectionDate).toLocaleDateString("en-IN")}
-                        </td>
-                        <td className="p-2 text-right font-mono font-bold text-primary">
-                          ₹{item.pendingAmount.toLocaleString("en-IN")}
-                        </td>
-                        <td className="p-2 text-right font-mono font-semibold">
-                          {item.daysRemaining < 0 ? (
-                            <span className="text-destructive font-bold">
-                              Overdue by {Math.abs(item.daysRemaining)}d
-                            </span>
-                          ) : item.daysRemaining === 0 ? (
-                            <span className="text-amber-600 font-bold">Today</span>
-                          ) : (
-                            <span className="text-gray-600">{item.daysRemaining} days</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Real-time Task Counters Card */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <CheckCircle2 className="size-5 text-indigo-500" />
-          Tasks Overview
-        </h3>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Total Tasks</CardTitle>
-            </CardHeader>
-            <CardContent className="py-1 px-3 pb-3">
-              <div className="text-xl font-bold">{tasks.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Pending Tasks</CardTitle>
-            </CardHeader>
-            <CardContent className="py-1 px-3 pb-3">
-              <div className="text-xl font-bold text-amber-600">
-                {tasks.filter((t) => !t.done && t.status !== "Completed").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Completed Tasks</CardTitle>
-            </CardHeader>
-            <CardContent className="py-1 px-3 pb-3">
-              <div className="text-xl font-bold text-emerald-600">
-                {tasks.filter((t) => t.done || t.status === "Completed").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Overdue Tasks</CardTitle>
-            </CardHeader>
-            <CardContent className="py-1 px-3 pb-3">
-              <div className="text-xl font-bold text-rose-600">
-                {tasks.filter((t) => {
-                  if (!t.dueDate || t.done || t.status === "Completed") return false;
-                  return new Date(t.dueDate).getTime() < Date.now();
-                }).length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">My Pending</CardTitle>
-            </CardHeader>
-            <CardContent className="py-1 px-3 pb-3">
-              <div className="text-xl font-bold text-indigo-600">
-                {tasks.filter((t) => {
-                  const isMy = t.assignedEmployeeId === session?.uid || t.assignedEmployeeId === session?.employeeId || t.assignee === session?.username || t.assignee === session?.name;
-                  return isMy && !t.done && t.status !== "Completed";
-                }).length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">My Completed</CardTitle>
-            </CardHeader>
-            <CardContent className="py-1 px-3 pb-3">
-              <div className="text-xl font-bold text-emerald-600">
-                {tasks.filter((t) => {
-                  const isMy = t.assignedEmployeeId === session?.uid || t.assignedEmployeeId === session?.employeeId || t.assignee === session?.username || t.assignee === session?.name;
-                  return isMy && (t.done || t.status === "Completed");
-                }).length}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
 
-      {/* Pending Follow-ups Section */}
-      {tasks.filter((t) => !t.done && t.status !== "Completed").length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Zap className="size-5 text-orange-500" />
-            Pending Follow-ups
-          </h3>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                {tasks
-                  .filter((t) => !t.done && t.status !== "Completed")
-                  .sort((a, b) => {
-                    const priorityOrder = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
-                    return (
-                      priorityOrder[a.priority as keyof typeof priorityOrder] -
-                      priorityOrder[b.priority as keyof typeof priorityOrder]
-                    );
-                  })
-                  .slice(0, 5)
-                  .map((task) => (
-                    <Link
-                      key={task.id}
-                      to={`/dashboard/tasks`}
-                      className="flex items-start justify-between p-3 border rounded hover:bg-muted transition-colors group"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm">{task.title}</p>
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                              task.priority === "Urgent"
-                                ? "bg-red-100 text-red-700"
-                                : task.priority === "High"
-                                  ? "bg-orange-100 text-orange-700"
-                                  : task.priority === "Medium"
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "bg-blue-100 text-blue-700"
-                            }`}
-                          >
-                            {task.priority}
-                          </span>
+      {/* 8 Expiry Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {expiryCategories.map((cat, idx) => {
+          const Icon = cat.icon;
+          const criticalCount = cat.items.filter((i) => i.isCritical).length;
+
+          return (
+            <div
+              key={idx}
+              className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col justify-between"
+            >
+              {/* Card Header */}
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className={cn("p-2 rounded-xl border", cat.color)}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900 leading-snug">{cat.title}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {cat.items.length} upcoming •{" "}
+                      <span className="text-rose-600 font-semibold">{criticalCount} critical</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div className="p-4 space-y-3 flex-1 overflow-y-auto max-h-[300px] divide-y divide-slate-100">
+                {cat.items.length === 0 ? (
+                  <p className="text-center text-slate-400 text-xs py-6">No upcoming expiries</p>
+                ) : (
+                  cat.items.slice(0, 5).map((item, iIdx) => (
+                    <div key={iIdx} className="pt-2.5 first:pt-0 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-bold text-slate-900 font-mono tracking-tight">
+                          {item.vehicleNumber}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {task.assignee} • {task.status}
-                        </p>
+                        <div className="text-[11px] text-slate-500">{item.ownerName}</div>
                       </div>
-                      <ArrowRight className="size-4 text-muted-foreground group-hover:text-primary" />
-                    </Link>
-                  ))}
-              </div>
-              {tasks.filter((t) => !t.done && t.status !== "Completed").length > 5 && (
-                <Link
-                  to="/dashboard/tasks"
-                  className="text-xs text-primary hover:underline mt-3 inline-block"
-                >
-                  View all {tasks.filter((t) => !t.done && t.status !== "Completed").length}{" "}
-                  follow-ups →
-                </Link>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
-      {/* Targets Progress Section */}
-      {targets.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Target className="size-5 text-blue-500" />
-            Performance Targets
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {targets.map((target) => (
-              <Card key={target.id}>
-                <CardContent className="pt-6">
-                  <div className="space-y-3">
-                    <div>
-                      <p className="font-semibold text-sm">{target.category}</p>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {target.completed}/{target.target}
-                      </p>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all"
-                        style={{ width: `${Math.min(target.achievementPercentage, 100)}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">
-                        {target.achievementPercentage.toFixed(0)}%
-                      </span>
-                      <span className="text-muted-foreground">{target.remaining} remaining</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-xl border bg-card p-6">
-        <h3 className="font-semibold">Quick actions</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Jump straight into the most common tasks.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            to="/dashboard/clients"
-            className="px-3 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90"
-          >
-            Open Clients
-          </Link>
-          <Link
-            to="/dashboard/leads"
-            className="px-3 py-2 text-sm rounded-md border hover:bg-muted"
-          >
-            Open Leads
-          </Link>
-        </div>
-      </div>
-
-      {/* Client Detail Workspace modal */}
-      <ClientDetailWorkspace
-        clientId={selectedClientId || ""}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-      />
-    </div>
-  );
-}
-
-function FollowUpLists({ followups, filter, setFilter, onOpenClient }: any) {
-  const type = filter?.type || "today";
-  const list =
-    type === "today"
-      ? followups.today
-      : type === "upcoming7"
-        ? followups.upcoming7
-        : type === "upcoming15"
-          ? followups.upcoming15
-          : type === "upcoming30"
-            ? followups.upcoming30
-            : type === "overdue"
-              ? followups.overdue
-              : followups.flat;
-
-  const headerLabel = 
-    type === "today" 
-      ? "Today's Follow-Ups" 
-      : type === "upcoming7"
-        ? "Upcoming 7 Days"
-        : type === "upcoming15"
-          ? "Upcoming 15 Days"
-          : type === "upcoming30"
-            ? "Upcoming 30 Days"
-            : type === "overdue"
-              ? "Overdue Expiries"
-              : "All Document Follow-Ups";
-
-  return (
-    <div>
-      <div className="mt-3 grid gap-3">
-        {list.length === 0 ? (
-          <Card>
-            <CardContent className="py-6 text-center text-sm text-muted-foreground">
-              No records found for this filter.
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">
-                {headerLabel}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {list.map((e: any, i: number) => (
-                  <div
-                    key={i}
-                    className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border rounded-lg text-sm bg-background hover:bg-muted/5 transition-all gap-3"
-                  >
-                    <div>
-                      <p className="font-semibold text-foreground">{e.clientName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Document: <span className="font-medium text-foreground">{e.serviceType}</span> • Vehicle: <span className="font-medium text-foreground">{e.mvNo || "—"}</span>
-                      </p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Expiry Date: {e.dueDate ? new Date(e.dueDate).toLocaleDateString("en-IN") : "N/A"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end shrink-0">
-                      <div className="text-right text-xs">
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          e.daysRemaining < 0 
-                            ? "bg-red-100 text-red-700 border border-red-200" 
-                            : e.daysRemaining === 0 
-                              ? "bg-orange-100 text-orange-700 border border-orange-200"
-                              : "bg-green-100 text-green-700 border border-green-200"
-                        }`}>
-                          {e.daysRemaining < 0 
-                            ? `Expired ${Math.abs(e.daysRemaining)} days ago` 
-                            : e.daysRemaining === 0 
-                              ? "Expires Today" 
-                              : `${e.daysRemaining} days remaining`}
+                      <div className="text-right">
+                        <div className="font-mono text-[10px] text-slate-400">{item.expiryDate}</div>
+                        <span
+                          className={cn(
+                            "inline-block text-[10px] font-bold px-2 py-0.5 rounded-md mt-0.5",
+                            item.daysRemaining <= 0
+                              ? "bg-rose-100 text-rose-700"
+                              : item.daysRemaining <= 15
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-600"
+                          )}
+                        >
+                          {item.daysRemaining <= 0
+                            ? `${Math.abs(item.daysRemaining)}d overdue`
+                            : `${item.daysRemaining}d left`}
                         </span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px] px-2.5 font-medium"
-                        onClick={() => onOpenClient(e.clientId)}
-                      >
-                        Open Client
-                      </Button>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
-            </CardContent>
-          </Card>
-        )}
+
+              {/* Card Footer */}
+              <div className="p-3 bg-slate-50/80 border-t border-slate-100 text-center">
+                <Link
+                  to="/dashboard/applications"
+                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                >
+                  View all {cat.items.length} vehicles <ArrowRight className="w-3 h-3" />
+                </Link>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -21,6 +21,7 @@ import { Route as DashboardEmployeesRouteImport } from './routes/dashboard.emplo
 import { Route as DashboardClientsRouteImport } from './routes/dashboard.clients'
 import { Route as DashboardClientAnalyticsRouteImport } from './routes/dashboard.client-analytics'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard.billing'
+import { Route as DashboardApplicationsRouteImport } from './routes/dashboard.applications'
 import { Route as DashboardAllClientsRouteImport } from './routes/dashboard.all-clients'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
 import { Route as DashboardSettingsMigrationRouteImport } from './routes/dashboard.settings.migration'
@@ -88,6 +89,11 @@ const DashboardBillingRoute = DashboardBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardApplicationsRoute = DashboardApplicationsRouteImport.update({
+  id: '/applications',
+  path: '/applications',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAllClientsRoute = DashboardAllClientsRouteImport.update({
   id: '/all-clients',
   path: '/all-clients',
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/all-clients': typeof DashboardAllClientsRoute
+  '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/all-clients': typeof DashboardAllClientsRoute
+  '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/all-clients': typeof DashboardAllClientsRoute
+  '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dashboard/accounting'
     | '/dashboard/all-clients'
+    | '/dashboard/applications'
     | '/dashboard/billing'
     | '/dashboard/client-analytics'
     | '/dashboard/clients'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard/accounting'
     | '/dashboard/all-clients'
+    | '/dashboard/applications'
     | '/dashboard/billing'
     | '/dashboard/client-analytics'
     | '/dashboard/clients'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dashboard/accounting'
     | '/dashboard/all-clients'
+    | '/dashboard/applications'
     | '/dashboard/billing'
     | '/dashboard/client-analytics'
     | '/dashboard/clients'
@@ -324,6 +336,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardBillingRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/applications': {
+      id: '/dashboard/applications'
+      path: '/applications'
+      fullPath: '/dashboard/applications'
+      preLoaderRoute: typeof DashboardApplicationsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/all-clients': {
       id: '/dashboard/all-clients'
       path: '/all-clients'
@@ -391,6 +410,7 @@ const DashboardSettingsRouteWithChildren =
 interface DashboardRouteChildren {
   DashboardAccountingRoute: typeof DashboardAccountingRoute
   DashboardAllClientsRoute: typeof DashboardAllClientsRoute
+  DashboardApplicationsRoute: typeof DashboardApplicationsRoute
   DashboardBillingRoute: typeof DashboardBillingRoute
   DashboardClientAnalyticsRoute: typeof DashboardClientAnalyticsRoute
   DashboardClientsRoute: typeof DashboardClientsRoute
@@ -407,6 +427,7 @@ interface DashboardRouteChildren {
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAccountingRoute: DashboardAccountingRoute,
   DashboardAllClientsRoute: DashboardAllClientsRoute,
+  DashboardApplicationsRoute: DashboardApplicationsRoute,
   DashboardBillingRoute: DashboardBillingRoute,
   DashboardClientAnalyticsRoute: DashboardClientAnalyticsRoute,
   DashboardClientsRoute: DashboardClientsRoute,
