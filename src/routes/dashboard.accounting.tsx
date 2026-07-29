@@ -400,18 +400,31 @@ function AccountingDashboardPage() {
     // Include applications directly into accounting metrics
     applications.forEach((app) => {
       const appKey = `app-fin-${app.id}`;
-      const appServicesStr = (app.services && app.services.join(", ")) || "General Service";
-      
-      let totAmt = app.amount || 0;
-      let totPaid = app.totalPaid || 0;
-      
-      // Calculate from serviceAccounting if available
-      if (app.serviceAccounting) {
+      const srvList = app.services || [];
+      const appServicesStr = srvList.length > 0 ? srvList.join(", ") : "General Service";
+
+      let totAmt = app.totalFee || app.amount || 0;
+      let totPaid = app.totalAdvance || app.totalPaid || 0;
+
+      if (app.serviceFees && Object.keys(app.serviceFees).length > 0) {
+        let calcTot = 0;
+        let calcPaid = 0;
+        Object.entries(app.serviceFees).forEach(([sKey, feeVal]) => {
+          if (srvList.length === 0 || srvList.includes(sKey)) {
+            calcTot += Number(feeVal) || 0;
+            calcPaid += Number(app.serviceAdvances?.[sKey]) || 0;
+          }
+        });
+        if (calcTot > 0) {
+          totAmt = calcTot;
+          totPaid = calcPaid;
+        }
+      } else if (app.serviceAccounting) {
         let calcTot = 0;
         let calcPaid = 0;
         Object.values(app.serviceAccounting).forEach((sa: any) => {
-          calcTot += sa.totalAmount || 0;
-          calcPaid += sa.advancePayment || 0;
+          calcTot += sa.totalAmount || sa.fee || 0;
+          calcPaid += sa.advancePayment || sa.advance || 0;
         });
         if (calcTot > 0) {
           totAmt = calcTot;
@@ -421,6 +434,40 @@ function AccountingDashboardPage() {
 
       const balAmt = Math.max(0, totAmt - totPaid);
       const paymentStatus = balAmt === 0 && totAmt > 0 ? "Paid" : totPaid > 0 ? "Partially Paid" : "Pending";
+
+      const srvCount = srvList.length;
+      const serviceList = srvList.map((srv: string) => {
+        let srvAmount = 0;
+        let srvReceived = 0;
+
+        if (app.serviceFees && app.serviceFees[srv] !== undefined && app.serviceFees[srv] !== null) {
+          srvAmount = Number(app.serviceFees[srv]) || 0;
+        } else if (app.serviceAccounting && app.serviceAccounting[srv]) {
+          srvAmount = Number(app.serviceAccounting[srv].totalAmount || app.serviceAccounting[srv].fee) || 0;
+        } else if (srvCount > 0) {
+          srvAmount = Math.round((totAmt / srvCount) * 100) / 100;
+        }
+
+        if (app.serviceAdvances && app.serviceAdvances[srv] !== undefined && app.serviceAdvances[srv] !== null) {
+          srvReceived = Number(app.serviceAdvances[srv]) || 0;
+        } else if (app.serviceAccounting && app.serviceAccounting[srv]) {
+          srvReceived = Number(app.serviceAccounting[srv].advancePayment || app.serviceAccounting[srv].advance) || 0;
+        } else if (srvCount > 0) {
+          srvReceived = Math.round((totPaid / srvCount) * 100) / 100;
+        }
+
+        const srvOutstanding = Math.max(0, srvAmount - srvReceived);
+
+        return {
+          id: `${app.id}-${srv}`,
+          serviceType: srv,
+          amount: srvAmount,
+          received: srvReceived,
+          outstanding: srvOutstanding,
+          status: app.applicationStatus || "Pending",
+          dueDate: app.createdAt?.slice(0, 10) || "",
+        };
+      });
 
       rows.push({
         id: appKey,
@@ -440,15 +487,7 @@ function AccountingDashboardPage() {
         askBhaylubha: false,
         assignedEmployee: app.assignedEmployeeName || "Unassigned",
         services: appServicesStr,
-        serviceList: (app.services || []).map((srv: string) => ({
-          id: `${app.id}-${srv}`,
-          serviceType: srv,
-          amount: totAmt,
-          received: totPaid,
-          outstanding: balAmt,
-          status: app.applicationStatus || "Pending",
-          dueDate: app.createdAt?.slice(0, 10) || "",
-        })),
+        serviceList: serviceList,
         hasInvoice: true,
         daysOverdue: 0,
       });

@@ -8,6 +8,7 @@ import {
   setDoc,
   getDocs,
   getDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { removeUndefined } from "./records";
@@ -16,12 +17,22 @@ import { getSession } from "./auth";
 export const APPLICATIONS_COL = "registry_applications_v1";
 export const VEHICLES_CENTRIC_COL = "registry_vehicles_master_v1";
 
+export interface TrackExpirySettings {
+  puc?: boolean;
+  tax?: boolean;
+  permit?: boolean;
+  insurance?: boolean;
+  fitness?: boolean;
+}
+
 export interface VehicleMaster {
   id: string;
   vehicleNumber: string;
   phone: string;
   ownerName: string;
   fatherHusbandName: string;
+  coName?: string;
+  groupName?: string;
   address: string;
   registrationDate: string;
   chassisNumber: string;
@@ -61,17 +72,38 @@ export interface VehicleMaster {
     amount?: number;
     insurancePlace?: string;
     documentUrl?: string;
+    policySubCategory?: string;
+    vehicleType?: string;
+    agent?: string;
+    insuranceAgency?: string;
+    reference?: string;
+    fuelType?: string;
+    vehicleRegistrationNumber?: string;
+    vehicleModelDetails?: string;
+    premiumExclGst?: number;
+    gstAmount?: number;
+    totalPremium?: number;
+    insurerCommission?: number;
+    clientDiscount?: number;
+    netCommission?: number;
   };
   permitDetails?: {
     permitType?: "Gujarat Permit" | "National Permit" | "National Permit Authorization" | string;
     issueDate?: string;
     expiryDate?: string;
+    gujaratPermitIssueDate?: string;
+    gujaratPermitExpiryDate?: string;
+    nationalPermitIssueDate?: string;
+    nationalPermitExpiryDate?: string;
+    nationalAuthIssueDate?: string;
+    nationalAuthExpiryDate?: string;
     documentUrl?: string;
   };
   registrationDetails?: {
     dateOfRegistration?: string;
     registrationValidity?: string;
   };
+  trackExpiry?: TrackExpirySettings;
   documents?: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;
@@ -107,6 +139,8 @@ export interface ApplicationRecord {
   remarks?: string;
   reminder?: string;
   priority?: "Low" | "Medium" | "High" | "Urgent";
+  applicationType?: string;
+  trackExpiry?: TrackExpirySettings;
   vehicleDetails: VehicleMaster;
   createdAt: string;
   updatedAt: string;
@@ -180,6 +214,7 @@ export async function saveApplicationAndVehicle(
     vehicleNumberClean: cleanVehicleNo,
     ownerName: appData.ownerName,
     phone: appData.mobileNumber,
+    trackExpiry: appData.trackExpiry || appData.vehicleDetails?.trackExpiry,
     updatedAt: now,
     updatedBy: session?.name || "System",
   });
@@ -231,26 +266,19 @@ export async function saveApplicationAndVehicle(
     await setDoc(docRef, updatePayload, { merge: true });
   }
 
-  // ─── AUTOMATIC TASK GENERATION & SYNC FOR APPLICATION SERVICES ──────────
+  // ─── AUTOMATIC TASK & SERVICES SYNC FOR APPLICATION SERVICES ──────────
   try {
     const servicesList = appData.services || [];
     const joinedServices = servicesList.join(", ");
-    
-    // Check if task already exists for this application
-    const tasksQuery = query(
-      collection(db, "registry_tasks"),
-      where("applicationDocId", "==", finalAppId)
-    );
-    const existingTasksSnap = await getDocs(tasksQuery);
 
-    const taskPayload = removeUndefined({
+    const syncFields = removeUndefined({
       title: `${joinedServices || "Application Services"} - ${appData.vehicleNumber}`,
       serviceName: joinedServices,
       serviceType: joinedServices,
       services: servicesList,
       applicationDocId: finalAppId,
       applicationId: generatedAppIdStr,
-      applicationType: "Home",
+      applicationType: appData.applicationType || "Home",
       vehicleId: cleanVehicleNo,
       vehicleNumber: appData.vehicleNumber,
       ownerName: appData.ownerName,
@@ -263,57 +291,153 @@ export async function saveApplicationAndVehicle(
       assignedEmployeeId: appData.assignedEmployeeId || "",
       assignedEmployeeUid: appData.assignedEmployeeId || "",
       reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
-      issueDate: appData.createdAt || now,
-      createdDate: now,
-      createdAt: now,
-      createdBy: session?.name || "System",
-      manual: false,
-      status: appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned",
-      priority: appData.priority || "Medium",
-      done: false,
-      associationType: "application",
-      bucket: "applications",
+      trackExpiry: appData.trackExpiry || appData.vehicleDetails?.trackExpiry,
       remarks: appData.remarks || "",
+      updatedAt: now,
     });
 
-    if (existingTasksSnap.empty) {
+    // 1. Sync tasks in registry_tasks
+    const taskQueries = [
+      query(collection(db, "registry_tasks"), where("applicationDocId", "==", finalAppId)),
+      query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr)),
+    ];
+
+    const tasksToSyncMap = new Map();
+    for (const q of taskQueries) {
+      const snap = await getDocs(q);
+      snap.docs.forEach((d) => tasksToSyncMap.set(d.id, d));
+    }
+
+    if (tasksToSyncMap.size === 0) {
+      // Create new task if no task exists
       const newTaskRef = doc(collection(db, "registry_tasks"));
       await setDoc(newTaskRef, {
         id: newTaskRef.id,
         taskId: newTaskRef.id,
-        ...taskPayload,
+        ...syncFields,
+        issueDate: (appData as any).createdAt || now,
+        createdDate: now,
+        createdAt: now,
+        createdBy: session?.name || "System",
+        manual: false,
+        status: appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned",
+        priority: appData.priority || "Medium",
+        done: false,
+        associationType: "application",
+        bucket: "applications",
       });
     } else {
-      for (const tDoc of existingTasksSnap.docs) {
-        await setDoc(tDoc.ref, {
-          title: `${joinedServices || "Application Services"} - ${appData.vehicleNumber}`,
-          serviceName: joinedServices,
-          serviceType: joinedServices,
-          services: servicesList,
-          applicationId: generatedAppIdStr,
-          assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
-          assignee: appData.assignedEmployeeName || "Unassigned",
-          assignedEmployeeId: appData.assignedEmployeeId || "",
-          assignedEmployeeUid: appData.assignedEmployeeId || "",
-          ownerName: appData.ownerName,
-          ownerPhone: appData.mobileNumber,
-          clientName: appData.ownerName,
-          mobileNumber: appData.mobileNumber,
-          phone: appData.mobileNumber,
-          vehicleNumber: appData.vehicleNumber,
-          reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
-          updatedAt: now,
-        }, { merge: true });
+      // Update existing tasks in registry_tasks
+      for (const tDoc of tasksToSyncMap.values()) {
+        await setDoc(tDoc.ref, syncFields, { merge: true });
       }
     }
+
+    // 2. Sync service records in registry_services_v2 (if application reached service level)
+    const serviceQueries = [
+      query(collection(db, "registry_services_v2"), where("applicationDocId", "==", finalAppId)),
+      query(collection(db, "registry_services_v2"), where("applicationId", "==", generatedAppIdStr)),
+    ];
+
+    const servicesToSyncMap = new Map();
+    for (const q of serviceQueries) {
+      const snap = await getDocs(q);
+      snap.docs.forEach((d) => servicesToSyncMap.set(d.id, d));
+    }
+
+    for (const sDoc of servicesToSyncMap.values()) {
+      await setDoc(sDoc.ref, syncFields, { merge: true });
+    }
   } catch (err) {
-    console.error("Error auto-generating tasks for application:", err);
+    console.error("Error syncing tasks and services for application:", err);
   }
 
   return finalAppId;
 }
 
 export async function deleteApplication(id: string): Promise<void> {
-  const { deleteDoc } = await import("firebase/firestore");
-  await deleteDoc(doc(db, APPLICATIONS_COL, id));
+  try {
+    const appRef = doc(db, APPLICATIONS_COL, id);
+    const appSnap = await getDoc(appRef);
+    const generatedAppIdStr = appSnap.exists() ? appSnap.data()?.applicationId : "";
+    const vehicleNo = appSnap.exists() ? appSnap.data()?.vehicleNumber : "";
+    const cleanVehicleNo = vehicleNo ? vehicleNo.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+
+    // 1. Delete Application Document
+    await deleteDoc(appRef);
+
+    // 2. Check if any remaining application exists for this vehicle; if not, delete vehicle master doc
+    if (cleanVehicleNo) {
+      const remainingQuery = query(
+        collection(db, APPLICATIONS_COL),
+        where("vehicleId", "==", cleanVehicleNo)
+      );
+      const remainingSnap = await getDocs(remainingQuery);
+      if (remainingSnap.empty) {
+        const vehDocRef = doc(db, VEHICLES_CENTRIC_COL, cleanVehicleNo);
+        await deleteDoc(vehDocRef).catch(console.error);
+      }
+    }
+
+    // 3. Delete linked tasks from registry_tasks
+    const taskDocsToDelete = new Map();
+    if (id) {
+      const q1 = query(collection(db, "registry_tasks"), where("applicationDocId", "==", id));
+      const s1 = await getDocs(q1);
+      s1.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+
+      const q2 = query(collection(db, "registry_tasks"), where("recordId", "==", id));
+      const s2 = await getDocs(q2);
+      s2.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+    }
+    if (generatedAppIdStr) {
+      const q3 = query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr));
+      const s3 = await getDocs(q3);
+      s3.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+    }
+
+    const taskDirect1 = doc(db, "registry_tasks", id);
+    const taskDirect1Snap = await getDoc(taskDirect1);
+    if (taskDirect1Snap.exists()) taskDocsToDelete.set(id, taskDirect1);
+
+    const taskDirect2 = doc(db, "registry_tasks", `task-app-${id}`);
+    const taskDirect2Snap = await getDoc(taskDirect2);
+    if (taskDirect2Snap.exists()) taskDocsToDelete.set(`task-app-${id}`, taskDirect2);
+
+    for (const tRef of taskDocsToDelete.values()) {
+      await deleteDoc(tRef);
+    }
+
+    // 4. Delete linked services from registry_services_v2
+    const serviceDocsToDelete = new Map();
+    if (id) {
+      const q1 = query(collection(db, "registry_services_v2"), where("applicationDocId", "==", id));
+      const s1 = await getDocs(q1);
+      s1.docs.forEach((d) => serviceDocsToDelete.set(d.id, d.ref));
+
+      const q2 = query(collection(db, "registry_services_v2"), where("recordId", "==", id));
+      const s2 = await getDocs(q2);
+      s2.docs.forEach((d) => serviceDocsToDelete.set(d.id, d.ref));
+    }
+    if (generatedAppIdStr) {
+      const q3 = query(collection(db, "registry_services_v2"), where("applicationId", "==", generatedAppIdStr));
+      const s3 = await getDocs(q3);
+      s3.docs.forEach((d) => serviceDocsToDelete.set(d.id, d.ref));
+    }
+
+    const srvDirect1 = doc(db, "registry_services_v2", id);
+    const srvDirect1Snap = await getDoc(srvDirect1);
+    if (srvDirect1Snap.exists()) serviceDocsToDelete.set(id, srvDirect1);
+
+    const srvDirect2 = doc(db, "registry_services_v2", `task-app-${id}`);
+    const srvDirect2Snap = await getDoc(srvDirect2);
+    if (srvDirect2Snap.exists()) serviceDocsToDelete.set(`task-app-${id}`, srvDirect2);
+
+    for (const sRef of serviceDocsToDelete.values()) {
+      await deleteDoc(sRef);
+    }
+  } catch (err) {
+    console.error("Error in deleteApplication:", err);
+    throw err;
+  }
 }

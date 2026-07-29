@@ -30,6 +30,12 @@ interface ExpiryItem {
   vehicleNumber: string;
   ownerName: string;
   phone: string;
+  makerName?: string;
+  modelName?: string;
+  fuelType?: string;
+  vehicleClass?: string;
+  coName?: string;
+  groupName?: string;
   expiryDate: string;
   daysRemaining: number;
   isCritical: boolean;
@@ -69,6 +75,25 @@ function Overview() {
     };
   }, []);
 
+  const activeVehicles = useMemo(() => {
+    const validVehicleNumbers = new Set(
+      applications.map((app) =>
+        (app.vehicleNumber || app.vehicleId || "")
+          .trim()
+          .toUpperCase()
+          .replace(/[\s-]/g, "")
+      )
+    );
+
+    return vehicles.filter((v) => {
+      const cleanNo = (v.vehicleNumber || v.id || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[\s-]/g, "");
+      return validVehicleNumbers.has(cleanNo);
+    });
+  }, [vehicles, applications]);
+
   // Compute 8 Expiry Categories strictly matching reference
   const expiryCategories = useMemo(() => {
     const insuranceList: ExpiryItem[] = [];
@@ -80,15 +105,28 @@ function Overview() {
     const taxList: ExpiryItem[] = [];
     const pucList: ExpiryItem[] = [];
 
-    vehicles.forEach((v) => {
+    activeVehicles.forEach((v) => {
       const baseInfo = {
         vehicleNumber: v.vehicleNumber || v.id,
         ownerName: v.ownerName || "Unknown Owner",
         phone: v.phone || "—",
+        makerName: v.makerName,
+        modelName: v.modelName,
+        fuelType: v.fuelType,
+        vehicleClass: v.vehicleClass,
+        coName: v.coName,
+        groupName: v.groupName,
       };
 
+      const track = v.trackExpiry || {};
+      const shouldTrackInsurance = track.insurance !== false;
+      const shouldTrackFitness = track.fitness !== false;
+      const shouldTrackPermit = track.permit !== false;
+      const shouldTrackTax = track.tax !== false;
+      const shouldTrackPuc = track.puc !== false;
+
       // 1. Insurance
-      if (v.insuranceDetails?.expiryDate) {
+      if (shouldTrackInsurance && v.insuranceDetails?.expiryDate) {
         const days = computeDaysRemaining(v.insuranceDetails.expiryDate);
         insuranceList.push({
           ...baseInfo,
@@ -99,7 +137,7 @@ function Overview() {
       }
 
       // 2. Fitness
-      if (v.fitnessDetails?.expiryDate) {
+      if (shouldTrackFitness && v.fitnessDetails?.expiryDate) {
         const days = computeDaysRemaining(v.fitnessDetails.expiryDate);
         fitnessList.push({
           ...baseInfo,
@@ -110,7 +148,7 @@ function Overview() {
       }
 
       // 3. Renewal of Registration
-      if (v.registrationDetails?.registrationValidity) {
+      if (shouldTrackFitness && v.registrationDetails?.registrationValidity) {
         const days = computeDaysRemaining(v.registrationDetails.registrationValidity);
         regRenewalList.push({
           ...baseInfo,
@@ -121,43 +159,46 @@ function Overview() {
       }
 
       // 4. National Authorization
-      if (
-        v.permitDetails?.permitType === "National Permit Authorization" &&
-        v.permitDetails?.expiryDate
-      ) {
-        const days = computeDaysRemaining(v.permitDetails.expiryDate);
+      const natAuthExpiry = v.permitDetails?.nationalAuthExpiryDate ||
+        (v.permitDetails?.permitType === "National Permit Authorization" ? v.permitDetails?.expiryDate : "");
+      if (shouldTrackPermit && natAuthExpiry) {
+        const days = computeDaysRemaining(natAuthExpiry);
         natAuthList.push({
           ...baseInfo,
-          expiryDate: v.permitDetails.expiryDate,
+          expiryDate: natAuthExpiry,
           daysRemaining: days,
           isCritical: days <= 15,
         });
       }
 
       // 5. National Permit
-      if (v.permitDetails?.permitType === "National Permit" && v.permitDetails?.expiryDate) {
-        const days = computeDaysRemaining(v.permitDetails.expiryDate);
+      const natPermitExpiry = v.permitDetails?.nationalPermitExpiryDate ||
+        (v.permitDetails?.permitType === "National Permit" ? v.permitDetails?.expiryDate : "");
+      if (shouldTrackPermit && natPermitExpiry) {
+        const days = computeDaysRemaining(natPermitExpiry);
         natPermitList.push({
           ...baseInfo,
-          expiryDate: v.permitDetails.expiryDate,
+          expiryDate: natPermitExpiry,
           daysRemaining: days,
           isCritical: days <= 30,
         });
       }
 
       // 6. Gujarat Permit
-      if (v.permitDetails?.permitType === "Gujarat Permit" && v.permitDetails?.expiryDate) {
-        const days = computeDaysRemaining(v.permitDetails.expiryDate);
+      const gujPermitExpiry = v.permitDetails?.gujaratPermitExpiryDate ||
+        (v.permitDetails?.permitType === "Gujarat Permit" ? v.permitDetails?.expiryDate : "");
+      if (shouldTrackPermit && gujPermitExpiry) {
+        const days = computeDaysRemaining(gujPermitExpiry);
         gujPermitList.push({
           ...baseInfo,
-          expiryDate: v.permitDetails.expiryDate,
+          expiryDate: gujPermitExpiry,
           daysRemaining: days,
           isCritical: days <= 30,
         });
       }
 
       // 7. Tax
-      if (!v.taxDetails?.isLumpsum && v.taxDetails?.expiryDate) {
+      if (shouldTrackTax && !v.taxDetails?.isLumpsum && v.taxDetails?.expiryDate) {
         const days = computeDaysRemaining(v.taxDetails.expiryDate);
         taxList.push({
           ...baseInfo,
@@ -168,7 +209,7 @@ function Overview() {
       }
 
       // 8. PUC
-      if (v.pucExpiryDate) {
+      if (shouldTrackPuc && v.pucExpiryDate) {
         const days = computeDaysRemaining(v.pucExpiryDate);
         pucList.push({
           ...baseInfo,
@@ -231,7 +272,7 @@ function Overview() {
         color: "text-teal-600 bg-teal-50 border-teal-100",
       },
     ];
-  }, [vehicles]);
+  }, [activeVehicles]);
 
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
@@ -292,7 +333,13 @@ function Overview() {
                         <div className="font-bold text-slate-900 font-mono tracking-tight">
                           {item.vehicleNumber}
                         </div>
-                        <div className="text-[11px] text-slate-500">{item.ownerName}</div>
+                        <div className="text-[11px] text-slate-600 font-medium">{item.ownerName}</div>
+                        {(item.makerName || item.modelName) && (
+                          <div className="text-[10px] text-slate-400 font-sans">
+                            {item.makerName || ""} {item.modelName || ""}{" "}
+                            {item.fuelType ? `(${item.fuelType})` : ""}
+                          </div>
+                        )}
                       </div>
 
                       <div className="text-right">

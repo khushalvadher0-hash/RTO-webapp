@@ -38,8 +38,10 @@ import {
   Search,
   Plus,
   Eye,
+  FileText,
 } from "lucide-react";
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
+import { ApplicationFullDetailsModal } from "./ApplicationFullDetailsModal";
 
 interface ServiceDashboardProps {
   serviceType: ServiceType;
@@ -193,6 +195,9 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [appsList, setAppsList] = useState<any[]>([]);
+  const [selectedAppModal, setSelectedAppModal] = useState<any>(null);
+  const [appModalOpen, setAppModalOpen] = useState(false);
 
   // Subscribe to Firestore tasks & registry_services_v2 to dynamically display Completed Services
   useEffect(() => {
@@ -234,6 +239,7 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
       const docs1 = snap1Data ? snap1Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
       const docs2 = snap2Data ? snap2Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
       const apps = snap3Data ? snap3Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+      setAppsList(apps);
       const appsMap = new Map(apps.map((a: any) => [a.id, a]));
 
       const combined = [...docs1, ...docs2];
@@ -417,23 +423,7 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
         </div>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((card) => (
-          <Card key={card.label}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{card.label}</CardTitle>
-              <div className={`rounded-lg p-2 ${card.color}`}>
-                <card.icon className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{card.value}</div>
-              <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+
 
       {/* Completed Services Module Table (Transferred Automatically from Task Module) */}
       <div className="space-y-3">
@@ -531,19 +521,39 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
                           </span>
                         </td>
                         <td className="p-3 text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              if (t.recordId || t.clientId) {
-                                setSelectedRecord({ id: t.recordId || t.clientId } as any);
-                                setProfileOpen(true);
-                              }
-                            }}
-                            title="View Client Workspace"
-                          >
-                            <Eye className="size-3.5 text-blue-600" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const appDoc =
+                                  appsList.find(
+                                    (a: any) =>
+                                      a.id === (t.applicationDocId || t.recordId || t.clientId) ||
+                                      a.applicationId === t.applicationId ||
+                                      (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
+                                  ) || t;
+                                setSelectedAppModal(appDoc);
+                                setAppModalOpen(true);
+                              }}
+                              title="View Full Application Form Details"
+                            >
+                              <FileText className="size-3.5 text-indigo-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (t.recordId || t.clientId) {
+                                  setSelectedRecord({ id: t.recordId || t.clientId } as any);
+                                  setProfileOpen(true);
+                                }
+                              }}
+                              title="View Client Workspace"
+                            >
+                              <Eye className="size-3.5 text-blue-600" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -554,6 +564,12 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
           </div>
         </div>
       </div>
+
+      <ApplicationFullDetailsModal
+        open={appModalOpen}
+        onOpenChange={setAppModalOpen}
+        application={selectedAppModal}
+      />
 
       {selectedRecord && (
         <ClientDetailWorkspace

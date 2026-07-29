@@ -36,9 +36,24 @@ import { createInvoice } from "@/lib/billing";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/dashboard/applications")({
-  component: ApplicationsPage,
-});
+export const DEFAULT_APP_TYPES = [
+  "Home",
+  "Faceless",
+  "Out Of Bhavnagar",
+  "CNG",
+  "Out Of Bhavnagar To Bhavnagar",
+];
+
+export function getAppTypeBadgeColor(appType?: string) {
+  if (!appType) return "bg-[#F8F9FA] text-slate-800 border-slate-200";
+  const clean = appType.trim().toLowerCase();
+  if (clean === "home") return "bg-[#F8F9FA] text-slate-800 border-slate-200";
+  if (clean === "faceless") return "bg-[#EAF4FF] text-blue-900 border-blue-200";
+  if (clean === "out of bhavnagar") return "bg-[#FFEAEA] text-rose-900 border-rose-200";
+  if (clean === "cng") return "bg-[#ECFFF0] text-emerald-900 border-emerald-200";
+  if (clean === "out of bhavnagar to bhavnagar") return "bg-[#FFF4E6] text-amber-900 border-amber-200";
+  return "bg-slate-100 text-slate-800 border-slate-200";
+}
 
 const SERVICE_GROUPS = [
   {
@@ -93,6 +108,10 @@ const SERVICE_GROUPS = [
     items: ["Tax", "PUC", "Tax Detail Update"],
   },
 ];
+
+export const Route = createFileRoute("/dashboard/applications")({
+  component: ApplicationsPage,
+});
 
 function ApplicationsPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
@@ -225,6 +244,7 @@ function ApplicationsPage() {
               <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center">SR No</th>
                 <th className="py-3.5 px-4">Vehicle Number</th>
+                <th className="py-3.5 px-4">Make & Model</th>
                 <th className="py-3.5 px-4">Owner Name</th>
                 <th className="py-3.5 px-4">Mobile</th>
                 <th className="py-3.5 px-4">Service(s)</th>
@@ -247,13 +267,13 @@ function ApplicationsPage() {
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={19} className="py-12 text-center text-slate-400">
+                  <td colSpan={20} className="py-12 text-center text-slate-400">
                     Loading applications...
                   </td>
                 </tr>
               ) : filteredApps.length === 0 ? (
                 <tr>
-                  <td colSpan={19} className="py-12 text-center text-slate-400">
+                  <td colSpan={20} className="py-12 text-center text-slate-400">
                     No applications found.
                   </td>
                 </tr>
@@ -281,7 +301,28 @@ function ApplicationsPage() {
                       <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
                         {app.vehicleNumber}
                       </td>
-                      <td className="py-3.5 px-4">{app.ownerName}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-slate-900 font-sans">
+                          {v.makerName || v.modelName
+                            ? `${v.makerName || ""} ${v.modelName || ""}`.trim()
+                            : "—"}
+                        </div>
+                        {(v.fuelType || v.vehicleClass || v.colour) && (
+                          <div className="text-[10px] text-slate-500 font-normal">
+                            {[v.fuelType, v.vehicleClass, v.colour].filter(Boolean).join(" • ")}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div>{app.ownerName}</div>
+                        {(v.coName || v.groupName) && (
+                          <div className="text-[10px] text-slate-400">
+                            {[v.coName ? `C/O: ${v.coName}` : "", v.groupName ? `Grp: ${v.groupName}` : ""]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 font-mono text-slate-500">{app.mobileNumber}</td>
                       <td className="py-3.5 px-4 max-w-[200px]">
                         <div className="flex flex-wrap gap-1">
@@ -467,6 +508,8 @@ function ApplicationFormModal({
   const [phone, setPhone] = useState(editingApp?.mobileNumber || editingApp?.vehicleDetails?.phone || "");
   const [ownerName, setOwnerName] = useState(editingApp?.ownerName || editingApp?.vehicleDetails?.ownerName || "");
   const [fatherHusbandName, setFatherHusbandName] = useState(editingApp?.vehicleDetails?.fatherHusbandName || "");
+  const [coName, setCoName] = useState(editingApp?.vehicleDetails?.coName || "");
+  const [groupName, setGroupName] = useState(editingApp?.vehicleDetails?.groupName || "");
   const [address, setAddress] = useState(editingApp?.vehicleDetails?.address || "");
   const [registrationDate, setRegistrationDate] = useState(editingApp?.vehicleDetails?.registrationDate || "");
   const [chassisNumber, setChassisNumber] = useState(editingApp?.vehicleDetails?.chassisNumber || "");
@@ -496,18 +539,74 @@ function ApplicationFormModal({
   const [fitnessExpiryDate, setFitnessExpiryDate] = useState(editingApp?.vehicleDetails?.fitnessDetails?.expiryDate || "");
 
   // Insurance Section
-  const [insuranceCompany, setInsuranceCompany] = useState(editingApp?.vehicleDetails?.insuranceDetails?.company || "");
+  const [insuranceCompany, setInsuranceCompany] = useState(editingApp?.vehicleDetails?.insuranceDetails?.company || "New India");
   const [insurancePolicyNo, setInsurancePolicyNo] = useState(editingApp?.vehicleDetails?.insuranceDetails?.policyNumber || "");
-  const [insurancePolicyType, setInsurancePolicyType] = useState(editingApp?.vehicleDetails?.insuranceDetails?.policyType || "Comprehensive");
+  const [insurancePolicyType, setInsurancePolicyType] = useState(editingApp?.vehicleDetails?.insuranceDetails?.policyType || "Third Party");
   const [insuranceIssueDate, setInsuranceIssueDate] = useState(editingApp?.vehicleDetails?.insuranceDetails?.issueDate || "");
   const [insuranceExpiryDate, setInsuranceExpiryDate] = useState(editingApp?.vehicleDetails?.insuranceDetails?.expiryDate || "");
   const [insuranceAmount, setInsuranceAmount] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.amount || 0);
   const [insurancePlace, setInsurancePlace] = useState(editingApp?.vehicleDetails?.insuranceDetails?.insurancePlace || "");
 
-  // Permit Section
-  const [permitType, setPermitType] = useState(editingApp?.vehicleDetails?.permitDetails?.permitType || "Gujarat Permit");
-  const [permitIssueDate, setPermitIssueDate] = useState(editingApp?.vehicleDetails?.permitDetails?.issueDate || "");
-  const [permitExpiryDate, setPermitExpiryDate] = useState(editingApp?.vehicleDetails?.permitDetails?.expiryDate || "");
+  const [policySubCategory, setPolicySubCategory] = useState(editingApp?.vehicleDetails?.insuranceDetails?.policySubCategory || "Motor / Vehicle");
+  const [insVehicleType, setInsVehicleType] = useState(editingApp?.vehicleDetails?.insuranceDetails?.vehicleType || "4 Wheel");
+  const [agent, setAgent] = useState(editingApp?.vehicleDetails?.insuranceDetails?.agent || "");
+  const [insuranceAgency, setInsuranceAgency] = useState(editingApp?.vehicleDetails?.insuranceDetails?.insuranceAgency || "");
+  const [reference, setReference] = useState(editingApp?.vehicleDetails?.insuranceDetails?.reference || "");
+  const [insFuelType, setInsFuelType] = useState(editingApp?.vehicleDetails?.insuranceDetails?.fuelType || "Petrol");
+  const [insVehicleRegNumber, setInsVehicleRegNumber] = useState(editingApp?.vehicleDetails?.insuranceDetails?.vehicleRegistrationNumber || editingApp?.vehicleNumber || "");
+  const [insVehicleModelDetails, setInsVehicleModelDetails] = useState(editingApp?.vehicleDetails?.insuranceDetails?.vehicleModelDetails || "");
+  const [premiumExclGst, setPremiumExclGst] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.premiumExclGst || 0);
+  const [gstAmount, setGstAmount] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.gstAmount || 0);
+  const [totalPremium, setTotalPremium] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.totalPremium || 0);
+  const [insurerCommission, setInsurerCommission] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.insurerCommission || 0);
+  const [clientDiscount, setClientDiscount] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.clientDiscount || 0);
+  const [netCommission, setNetCommission] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.netCommission || 0);
+
+  // Permit Section - 3 Fixed Permits
+  const [gujaratPermitIssueDate, setGujaratPermitIssueDate] = useState(
+    editingApp?.vehicleDetails?.permitDetails?.gujaratPermitIssueDate ||
+      (editingApp?.vehicleDetails?.permitDetails?.permitType === "Gujarat Permit"
+        ? editingApp?.vehicleDetails?.permitDetails?.issueDate
+        : "") ||
+      ""
+  );
+  const [gujaratPermitExpiryDate, setGujaratPermitExpiryDate] = useState(
+    editingApp?.vehicleDetails?.permitDetails?.gujaratPermitExpiryDate ||
+      (editingApp?.vehicleDetails?.permitDetails?.permitType === "Gujarat Permit"
+        ? editingApp?.vehicleDetails?.permitDetails?.expiryDate
+        : "") ||
+      ""
+  );
+
+  const [nationalPermitIssueDate, setNationalPermitIssueDate] = useState(
+    editingApp?.vehicleDetails?.permitDetails?.nationalPermitIssueDate ||
+      (editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit"
+        ? editingApp?.vehicleDetails?.permitDetails?.issueDate
+        : "") ||
+      ""
+  );
+  const [nationalPermitExpiryDate, setNationalPermitExpiryDate] = useState(
+    editingApp?.vehicleDetails?.permitDetails?.nationalPermitExpiryDate ||
+      (editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit"
+        ? editingApp?.vehicleDetails?.permitDetails?.expiryDate
+        : "") ||
+      ""
+  );
+
+  const [nationalAuthIssueDate, setNationalAuthIssueDate] = useState(
+    editingApp?.vehicleDetails?.permitDetails?.nationalAuthIssueDate ||
+      (editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit Authorization"
+        ? editingApp?.vehicleDetails?.permitDetails?.issueDate
+        : "") ||
+      ""
+  );
+  const [nationalAuthExpiryDate, setNationalAuthExpiryDate] = useState(
+    editingApp?.vehicleDetails?.permitDetails?.nationalAuthExpiryDate ||
+      (editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit Authorization"
+        ? editingApp?.vehicleDetails?.permitDetails?.expiryDate
+        : "") ||
+      ""
+  );
 
   // Registration Renewal Section
   const [dateOfRegistration, setDateOfRegistration] = useState(editingApp?.vehicleDetails?.registrationDetails?.dateOfRegistration || "");
@@ -539,6 +638,53 @@ function ApplicationFormModal({
   const [priority, setPriority] = useState<"Low" | "Medium" | "High" | "Urgent">(editingApp?.priority || "Low");
   const [assignedEmployee, setAssignedEmployee] = useState(editingApp?.assignedEmployeeName || "");
   const [activeEmployees, setActiveEmployees] = useState<{ id: string; name: string }[]>([]);
+
+  // Application Type State
+  const [availableAppTypes, setAvailableAppTypes] = useState<string[]>(DEFAULT_APP_TYPES);
+  const [appTypeSelect, setAppTypeSelect] = useState<string>(editingApp?.applicationType || "Home");
+  const [isCustomAppType, setIsCustomAppType] = useState(false);
+  const [customAppTypeInput, setCustomAppTypeInput] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("custom_application_types");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const combined = Array.from(new Set([...DEFAULT_APP_TYPES, ...parsed]));
+          setAvailableAppTypes(combined);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (editingApp?.applicationType) {
+      if (!DEFAULT_APP_TYPES.includes(editingApp.applicationType)) {
+        setAvailableAppTypes((prev) => Array.from(new Set([...prev, editingApp.applicationType!])));
+      }
+      setAppTypeSelect(editingApp.applicationType);
+    }
+  }, [editingApp]);
+
+  // Track Expiry Settings (Show on Dashboard Checkboxes, default true)
+  const [trackPuc, setTrackPuc] = useState<boolean>(
+    editingApp?.trackExpiry?.puc ?? editingApp?.vehicleDetails?.trackExpiry?.puc ?? true
+  );
+  const [trackTax, setTrackTax] = useState<boolean>(
+    editingApp?.trackExpiry?.tax ?? editingApp?.vehicleDetails?.trackExpiry?.tax ?? true
+  );
+  const [trackInsurance, setTrackInsurance] = useState<boolean>(
+    editingApp?.trackExpiry?.insurance ?? editingApp?.vehicleDetails?.trackExpiry?.insurance ?? true
+  );
+  const [trackPermit, setTrackPermit] = useState<boolean>(
+    editingApp?.trackExpiry?.permit ?? editingApp?.vehicleDetails?.trackExpiry?.permit ?? true
+  );
+  const [trackFitness, setTrackFitness] = useState<boolean>(
+    editingApp?.trackExpiry?.fitness ?? editingApp?.vehicleDetails?.trackExpiry?.fitness ?? true
+  );
 
   // Document Uploads State (Simulated upload status map for color backgrounds)
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, string>>(editingApp?.vehicleDetails?.documents || {});
@@ -579,6 +725,8 @@ function ApplicationFormModal({
       setPhone(existing.phone || "");
       setOwnerName(existing.ownerName || "");
       setFatherHusbandName(existing.fatherHusbandName || "");
+      setCoName(existing.coName || "");
+      setGroupName(existing.groupName || "");
       setAddress(existing.address || "");
       setRegistrationDate(existing.registrationDate || "");
       setChassisNumber(existing.chassisNumber || "");
@@ -608,18 +756,43 @@ function ApplicationFormModal({
         setFitnessExpiryDate(existing.fitnessDetails.expiryDate || "");
       }
       if (existing.insuranceDetails) {
-        setInsuranceCompany(existing.insuranceDetails.company || "");
+        setInsuranceCompany(existing.insuranceDetails.company || "New India");
         setInsurancePolicyNo(existing.insuranceDetails.policyNumber || "");
-        setInsurancePolicyType(existing.insuranceDetails.policyType || "Comprehensive");
+        setInsurancePolicyType(existing.insuranceDetails.policyType || "Third Party");
         setInsuranceIssueDate(existing.insuranceDetails.issueDate || "");
         setInsuranceExpiryDate(existing.insuranceDetails.expiryDate || "");
         setInsuranceAmount(existing.insuranceDetails.amount || 0);
         setInsurancePlace(existing.insuranceDetails.insurancePlace || "");
+        setPolicySubCategory(existing.insuranceDetails.policySubCategory || "Motor / Vehicle");
+        setInsVehicleType(existing.insuranceDetails.vehicleType || "4 Wheel");
+        setAgent(existing.insuranceDetails.agent || "");
+        setInsuranceAgency(existing.insuranceDetails.insuranceAgency || "");
+        setReference(existing.insuranceDetails.reference || "");
+        setInsFuelType(existing.insuranceDetails.fuelType || existing.fuelType || "Petrol");
+        setInsVehicleRegNumber(existing.insuranceDetails.vehicleRegistrationNumber || existing.vehicleNumber || "");
+        setInsVehicleModelDetails(existing.insuranceDetails.vehicleModelDetails || `${existing.makerName || ""} ${existing.modelName || ""}`.trim());
+        setPremiumExclGst(existing.insuranceDetails.premiumExclGst || 0);
+        setGstAmount(existing.insuranceDetails.gstAmount || 0);
+        setTotalPremium(existing.insuranceDetails.totalPremium || 0);
+        setInsurerCommission(existing.insuranceDetails.insurerCommission || 0);
+        setClientDiscount(existing.insuranceDetails.clientDiscount || 0);
+        setNetCommission(existing.insuranceDetails.netCommission || 0);
       }
       if (existing.permitDetails) {
-        setPermitType(existing.permitDetails.permitType || "Gujarat Permit");
-        setPermitIssueDate(existing.permitDetails.issueDate || "");
-        setPermitExpiryDate(existing.permitDetails.expiryDate || "");
+        const p = existing.permitDetails;
+        const gIss = p.gujaratPermitIssueDate || (p.permitType === "Gujarat Permit" ? p.issueDate : "") || "";
+        const gExp = p.gujaratPermitExpiryDate || (p.permitType === "Gujarat Permit" ? p.expiryDate : "") || "";
+        const nIss = p.nationalPermitIssueDate || (p.permitType === "National Permit" ? p.issueDate : "") || "";
+        const nExp = p.nationalPermitExpiryDate || (p.permitType === "National Permit" ? p.expiryDate : "") || "";
+        const naIss = p.nationalAuthIssueDate || (p.permitType === "National Permit Authorization" ? p.issueDate : "") || "";
+        const naExp = p.nationalAuthExpiryDate || (p.permitType === "National Permit Authorization" ? p.expiryDate : "") || "";
+
+        setGujaratPermitIssueDate(gIss);
+        setGujaratPermitExpiryDate(gExp);
+        setNationalPermitIssueDate(nIss);
+        setNationalPermitExpiryDate(nExp);
+        setNationalAuthIssueDate(naIss);
+        setNationalAuthExpiryDate(naExp);
       }
       if (existing.registrationDetails) {
         setDateOfRegistration(existing.registrationDetails.dateOfRegistration || "");
@@ -628,21 +801,29 @@ function ApplicationFormModal({
       if (existing.documents) {
         setUploadedDocs(existing.documents);
       }
+      if (existing.trackExpiry) {
+        setTrackPuc(existing.trackExpiry.puc ?? true);
+        setTrackTax(existing.trackExpiry.tax ?? true);
+        setTrackInsurance(existing.trackExpiry.insurance ?? true);
+        setTrackPermit(existing.trackExpiry.permit ?? true);
+        setTrackFitness(existing.trackExpiry.fitness ?? true);
+      }
     }
   };
 
-  const handlePermitIssueChange = (dateVal: string) => {
-    setPermitIssueDate(dateVal);
-    const computedExp = computePermitExpiry(permitType, dateVal);
-    setPermitExpiryDate(computedExp);
+  const handleGujaratIssueChange = (dateVal: string) => {
+    setGujaratPermitIssueDate(dateVal);
+    setGujaratPermitExpiryDate(computePermitExpiry("Gujarat Permit", dateVal));
   };
 
-  const handlePermitTypeChange = (typeVal: string) => {
-    setPermitType(typeVal);
-    if (permitIssueDate) {
-      const computedExp = computePermitExpiry(typeVal, permitIssueDate);
-      setPermitExpiryDate(computedExp);
-    }
+  const handleNationalIssueChange = (dateVal: string) => {
+    setNationalPermitIssueDate(dateVal);
+    setNationalPermitExpiryDate(computePermitExpiry("National Permit", dateVal));
+  };
+
+  const handleNationalAuthIssueChange = (dateVal: string) => {
+    setNationalAuthIssueDate(dateVal);
+    setNationalAuthExpiryDate(computePermitExpiry("National Permit Authorization", dateVal));
   };
 
   const toggleService = (srv: string) => {
@@ -658,7 +839,7 @@ function ApplicationFormModal({
       } else {
         setServiceAccountingMap((oldMap) => ({
           ...oldMap,
-          [srv]: { totalAmount: 500, advancePayment: 0 },
+          [srv]: { totalAmount: 0, advancePayment: 0 },
         }));
         return [...prev, srv];
       }
@@ -724,6 +905,8 @@ function ApplicationFormModal({
       phone,
       ownerName,
       fatherHusbandName,
+      coName,
+      groupName,
       address,
       registrationDate,
       chassisNumber,
@@ -757,13 +940,33 @@ function ApplicationFormModal({
         policyType: insurancePolicyType,
         issueDate: insuranceIssueDate,
         expiryDate: insuranceExpiryDate,
-        amount: insuranceAmount,
+        amount: totalPremium || insuranceAmount,
         insurancePlace,
+        policySubCategory,
+        vehicleType: insVehicleType,
+        agent,
+        insuranceAgency,
+        reference,
+        fuelType: insFuelType,
+        vehicleRegistrationNumber: insVehicleRegNumber || vehicleNumber,
+        vehicleModelDetails: insVehicleModelDetails || `${makerName || ""} ${modelName || ""}`.trim(),
+        premiumExclGst,
+        gstAmount,
+        totalPremium,
+        insurerCommission,
+        clientDiscount,
+        netCommission,
       },
       permitDetails: {
-        permitType,
-        issueDate: permitIssueDate,
-        expiryDate: permitExpiryDate,
+        permitType: "Fixed Permits",
+        issueDate: gujaratPermitIssueDate || nationalPermitIssueDate || nationalAuthIssueDate || "",
+        expiryDate: gujaratPermitExpiryDate || nationalPermitExpiryDate || nationalAuthExpiryDate || "",
+        gujaratPermitIssueDate,
+        gujaratPermitExpiryDate,
+        nationalPermitIssueDate,
+        nationalPermitExpiryDate,
+        nationalAuthIssueDate,
+        nationalAuthExpiryDate,
       },
       registrationDetails: {
         dateOfRegistration,
@@ -828,6 +1031,19 @@ function ApplicationFormModal({
       }
     }
 
+    let finalAppType = appTypeSelect;
+    if (isCustomAppType && customAppTypeInput.trim()) {
+      finalAppType = customAppTypeInput.trim();
+      try {
+        const saved = localStorage.getItem("custom_application_types");
+        const currentList: string[] = saved ? JSON.parse(saved) : [];
+        const updatedList = Array.from(new Set([...currentList, finalAppType]));
+        localStorage.setItem("custom_application_types", JSON.stringify(updatedList));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     try {
       await saveApplicationAndVehicle(
         {
@@ -845,11 +1061,27 @@ function ApplicationFormModal({
           pendingAmount: overallTotals.pending,
           invoiceId: generatedInvoiceId || editingApp?.invoiceId,
           invoiceNumber: generatedInvoiceNumber || editingApp?.invoiceNumber,
-          expiryDate: permitExpiryDate || insuranceExpiryDate || taxExpiryDate || pucExpiryDate,
+          expiryDate: gujaratPermitExpiryDate || nationalPermitExpiryDate || nationalAuthExpiryDate || insuranceExpiryDate || taxExpiryDate || pucExpiryDate,
           remarks: employeeRemarks,
           reminder,
-          priority,
-          vehicleDetails,
+          applicationType: finalAppType,
+          trackExpiry: {
+            puc: trackPuc,
+            tax: trackTax,
+            insurance: trackInsurance,
+            permit: trackPermit,
+            fitness: trackFitness,
+          },
+          vehicleDetails: {
+            ...vehicleDetails,
+            trackExpiry: {
+              puc: trackPuc,
+              tax: trackTax,
+              insurance: trackInsurance,
+              permit: trackPermit,
+              fitness: trackFitness,
+            },
+          },
         },
         editingApp?.id
       );
@@ -985,7 +1217,29 @@ function ApplicationFormModal({
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">CO (C/O)</label>
+                <input
+                  type="text"
+                  placeholder="Care of name"
+                  value={coName}
+                  onChange={(e) => setCoName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">GROUP NAME</label>
+                <input
+                  type="text"
+                  placeholder="Group / Fleet name"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div className="md:col-span-3">
                 <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
                 <input
                   type="text"
@@ -1159,7 +1413,18 @@ function ApplicationFormModal({
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">PUC EXPIRY DATE</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-semibold text-slate-700 block">PUC EXPIRY DATE</label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={trackPuc}
+                      onChange={(e) => setTrackPuc(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Show on Dashboard</span>
+                  </label>
+                </div>
                 <input
                   type="date"
                   value={pucExpiryDate}
@@ -1172,7 +1437,7 @@ function ApplicationFormModal({
 
           {/* 2. Tax Details Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-blue-600" />
                 <div>
@@ -1180,15 +1445,26 @@ function ApplicationFormModal({
                   <p className="text-[11px] text-slate-400">Lumpsum or period-based tax</p>
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={isLumpsumTax}
-                  onChange={(e) => setIsLumpsumTax(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                />
-                Lumpsum Tax
-              </label>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={trackTax}
+                    onChange={(e) => setTrackTax(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Show Expiry on Dashboard</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={isLumpsumTax}
+                    onChange={(e) => setIsLumpsumTax(e.target.checked)}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  Lumpsum Tax
+                </label>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
@@ -1229,12 +1505,23 @@ function ApplicationFormModal({
 
           {/* 3. Fitness Details Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <FileCheck className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Fitness Details</h3>
-                <p className="text-[11px] text-slate-400">Fitness validity & details</p>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <FileCheck className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Fitness Details</h3>
+                  <p className="text-[11px] text-slate-400">Fitness validity & details</p>
+                </div>
               </div>
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={trackFitness}
+                  onChange={(e) => setTrackFitness(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>Show Expiry on Dashboard</span>
+              </label>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
               <div>
@@ -1260,25 +1547,178 @@ function ApplicationFormModal({
 
           {/* 4. Insurance Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <Shield className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Insurance Details</h3>
-                <p className="text-[11px] text-slate-400">Policy & coverage information</p>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <Shield className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Register Vehicle Insurance</h3>
+                  <p className="text-[11px] text-slate-400">Policy, premium calculation & commission details</p>
+                </div>
               </div>
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={trackInsurance}
+                  onChange={(e) => setTrackInsurance(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>Show Expiry on Dashboard</span>
+              </label>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">INSURANCE COMPANY</label>
-                <input
-                  type="text"
-                  placeholder="ICICI Lombard / HDFC Ergo"
+                <label className="font-semibold text-slate-700 block mb-1">
+                  POLICY SUB-CATEGORY *
+                </label>
+                <select
+                  value={policySubCategory}
+                  onChange={(e) => setPolicySubCategory(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="Motor / Vehicle">Motor / Vehicle</option>
+                  <option value="Health">Health</option>
+                  <option value="Life">Life</option>
+                  <option value="General">General</option>
+                  <option value="Commercial">Commercial</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  VEHICLE TYPE (IF MOTOR)
+                </label>
+                <select
+                  value={insVehicleType}
+                  onChange={(e) => setInsVehicleType(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="4 Wheel">4 Wheel</option>
+                  <option value="2 Wheel">2 Wheel</option>
+                  <option value="3 Wheel">3 Wheel</option>
+                  <option value="Commercial Vehicle">Commercial Vehicle</option>
+                  <option value="Heavy Vehicle">Heavy Vehicle</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  INSURANCE COMPANY *
+                </label>
+                <select
                   value={insuranceCompany}
                   onChange={(e) => setInsuranceCompany(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                >
+                  <option value="New India">New India Assurance</option>
+                  <option value="ICICI Lombard">ICICI Lombard</option>
+                  <option value="HDFC Ergo">HDFC Ergo</option>
+                  <option value="Bajaj Allianz">Bajaj Allianz</option>
+                  <option value="TATA AIG">TATA AIG</option>
+                  <option value="SBI General">SBI General</option>
+                  <option value="National Insurance">National Insurance</option>
+                  <option value="United India">United India Insurance</option>
+                  <option value="Oriental Insurance">Oriental Insurance</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">AGENT *</label>
+                <select
+                  value={agent}
+                  onChange={(e) => setAgent(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="">Select Agent</option>
+                  {activeEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.name}>
+                      {emp.name}
+                    </option>
+                  ))}
+                  <option value="Direct">Direct</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">INSURANCE AGENCY</label>
+                <select
+                  value={insuranceAgency}
+                  onChange={(e) => setInsuranceAgency(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="">-- Select Agency --</option>
+                  <option value="Primary Agency">Primary Agency</option>
+                  <option value="Branch Agency">Branch Agency</option>
+                  <option value="Broker Agency">Broker Agency</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">REFERENCE</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Mr. Sharma"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                 />
               </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">POLICY TYPE *</label>
+                <select
+                  value={insurancePolicyType}
+                  onChange={(e) => setInsurancePolicyType(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="Third Party">Third Party</option>
+                  <option value="Comprehensive">Comprehensive</option>
+                  <option value="Zero Dep">Zero Dep</option>
+                  <option value="Standalone Own Damage">Standalone Own Damage</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">FUEL TYPE</label>
+                <select
+                  value={insFuelType}
+                  onChange={(e) => setInsFuelType(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="Petrol">Petrol</option>
+                  <option value="Diesel">Diesel</option>
+                  <option value="CNG">CNG</option>
+                  <option value="Electric">Electric</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  VEHICLE REGISTRATION NUMBER
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. MH-02-AB-1234"
+                  value={insVehicleRegNumber || vehicleNumber}
+                  onChange={(e) => setInsVehicleRegNumber(e.target.value.toUpperCase())}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase"
+                />
+              </div>
+
+              <div className="md:col-span-2 lg:col-span-3">
+                <label className="font-semibold text-slate-700 block mb-1">
+                  VEHICLE MODEL DETAILS
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Honda City ZX (2023)"
+                  value={insVehicleModelDetails || `${makerName} ${modelName}`.trim()}
+                  onChange={(e) => setInsVehicleModelDetails(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">POLICY NUMBER</label>
                 <input
@@ -1289,18 +1729,7 @@ function ApplicationFormModal({
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
                 />
               </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">POLICY TYPE</label>
-                <select
-                  value={insurancePolicyType}
-                  onChange={(e) => setInsurancePolicyType(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="Comprehensive">Comprehensive</option>
-                  <option value="Third Party">Third Party</option>
-                  <option value="Zero Dep">Zero Dep</option>
-                </select>
-              </div>
+
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
                 <input
@@ -1310,6 +1739,7 @@ function ApplicationFormModal({
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                 />
               </div>
+
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
                 <input
@@ -1319,73 +1749,235 @@ function ApplicationFormModal({
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                 />
               </div>
+
+              {/* Premium Calculations */}
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">AMOUNT (₹)</label>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  PREMIUM EXCL-GST (INR) *
+                </label>
                 <input
                   type="number"
-                  placeholder="₹"
-                  value={insuranceAmount}
-                  onChange={(e) => setInsuranceAmount(Number(e.target.value))}
+                  placeholder="1000"
+                  value={premiumExclGst || ""}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setPremiumExclGst(val);
+                    const gst = Math.round(val * 0.18);
+                    setGstAmount(gst);
+                    const tot = val + gst;
+                    setTotalPremium(tot);
+                    setInsuranceAmount(tot);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  GST @18% (INR)
+                </label>
+                <input
+                  type="number"
+                  placeholder="180"
+                  value={gstAmount || ""}
+                  onChange={(e) => {
+                    const gst = Number(e.target.value);
+                    setGstAmount(gst);
+                    const tot = (premiumExclGst || 0) + gst;
+                    setTotalPremium(tot);
+                    setInsuranceAmount(tot);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-blue-700"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  TOTAL PREMIUM (INR)
+                </label>
+                <input
+                  type="number"
+                  placeholder="1180"
+                  value={totalPremium || ""}
+                  onChange={(e) => {
+                    const tot = Number(e.target.value);
+                    setTotalPremium(tot);
+                    setInsuranceAmount(tot);
+                  }}
+                  className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-900"
+                />
+              </div>
+
+              {/* Commissions & Discounts */}
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  INSURER COMMISSION (INR)
+                </label>
+                <input
+                  type="number"
+                  placeholder="500"
+                  value={insurerCommission || ""}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setInsurerCommission(val);
+                    setNetCommission(val - (clientDiscount || 0));
+                  }}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
                 />
               </div>
-              <div className="md:col-span-3">
-                <label className="font-semibold text-slate-700 block mb-1">INSURANCE PLACE</label>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  CLIENT DISCOUNT (INR)
+                </label>
                 <input
-                  type="text"
-                  placeholder="Company branch / location (e.g. Ahmedabad Branch)"
-                  value={insurancePlace}
-                  onChange={(e) => setInsurancePlace(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  type="number"
+                  placeholder="200"
+                  value={clientDiscount || ""}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setClientDiscount(val);
+                    setNetCommission((insurerCommission || 0) - val);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  NET COMMISSION (INR)
+                </label>
+                <input
+                  type="number"
+                  placeholder="300"
+                  value={netCommission || ""}
+                  onChange={(e) => setNetCommission(Number(e.target.value))}
+                  className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-emerald-700"
                 />
               </div>
             </div>
           </div>
 
-          {/* 5. Permit Section */}
+          {/* 5. Permit Section - 3 Fixed Permits */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <Building2 className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Permit Details</h3>
-                <p className="text-[11px] text-slate-400">Auto expiry rules calculation</p>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <Building2 className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Permit Details</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Fixed 3 permits with auto-calculated expiry dates (5 Yrs & 1 Yr gaps)
+                  </p>
+                </div>
               </div>
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={trackPermit}
+                  onChange={(e) => setTrackPermit(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>Show Expiry on Dashboard</span>
+              </label>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">PERMIT TYPE</label>
-                <select
-                  value={permitType}
-                  onChange={(e) => handlePermitTypeChange(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                >
-                  <option value="Gujarat Permit">Gujarat Permit (5 Yrs)</option>
-                  <option value="National Permit">National Permit (5 Yrs)</option>
-                  <option value="National Permit Authorization">
-                    National Permit Authorization (1 Yr)
-                  </option>
-                </select>
+            <div className="space-y-4 text-xs">
+              {/* 1. Gujarat Permit (5 Yrs Gap) */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs">Gujarat Permit</span>
+                  <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
+                    Fixed 5 Years Expiry Gap
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                    <input
+                      type="date"
+                      value={gujaratPermitIssueDate}
+                      onChange={(e) => handleGujaratIssueChange(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      EXPIRY DATE (+5 YEARS AUTO)
+                    </label>
+                    <input
+                      type="date"
+                      value={gujaratPermitExpiryDate}
+                      readOnly
+                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                <input
-                  type="date"
-                  value={permitIssueDate}
-                  onChange={(e) => handlePermitIssueChange(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
+
+              {/* 2. National Permit (5 Yrs Gap) */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs">National Permit</span>
+                  <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                    Fixed 5 Years Expiry Gap
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                    <input
+                      type="date"
+                      value={nationalPermitIssueDate}
+                      onChange={(e) => handleNationalIssueChange(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      EXPIRY DATE (+5 YEARS AUTO)
+                    </label>
+                    <input
+                      type="date"
+                      value={nationalPermitExpiryDate}
+                      readOnly
+                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  EXPIRY DATE (AUTO CALCULATED)
-                </label>
-                <input
-                  type="date"
-                  value={permitExpiryDate}
-                  readOnly
-                  className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
-                />
+
+              {/* 3. National Permit Authorization (1 Yr Gap) */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs">
+                    National Permit Authorization
+                  </span>
+                  <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md">
+                    Fixed 1 Year Expiry Gap
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                    <input
+                      type="date"
+                      value={nationalAuthIssueDate}
+                      onChange={(e) => handleNationalAuthIssueChange(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      EXPIRY DATE (+1 YEAR AUTO)
+                    </label>
+                    <input
+                      type="date"
+                      value={nationalAuthExpiryDate}
+                      readOnly
+                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1591,7 +2183,7 @@ function ApplicationFormModal({
 
               <div className="space-y-3">
                 {selectedServices.map((srv) => {
-                  const item = serviceAccountingMap[srv] || { totalAmount: 500, advancePayment: 0 };
+                  const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
                   const pending = Math.max(0, item.totalAmount - item.advancePayment);
 
                   return (
@@ -1607,7 +2199,8 @@ function ApplicationFormModal({
                         </label>
                         <input
                           type="number"
-                          value={item.totalAmount}
+                          placeholder="0"
+                          value={item.totalAmount || ""}
                           onChange={(e) =>
                             updateServiceAccounting(srv, "totalAmount", Number(e.target.value))
                           }
@@ -1621,7 +2214,8 @@ function ApplicationFormModal({
                         </label>
                         <input
                           type="number"
-                          value={item.advancePayment}
+                          placeholder="0"
+                          value={item.advancePayment || ""}
                           onChange={(e) =>
                             updateServiceAccounting(srv, "advancePayment", Number(e.target.value))
                           }
@@ -1695,7 +2289,7 @@ function ApplicationFormModal({
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">REMINDER</label>
                   <input
@@ -1733,6 +2327,42 @@ function ApplicationFormModal({
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    APPLICATION TYPE
+                  </label>
+                  <select
+                    value={isCustomAppType ? "__CUSTOM__" : appTypeSelect}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "__CUSTOM__") {
+                        setIsCustomAppType(true);
+                      } else {
+                        setIsCustomAppType(false);
+                        setAppTypeSelect(val);
+                      }
+                    }}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                  >
+                    {availableAppTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                    <option value="__CUSTOM__">+ Add Custom Application Type...</option>
+                  </select>
+
+                  {isCustomAppType && (
+                    <input
+                      type="text"
+                      placeholder="Type custom application type..."
+                      value={customAppTypeInput}
+                      onChange={(e) => setCustomAppTypeInput(e.target.value)}
+                      className="w-full mt-2 p-2 bg-white border border-blue-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
+                      autoFocus
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -1800,6 +2430,16 @@ function ApplicationDetailsModal({
               <span className="px-2.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-full text-xs font-semibold uppercase">
                 {app.applicationStatus}
               </span>
+              {app.applicationType && (
+                <span
+                  className={cn(
+                    "px-2.5 py-0.5 rounded-full text-xs font-semibold border",
+                    getAppTypeBadgeColor(app.applicationType)
+                  )}
+                >
+                  Type: {app.applicationType}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               Owner: {app.ownerName} • Phone: {app.mobileNumber}
@@ -1882,6 +2522,65 @@ function ApplicationDetailsModal({
             </div>
           </div>
 
+          {/* Vehicle Insurance breakdown */}
+          {v.insuranceDetails && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-600" /> Vehicle Insurance Details
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <span className="text-slate-400">Sub-Category:</span>
+                  <p className="font-semibold">{v.insuranceDetails.policySubCategory || "Motor / Vehicle"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Vehicle Type:</span>
+                  <p className="font-semibold">{v.insuranceDetails.vehicleType || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Company:</span>
+                  <p className="font-semibold">{v.insuranceDetails.company || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Agent:</span>
+                  <p className="font-semibold">{v.insuranceDetails.agent || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Agency:</span>
+                  <p className="font-semibold">{v.insuranceDetails.insuranceAgency || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Reference:</span>
+                  <p className="font-semibold">{v.insuranceDetails.reference || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Policy Type:</span>
+                  <p className="font-semibold">{v.insuranceDetails.policyType || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Fuel Type:</span>
+                  <p className="font-semibold">{v.insuranceDetails.fuelType || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Premium Excl-GST:</span>
+                  <p className="font-mono font-semibold">₹{v.insuranceDetails.premiumExclGst || 0}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">GST @18%:</span>
+                  <p className="font-mono font-semibold text-blue-700">₹{v.insuranceDetails.gstAmount || 0}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Total Premium:</span>
+                  <p className="font-mono font-bold text-slate-900">₹{v.insuranceDetails.totalPremium || v.insuranceDetails.amount || 0}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Net Commission:</span>
+                  <p className="font-mono font-bold text-emerald-700">₹{v.insuranceDetails.netCommission || 0}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* All Expiries Section */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
@@ -1936,6 +2635,14 @@ function ApplicationDetailsModal({
               <div>
                 <span className="text-slate-400">Father/Husband:</span>
                 <p className="font-semibold">{v.fatherHusbandName || "—"}</p>
+              </div>
+              <div>
+                <span className="text-slate-400">CO (C/O):</span>
+                <p className="font-semibold">{v.coName || "—"}</p>
+              </div>
+              <div>
+                <span className="text-slate-400">Group Name:</span>
+                <p className="font-semibold">{v.groupName || "—"}</p>
               </div>
               <div>
                 <span className="text-slate-400">Chassis No:</span>
