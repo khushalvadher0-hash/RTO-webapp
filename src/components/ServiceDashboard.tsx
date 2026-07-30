@@ -172,7 +172,14 @@ function aggregateServiceRecords(recs: RegistryRecord[], serviceType: ServiceTyp
   };
 }
 
-export function ServiceDashboard({ serviceType, title, description }: ServiceDashboardProps) {
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+
+export function ServiceDashboard({
+  serviceType,
+  title,
+  description,
+}: ServiceDashboardProps) {
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [records, setRecords] = useState<RegistryRecord[]>([]);
   const [completedTasks, setCompletedTasks] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -326,9 +333,37 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
   }, [records, searchQuery]);
 
   const filteredCompletedTasks = useMemo(() => {
-    if (!searchQuery.trim()) return completedTasks;
+    let list = completedTasks;
+    if (activeSubModule === "driving_school") return [];
+    if (activeSubModule === "licence") {
+      list = list.filter((t: any) => {
+        const sName = (t.serviceName || t.serviceType || t.title || "").toLowerCase();
+        return (
+          sName.includes("license") ||
+          sName.includes("licence") ||
+          sName.includes("learning") ||
+          sName.includes("dl") ||
+          sName.includes("ll") ||
+          t.subModule === "licence"
+        );
+      });
+    } else {
+      list = list.filter((t: any) => {
+        const sName = (t.serviceName || t.serviceType || t.title || "").toLowerCase();
+        const isLic =
+          sName.includes("license") ||
+          sName.includes("licence") ||
+          sName.includes("learning") ||
+          sName.includes("dl") ||
+          sName.includes("ll") ||
+          t.subModule === "licence";
+        return !isLic;
+      });
+    }
+
+    if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
-    return completedTasks.filter((t: any) => {
+    return list.filter((t: any) => {
       const matchTitle = (t.title || "").toLowerCase().includes(q);
       const matchVehicle = (t.vehicleNumber || t.vehicleId || "").toLowerCase().includes(q);
       const matchClient = (t.clientName || "").toLowerCase().includes(q);
@@ -337,7 +372,7 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
       const matchService = (t.serviceName || t.serviceType || "").toLowerCase().includes(q);
       return matchTitle || matchVehicle || matchClient || matchPhone || matchAppNo || matchService;
     });
-  }, [completedTasks, searchQuery]);
+  }, [completedTasks, searchQuery, activeSubModule]);
 
   const openWorkflow = (record: RegistryRecord) => {
     setSelectedRecord(record);
@@ -421,6 +456,11 @@ export function ServiceDashboard({ serviceType, title, description }: ServiceDas
             Add Client
           </Button>
         </div>
+      </div>
+
+      {/* 3 Main Sub Module Services, Licence, Driving School Tabs */}
+      <div>
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
 

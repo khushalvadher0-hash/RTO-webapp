@@ -59,14 +59,16 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { collection, onSnapshot, doc, query, where, updateDoc, getDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, query, where, updateDoc, getDoc, setDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { getSession } from "@/lib/auth";
 import { ApplicationFullDetailsModal } from "@/components/ApplicationFullDetailsModal";
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
 import {
   STAFF_USERS,
   staffLabel,
   subscribeToRecords,
+  removeUndefined,
   type Bucket,
   type RegistryRecord,
 } from "@/lib/records";
@@ -335,6 +337,7 @@ function TasksPage() {
     const isAd = sess?.role === "admin" || sess?.role === "manager";
     return isAd ? "all" : "my";
   });
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -403,7 +406,7 @@ function TasksPage() {
   }, []);
 
   const allTasks = useMemo(() => {
-    // 1. Get manual tasks enriched with service info
+    // 1. Get manual tasks enriched with service info & application subModule
     const manualTasksMapped = tasks.map((t) => {
       const svc = v2Services.find(
         (s: any) =>
@@ -412,10 +415,26 @@ function TasksPage() {
           (s.vehicleId === t.vehicleId && s.serviceType === t.serviceName),
       );
 
+      const linkedApp = applications.find(
+        (a: any) =>
+          a.id === (t as any).recordId ||
+          a.id === (t as any).applicationDocId ||
+          (t.applicationId && a.applicationId === t.applicationId) ||
+          (a.vehicleNumber && t.title && t.title.toLowerCase().includes(a.vehicleNumber.toLowerCase())) ||
+          (a.applicationId && t.title && t.title.toLowerCase().includes(a.applicationId.toLowerCase()))
+      );
+
+      const resolvedSubModule =
+        (t as any).subModule ||
+        linkedApp?.subModule ||
+        (linkedApp?.licenseDetails ? "licence" : linkedApp ? "services" : undefined);
+
       return {
         ...t,
-        applicationId: t.applicationId || svc?.applicationId || "",
-        applicationType: t.applicationType || svc?.applicationType || "",
+        subModule: resolvedSubModule,
+        licenseDetails: (t as any).licenseDetails || linkedApp?.licenseDetails,
+        applicationId: t.applicationId || svc?.applicationId || linkedApp?.applicationId || "",
+        applicationType: t.applicationType || svc?.applicationType || linkedApp?.applicationType || "",
         appointmentDate: t.appointmentDate || "",
       };
     });
@@ -500,7 +519,9 @@ function TasksPage() {
         reminderMinutes: 0,
         remarks: app.remarks || "",
         applicationId: appNum,
-        applicationType: "Home",
+        applicationType: app.subModule === "licence" ? "Licence" : app.applicationType || "Home",
+        subModule: app.subModule || (app.licenseDetails ? "licence" : "services"),
+        licenseDetails: app.licenseDetails,
         appointmentDate: app.appointmentDate || "",
         vehicleNumber: vehNo,
         mobileNumber: mobNo,
@@ -508,7 +529,7 @@ function TasksPage() {
         reference: `${appNum} - ${vehNo}`,
         issueDate: app.createdAt || "",
         subtasks: [],
-      });
+      } as any);
     });
 
     const activeTasksOnly = manualTasksMapped.filter((t) => t.status !== "Completed" && !t.done);
@@ -517,10 +538,28 @@ function TasksPage() {
 
     // Deduplicate by ID & Application reference to avoid double counts
     const map = new Map<string, Task>();
-    [...activeTasksOnly, ...activeServiceTasksOnly, ...activeAppTasksOnly].forEach((item) => {
-      const key = item.taskId || item.id || `${item.applicationId}-${item.serviceName}`;
-      if (!map.has(key)) {
+    [...activeTasksOnly, ...activeServiceTasksOnly, ...activeAppTasksOnly].forEach((item: any) => {
+      // Create a unique composite key for deduplication
+      const appRef = item.recordId || item.applicationDocId || item.applicationId || "";
+      const vehRef = item.vehicleNumber || item.vehicleId || "";
+      const key = item.taskId || item.id || (appRef ? `app-${appRef}` : vehRef ? `veh-${vehRef}` : `${item.title}`);
+      
+      // If a task for this application ID or exact title already exists, merge or keep existing
+      const existingKey = Array.from(map.keys()).find(k => k === key || (appRef && k.includes(appRef)) || (vehRef && k.includes(vehRef) && item.serviceName === (map.get(k) as any)?.serviceName));
+
+      if (!existingKey) {
         map.set(key, item);
+      } else {
+        // Update existing task details dynamically
+        const existing = map.get(existingKey)!;
+        map.set(existingKey, {
+          ...existing,
+          serviceName: item.serviceName || existing.serviceName,
+          title: item.title || existing.title,
+          description: item.description || existing.description,
+          subModule: item.subModule || (existing as any).subModule,
+          licenseDetails: item.licenseDetails || (existing as any).licenseDetails,
+        });
       }
     });
 
@@ -561,6 +600,54 @@ function TasksPage() {
   const visible = useMemo(() => {
     if (!session) return [];
     let list = baseList;
+
+    if (activeSubModule === "driving_school") return [];
+    if (activeSubModule === "licence") {
+      list = list.filter((t) => {
+        if ((t as any).subModule) return (t as any).subModule === "licence";
+        // Check linked application subModule explicitly
+        const linked = applications.find(
+          (a: any) =>
+            a.id === (t as any).recordId ||
+            a.id === (t as any).applicationDocId ||
+            (t.applicationId && a.applicationId === t.applicationId) ||
+            (a.vehicleNumber && t.title && t.title.toLowerCase().includes(a.vehicleNumber.toLowerCase()))
+        );
+        if (linked) return linked.subModule === "licence" || !!linked.licenseDetails;
+
+        const sName = (t.serviceName || t.title || "").toLowerCase();
+        return (
+          sName.includes("license") ||
+          sName.includes("licence") ||
+          sName.includes("learning") ||
+          sName.includes("dl") ||
+          sName.includes("ll") ||
+          t.applicationType === "Licence"
+        );
+      });
+    } else {
+      list = list.filter((t) => {
+        if ((t as any).subModule) return (t as any).subModule === "services";
+        const linked = applications.find(
+          (a: any) =>
+            a.id === (t as any).recordId ||
+            a.id === (t as any).applicationDocId ||
+            (t.applicationId && a.applicationId === t.applicationId) ||
+            (a.vehicleNumber && t.title && t.title.toLowerCase().includes(a.vehicleNumber.toLowerCase()))
+        );
+        if (linked) return linked.subModule !== "licence" && !linked.licenseDetails;
+
+        const sName = (t.serviceName || t.title || "").toLowerCase();
+        const isLic =
+          sName.includes("license") ||
+          sName.includes("licence") ||
+          sName.includes("learning") ||
+          sName.includes("dl") ||
+          sName.includes("ll") ||
+          t.applicationType === "Licence";
+        return !isLic;
+      });
+    }
 
     console.log("🐛 [DEBUG TASKS] --- Filtering Start ---");
     console.log("🐛 Current User Session:", session);
@@ -671,6 +758,7 @@ function TasksPage() {
     appTypeFilter,
     selectedServiceFilters,
     sort,
+    activeSubModule,
   ]);
 
   const stats = useMemo(
@@ -733,6 +821,7 @@ function TasksPage() {
   const [completeAppointmentDate, setCompleteAppointmentDate] = useState("");
   const [completeRtoExpense, setCompleteRtoExpense] = useState<string>("");
   const [completeRemarks, setCompleteRemarks] = useState("");
+  const [completeNewDob, setCompleteNewDob] = useState("");
   const [savingComplete, setSavingComplete] = useState(false);
 
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
@@ -840,10 +929,31 @@ function TasksPage() {
         console.warn("Service doc sync notice:", svcErr);
       }
 
+      // If Change Date of Birth In DL service task, update DOB in application record
+      if (completeNewDob && (completeModalTask.recordId || (completeModalTask as any).applicationDocId || completeModalTask.applicationId)) {
+        try {
+          const appDocId = (completeModalTask as any).applicationDocId || completeModalTask.recordId || completeModalTask.id.replace("task-app-", "");
+          const appRef = doc(db, "registry_applications_v1", appDocId);
+          const appSnap = await getDoc(appRef);
+          if (appSnap.exists()) {
+            const appData = appSnap.data() as any;
+            await updateDoc(appRef, {
+              "licenseDetails.dateOfBirth": completeNewDob,
+              updatedAt: new Date().toISOString(),
+            });
+            toast.success(`Applicant Date of Birth updated to ${completeNewDob}!`);
+          }
+        } catch (dobErr) {
+          console.warn("Applicant DOB sync error:", dobErr);
+        }
+      }
+
       toast.success("Task completed and transferred to Services!");
       setCompleteModalTask(null);
       setCompleteAppointmentDate("");
       setCompleteRtoExpense("");
+      setCompleteRemarks("");
+      setCompleteNewDob("");
       setCompleteRemarks("");
     } catch (err: any) {
       toast.error("Failed to complete task");
@@ -891,6 +1001,11 @@ function TasksPage() {
             </Button>
           )}
         </div>
+      </div>
+
+      {/* 3 Main Sub Module Services, Licence, Driving School Tabs */}
+      <div>
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
       {/* Tab Navigation */}
@@ -1467,6 +1582,23 @@ function TasksPage() {
                   />
                 </div>
               </div>
+
+              {(completeModalTask.serviceName?.toLowerCase().includes("change date of birth") || completeModalTask.title?.toLowerCase().includes("change date of birth") || (completeModalTask as any).licenseDetails?.generalLicenceServices?.selectedServices?.includes("Change Date Of Birth In DL")) && (
+                <div className="space-y-1.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <Label className="text-[10px] uppercase font-bold tracking-wider text-amber-800">
+                    NEW DATE OF BIRTH (REQUIRED FOR THIS SERVICE) *
+                  </Label>
+                  <Input
+                    type="date"
+                    value={completeNewDob}
+                    onChange={(e) => setCompleteNewDob(e.target.value)}
+                    className="bg-white font-medium text-slate-900 border-amber-300"
+                  />
+                  <p className="text-[10px] text-amber-700">
+                    Completing this task will automatically update the applicant's Date of Birth in the License application record.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
@@ -3008,6 +3140,72 @@ function TaskDetailsSheet({
               </div>
             </div>
           </CollapsibleSection>
+
+          {/* Task Step Detail (For License Tasks) */}
+          {(activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence" || (activeTask as any).licenseDetails || (activeTask.serviceName || "").toLowerCase().includes("license") || (activeTask.serviceName || "").toLowerCase().includes("licence") || (activeTask.title || "").toLowerCase().includes("license") || (activeTask.title || "").toLowerCase().includes("licence")) && (
+            <CollapsibleSection title="Task Step Detail (License Workflow)" defaultOpen={true}>
+              <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs">
+                {(() => {
+                  const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
+                  
+                  // Render 2 steps for New Learning Licence or 3 steps for DL New LL Endorsement / Renewals
+                  return (
+                    <div className="space-y-4">
+                      {/* Step 1 */}
+                      <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span>
+                          <span>STEP 1: LEARNING / DL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                          <div><span className="font-semibold text-slate-500 block">LL / DL NO:</span> {lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || "GJ0120260001234"}</div>
+                          <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate || "—"}</div>
+                          <div><span className="font-semibold text-slate-500 block">EXPIRY / VALIDITY:</span> {lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate || "—"}</div>
+                        </div>
+                      </div>
+
+                      {/* Step 2 */}
+                      <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">2</span>
+                          <span>STEP 2: DRIVING LICENCE DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                          <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
+                          <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || "—"}</div>
+                          <div><span className="font-semibold text-slate-500 block">VALIDITY DATE:</span> {lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || "—"}</div>
+                          <div className="col-span-2">
+                            <span className="font-semibold text-slate-500 block">VEHICLE TYPE:</span> 
+                            <span className="font-bold text-blue-700">
+                              {lic.newLearningLicence?.step2?.vehicleTypes?.nt ? "NT " : ""}
+                              {lic.newLearningLicence?.step2?.vehicleTypes?.tr ? "TR " : ""}
+                              {lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "Hazardous" : ""}
+                              {!lic.newLearningLicence?.step2?.vehicleTypes?.nt && !lic.newLearningLicence?.step2?.vehicleTypes?.tr && !lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "NT" : ""}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 3 (For 3-step License Services) */}
+                      {(lic.dlNewLlEndorsement?.enabled || lic.llRenewClass?.enabled || lic.dlRenewRetest?.enabled) && (
+                        <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
+                          <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">3</span>
+                            <span>STEP 3: FINAL DL DETAILS & ENDORSEMENT</span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                            <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || "—"}</div>
+                            <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate || "—"}</div>
+                            <div><span className="font-semibold text-slate-500 block">VALIDITY:</span> {lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate || "—"}</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </CollapsibleSection>
+          )}
 
           {/* 2. Subtasks Collapsible Section */}
           {activeTask.subtasks && activeTask.subtasks.length > 0 && (

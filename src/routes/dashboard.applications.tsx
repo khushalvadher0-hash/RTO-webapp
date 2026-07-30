@@ -113,7 +113,10 @@ export const Route = createFileRoute("/dashboard/applications")({
   component: ApplicationsPage,
 });
 
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+
 function ApplicationsPage() {
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -158,6 +161,13 @@ function ApplicationsPage() {
   }, []);
 
   const filteredApps = applications.filter((app) => {
+    if (activeSubModule === "driving_school") return false;
+    if (activeSubModule === "licence") {
+      if (app.subModule !== "licence" && !app.licenseDetails) return false;
+    } else {
+      if (app.subModule === "licence") return false;
+    }
+
     const term = searchTerm.toLowerCase();
     const matchSearch =
       app.vehicleNumber.toLowerCase().includes(term) ||
@@ -193,6 +203,11 @@ function ApplicationsPage() {
             New Application
           </button>
         </div>
+      </div>
+
+      {/* 3 Main Sub Module Services, Licence, Driving School Tabs */}
+      <div>
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
       {/* Filter Bar */}
@@ -482,6 +497,7 @@ function ApplicationsPage() {
       {/* New / Edit Application Modal */}
       {isModalOpen && (
         <ApplicationFormModal
+          initialSubModule={activeSubModule}
           editingApp={editingApp}
           onClose={() => {
             setIsModalOpen(false);
@@ -497,12 +513,99 @@ function ApplicationsPage() {
 }
 
 function ApplicationFormModal({
+  initialSubModule = "services",
   editingApp,
   onClose,
 }: {
+  initialSubModule?: SubModuleType;
   editingApp?: ApplicationRecord | null;
   onClose: () => void;
 }) {
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>(
+    editingApp?.subModule || initialSubModule
+  );
+
+  // License Applicant Details
+  const [dateOfBirth, setDateOfBirth] = useState(editingApp?.licenseDetails?.dateOfBirth || "");
+  const [isDrivingSchoolHolder, setIsDrivingSchoolHolder] = useState(
+    editingApp?.licenseDetails?.isDrivingSchoolHolder ?? true
+  );
+  const [groupOptions, setGroupOptions] = useState<string[]>(["Select group", "Self", "Company Fleet"]);
+  const [showAddGroupInput, setShowAddGroupInput] = useState(false);
+  const [newGroupInput, setNewGroupInput] = useState("");
+
+  // License Services State
+  const [newLL, setNewLL] = useState({
+    enabled: editingApp?.licenseDetails?.newLearningLicence?.enabled ?? false,
+    appointmentDate: editingApp?.licenseDetails?.newLearningLicence?.appointmentDate || "",
+    classOfVehicle: editingApp?.licenseDetails?.newLearningLicence?.classOfVehicle || [],
+    totalAmount: editingApp?.licenseDetails?.newLearningLicence?.totalAmount || "",
+    advanceAmount: editingApp?.licenseDetails?.newLearningLicence?.advanceAmount || "",
+    step1: {
+      llNumber: editingApp?.licenseDetails?.newLearningLicence?.step1?.llNumber || "",
+      issueDate: editingApp?.licenseDetails?.newLearningLicence?.step1?.issueDate || "",
+      expiryDate: editingApp?.licenseDetails?.newLearningLicence?.step1?.expiryDate || "",
+    },
+    step2: {
+      dlNumber: editingApp?.licenseDetails?.newLearningLicence?.step2?.dlNumber || "",
+      issueDate: editingApp?.licenseDetails?.newLearningLicence?.step2?.issueDate || "",
+      validityDate: editingApp?.licenseDetails?.newLearningLicence?.step2?.validityDate || "",
+      vehicleTypes: editingApp?.licenseDetails?.newLearningLicence?.step2?.vehicleTypes || { nt: false, tr: false, hazardous: false },
+    },
+  });
+
+  const [dlEndorsement, setDlEndorsement] = useState({
+    enabled: editingApp?.licenseDetails?.dlNewLlEndorsement?.enabled ?? false,
+    totalAmount: editingApp?.licenseDetails?.dlNewLlEndorsement?.totalAmount || "",
+    advanceAmount: editingApp?.licenseDetails?.dlNewLlEndorsement?.advanceAmount || "",
+    step1: {
+      dlNumber: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.dlNumber || "",
+      issueDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.issueDate || "",
+      validityDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.validityDate || "",
+      vehicleTypes: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.vehicleTypes || { nt: false, tr: false, hazardous: false },
+    },
+    step2: {
+      llNumber: editingApp?.licenseDetails?.dlNewLlEndorsement?.step2?.llNumber || "",
+      issueDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step2?.issueDate || "",
+      expiryDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step2?.expiryDate || "",
+      classOfVehicle: editingApp?.licenseDetails?.dlNewLlEndorsement?.step2?.classOfVehicle || "",
+    },
+    step3: {
+      dlNumber: editingApp?.licenseDetails?.dlNewLlEndorsement?.step3?.dlNumber || "",
+      issueDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step3?.issueDate || "",
+      validityDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step3?.validityDate || "",
+      vehicleTypes: editingApp?.licenseDetails?.dlNewLlEndorsement?.step3?.vehicleTypes || { nt: false, tr: false, hazardous: false },
+      classOfVehicle: editingApp?.licenseDetails?.dlNewLlEndorsement?.step3?.classOfVehicle || "",
+    },
+  });
+
+  const [llRenew, setLlRenew] = useState({
+    enabled: editingApp?.licenseDetails?.llRenewClass?.enabled ?? false,
+    appointmentDate: editingApp?.licenseDetails?.llRenewClass?.appointmentDate || "",
+    totalAmount: editingApp?.licenseDetails?.llRenewClass?.totalAmount || "",
+    advanceAmount: editingApp?.licenseDetails?.llRenewClass?.advanceAmount || "",
+    step1: { llNumber: editingApp?.licenseDetails?.llRenewClass?.step1?.llNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step1?.issueDate || "", expiryDate: editingApp?.licenseDetails?.llRenewClass?.step1?.expiryDate || "" },
+    step2: { dlNumber: editingApp?.licenseDetails?.llRenewClass?.step2?.dlNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step2?.issueDate || "", validityDate: editingApp?.licenseDetails?.llRenewClass?.step2?.validityDate || "" },
+    step3: { dlNumber: editingApp?.licenseDetails?.llRenewClass?.step3?.dlNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step3?.issueDate || "", validityDate: editingApp?.licenseDetails?.llRenewClass?.step3?.validityDate || "" },
+  });
+
+  const [dlRenewRetest, setDlRenewRetest] = useState({
+    enabled: editingApp?.licenseDetails?.dlRenewRetest?.enabled ?? false,
+    totalAmount: editingApp?.licenseDetails?.dlRenewRetest?.totalAmount || "",
+    advanceAmount: editingApp?.licenseDetails?.dlRenewRetest?.advanceAmount || "",
+    step1: { dlNumber: editingApp?.licenseDetails?.dlRenewRetest?.step1?.dlNumber || "", issueDate: editingApp?.licenseDetails?.dlRenewRetest?.step1?.issueDate || "", validityDate: editingApp?.licenseDetails?.dlRenewRetest?.step1?.validityDate || "", appNo1: editingApp?.licenseDetails?.dlRenewRetest?.step1?.appNo1 || "" },
+    step2: { llNumber: editingApp?.licenseDetails?.dlRenewRetest?.step2?.llNumber || "", issueDate: editingApp?.licenseDetails?.dlRenewRetest?.step2?.issueDate || "", expiryDate: editingApp?.licenseDetails?.dlRenewRetest?.step2?.expiryDate || "", appNo2: editingApp?.licenseDetails?.dlRenewRetest?.step2?.appNo2 || "" },
+    step3: { dlNumber: editingApp?.licenseDetails?.dlRenewRetest?.step3?.dlNumber || "", issueDate: editingApp?.licenseDetails?.dlRenewRetest?.step3?.issueDate || "", validityDate: editingApp?.licenseDetails?.dlRenewRetest?.step3?.validityDate || "", appNo1: editingApp?.licenseDetails?.dlRenewRetest?.step3?.appNo1 || "" },
+  });
+
+  const [generalLicServices, setGeneralLicServices] = useState<{
+    selected: string[];
+    accounting: Record<string, { totalAmount: string | number; advanceAmount: string | number }>;
+  }>({
+    selected: editingApp?.licenseDetails?.generalLicenceServices?.selectedServices || [],
+    accounting: editingApp?.licenseDetails?.generalLicenceServices?.serviceAccounting || {},
+  });
+
   const [saving, setSaving] = useState(false);
   const [vehicleNumber, setVehicleNumber] = useState(editingApp?.vehicleNumber || "");
   const [phone, setPhone] = useState(editingApp?.mobileNumber || editingApp?.vehicleDetails?.phone || "");
@@ -888,13 +991,20 @@ function ApplicationFormModal({
   };
 
   const handleSave = async (status: "Draft" | "Submitted") => {
-    if (!vehicleNumber.trim()) {
-      toast.error("Vehicle Number is required!");
-      return;
-    }
-    if (selectedServices.length === 0) {
-      toast.error("Please select at least one service!");
-      return;
+    if (activeSubModule === "licence") {
+      if (!ownerName.trim() || !dateOfBirth.trim()) {
+        toast.error("Name and Date of Birth are mandatory for License Applications!");
+        return;
+      }
+    } else if (activeSubModule === "services") {
+      if (!vehicleNumber.trim()) {
+        toast.error("Vehicle Number is required!");
+        return;
+      }
+      if (selectedServices.length === 0) {
+        toast.error("Please select at least one service!");
+        return;
+      }
     }
 
     setSaving(true);
@@ -990,16 +1100,25 @@ function ApplicationFormModal({
     let generatedInvoiceNumber = "";
     let generatedInvoiceId = "";
 
+    const selectedLicServices: string[] = [];
+    if (newLL.enabled) selectedLicServices.push("New Learning Licence");
+    if (dlEndorsement.enabled) selectedLicServices.push("DL New LL Endorsement");
+    if (llRenew.enabled) selectedLicServices.push("LL Renew Class");
+    if (dlRenewRetest.enabled) selectedLicServices.push("DL Renew + Retest");
+    if (generalLicServices.selected.length > 0) selectedLicServices.push(...generalLicServices.selected);
+
+    const activeServicesList = activeSubModule === "licence" ? selectedLicServices : selectedServices;
+
     // Connect to Accounting & Generate Invoice if selected
     if (shouldGenerateInvoice) {
       try {
         const session = getSession();
-        const invoiceItems = selectedServices.map((srv) => {
+        const invoiceItems = activeServicesList.map((srv) => {
           const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
           return {
             serviceId: srv,
             serviceName: srv,
-            vehicleNumber,
+            vehicleNumber: vehicleNumber || name,
             quantity: 1,
             unitPrice: item.totalAmount,
             amount: item.totalAmount,
@@ -1008,24 +1127,26 @@ function ApplicationFormModal({
           };
         });
 
-        const createdInv = await createInvoice(
-          {
-            id: vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, ""),
-            name: ownerName || vehicleNumber,
-            mo: phone,
-            application: address,
-            mvNo: vehicleNumber,
-            work: selectedServices.join(", "),
-          } as any,
-          invoiceItems,
-          new Date().toISOString().split("T")[0],
-          new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-          session?.name || "System"
-        );
+        if (invoiceItems.length > 0) {
+          const createdInv = await createInvoice(
+            {
+              id: (vehicleNumber || name).trim().toUpperCase().replace(/[\s-]/g, ""),
+              name: ownerName || name || vehicleNumber,
+              mo: phone,
+              application: address,
+              mvNo: vehicleNumber,
+              work: activeServicesList.join(", "),
+            } as any,
+            invoiceItems,
+            new Date().toISOString().split("T")[0],
+            new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+            session?.name || "System"
+          );
 
-        generatedInvoiceNumber = createdInv.invoiceNumber;
-        generatedInvoiceId = createdInv.id;
-        toast.success(`Invoice ${generatedInvoiceNumber} generated & connected to Accounting!`);
+          generatedInvoiceNumber = createdInv.invoiceNumber;
+          generatedInvoiceId = createdInv.id;
+          toast.success(`Invoice ${generatedInvoiceNumber} generated & connected to Accounting!`);
+        }
       } catch (invErr: any) {
         console.error("Invoice auto-generation error:", invErr);
       }
@@ -1045,13 +1166,37 @@ function ApplicationFormModal({
     }
 
     try {
+      const selectedLicServices: string[] = [];
+      if (newLL.enabled) selectedLicServices.push("New Learning Licence");
+      if (dlEndorsement.enabled) selectedLicServices.push("DL New LL Endorsement");
+      if (llRenew.enabled) selectedLicServices.push("LL Renew Class");
+      if (dlRenewRetest.enabled) selectedLicServices.push("DL Renew + Retest");
+      if (generalLicServices.selected.length > 0) selectedLicServices.push(...generalLicServices.selected);
+
+      const finalServicesList = activeSubModule === "licence" ? selectedLicServices : selectedServices;
+      const finalVehNo = vehicleNumber.trim() || `LIC-${Date.now().toString().slice(-6)}`;
+
       await saveApplicationAndVehicle(
         {
-          vehicleId: vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, ""),
-          vehicleNumber,
+          subModule: activeSubModule,
+          licenseDetails: {
+            subModule: activeSubModule,
+            dateOfBirth,
+            isDrivingSchoolHolder,
+            newLearningLicence: newLL,
+            dlNewLlEndorsement: dlEndorsement,
+            llRenewClass: llRenew,
+            dlRenewRetest: dlRenewRetest,
+            generalLicenceServices: {
+              selectedServices: generalLicServices.selected,
+              serviceAccounting: generalLicServices.accounting,
+            },
+          },
+          vehicleId: finalVehNo.toUpperCase().replace(/[\s-]/g, ""),
+          vehicleNumber: finalVehNo,
           ownerName,
           mobileNumber: phone,
-          services: selectedServices,
+          services: finalServicesList,
           serviceAccounting: serviceAccountingPayload,
           assignedEmployeeName: assignedEmployee,
           applicationStatus: status,
@@ -1059,11 +1204,11 @@ function ApplicationFormModal({
           amount: overallTotals.totalAmt,
           totalPaid: overallTotals.totalAdv,
           pendingAmount: overallTotals.pending,
-          invoiceId: generatedInvoiceId || editingApp?.invoiceId,
-          invoiceNumber: generatedInvoiceNumber || editingApp?.invoiceNumber,
-          expiryDate: gujaratPermitExpiryDate || nationalPermitExpiryDate || nationalAuthExpiryDate || insuranceExpiryDate || taxExpiryDate || pucExpiryDate,
+          invoiceId: generatedInvoiceId || undefined,
+          invoiceNumber: generatedInvoiceNumber || undefined,
           remarks: employeeRemarks,
           reminder,
+          priority,
           applicationType: finalAppType,
           trackExpiry: {
             puc: trackPuc,
@@ -1072,16 +1217,7 @@ function ApplicationFormModal({
             permit: trackPermit,
             fitness: trackFitness,
           },
-          vehicleDetails: {
-            ...vehicleDetails,
-            trackExpiry: {
-              puc: trackPuc,
-              tax: trackTax,
-              insurance: trackInsurance,
-              permit: trackPermit,
-              fitness: trackFitness,
-            },
-          },
+          vehicleDetails: vehicleDetails as any,
         },
         editingApp?.id
       );
@@ -1148,39 +1284,1081 @@ function ApplicationFormModal({
 
         {/* Scrollable Form Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
-          {/* Services Tab Nav Pill */}
-          <div className="flex gap-2">
-            <span className="px-4 py-1.5 bg-blue-600 text-white rounded-full text-xs font-semibold shadow-sm">
-              Services
-            </span>
+          {/* Sub Module Tabs Nav Pills */}
+          <div>
+            <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
           </div>
 
-          {/* 1. Vehicle Details Section */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <Car className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Vehicle Details</h3>
-                <p className="text-[11px] text-slate-400">
-                  Only Vehicle Number is mandatory. Rest is optional. Entering existing number auto populates details.
-                </p>
+          {/* LICENCE SUB MODULE FORM */}
+          {activeSubModule === "licence" && (
+            <div className="space-y-6">
+              {/* Applicant Details Section */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Applicant Details</h3>
+                    <p className="text-[11px] text-slate-400">Only Name and Date of Birth are mandatory.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">NAME *</label>
+                    <input
+                      type="text"
+                      placeholder="Full name"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">DATE OF BIRTH *</label>
+                    <input
+                      type="date"
+                      value={dateOfBirth}
+                      onChange={(e) => setDateOfBirth(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER</label>
+                    <input
+                      type="text"
+                      placeholder="+91 9XXXXXXXXX"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
+                    <input
+                      type="text"
+                      placeholder="House, street, city"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">C/O</label>
+                    <input
+                      type="text"
+                      placeholder="Father / Husband name"
+                      value={fatherHusbandName}
+                      onChange={(e) => setFatherHusbandName(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  {/* GROUP NAME DROPDOWN WITH ADD NEW OPTION */}
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">GROUP NAME</label>
+                    {!showAddGroupInput ? (
+                      <div className="flex gap-2">
+                        <select
+                          value={groupName}
+                          onChange={(e) => {
+                            if (e.target.value === "ADD_NEW") {
+                              setShowAddGroupInput(true);
+                            } else {
+                              setGroupName(e.target.value);
+                            }
+                          }}
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800"
+                        >
+                          {groupOptions.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                          <option value="ADD_NEW">+ Add New Group...</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Enter new group name"
+                          value={newGroupInput}
+                          onChange={(e) => setNewGroupInput(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (newGroupInput.trim()) {
+                              const added = newGroupInput.trim();
+                              setGroupOptions((prev) => [...prev, added]);
+                              setGroupName(added);
+                              setNewGroupInput("");
+                              setShowAddGroupInput(false);
+                              toast.success(`Group "${added}" added and selected!`);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-3 pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={isDrivingSchoolHolder}
+                        onChange={(e) => setIsDrivingSchoolHolder(e.target.checked)}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Driving School Holder</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Licence Services Accordions Section */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="border-b border-slate-100 pb-3">
+                  <h3 className="text-sm font-bold text-slate-900">Licence Services</h3>
+                  <p className="text-[11px] text-slate-400">Select a service to expand its form</p>
+                </div>
+
+                {/* 1. New Learning Licence Service */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
+                  <label className="flex items-center gap-3 p-4 bg-white cursor-pointer border-b border-slate-200/80 select-none">
+                    <input
+                      type="checkbox"
+                      checked={newLL.enabled}
+                      onChange={(e) => setNewLL((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="font-bold text-slate-900 text-xs">New Learning Licence</span>
+                  </label>
+
+                  {newLL.enabled && (
+                    <div className="p-5 space-y-5 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">APPOINTMENT DATE</label>
+                          <input
+                            type="date"
+                            value={newLL.appointmentDate}
+                            onChange={(e) => setNewLL((prev) => ({ ...prev, appointmentDate: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">CLASS OF VEHICLE (MULTIPLE SELECTION)</label>
+                          <input
+                            type="text"
+                            placeholder="MCWG, LMV, TRANS"
+                            value={newLL.classOfVehicle.join(", ")}
+                            onChange={(e) => setNewLL((prev) => ({ ...prev, classOfVehicle: e.target.value.split(",").map((s) => s.trim()) }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Step 1: Learning Licence Details */}
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span>
+                          <span>LEARNING LICENCE DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">LL NUMBER</label>
+                            <input
+                              type="text"
+                              placeholder="GJ0120260001234"
+                              value={newLL.step1.llNumber}
+                              onChange={(e) => setNewLL((prev) => ({ ...prev, step1: { ...prev.step1, llNumber: e.target.value } }))}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={newLL.step1.issueDate}
+                              onChange={(e) => setNewLL((prev) => ({ ...prev, step1: { ...prev.step1, issueDate: e.target.value } }))}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">EXPIRY DATE</label>
+                            <input
+                              type="date"
+                              value={newLL.step1.expiryDate}
+                              onChange={(e) => setNewLL((prev) => ({ ...prev, step1: { ...prev.step1, expiryDate: e.target.value } }))}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 2: Driving Licence Details */}
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">2</span>
+                          <span>DRIVING LICENCE DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">DL NUMBER</label>
+                            <input
+                              type="text"
+                              placeholder="GJ01 20260001234"
+                              value={newLL.step2.dlNumber}
+                              onChange={(e) => setNewLL((prev) => ({ ...prev, step2: { ...prev.step2, dlNumber: e.target.value } }))}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={newLL.step2.issueDate}
+                              onChange={(e) => setNewLL((prev) => ({ ...prev, step2: { ...prev.step2, issueDate: e.target.value } }))}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">VALIDITY DATE</label>
+                            <input
+                              type="date"
+                              value={newLL.step2.validityDate}
+                              onChange={(e) => setNewLL((prev) => ({ ...prev, step2: { ...prev.step2, validityDate: e.target.value } }))}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Vehicle Type Checkboxes & Validity Dates (NT, TR, Hazardous) */}
+                        <div className="pt-2 space-y-3 border-t border-slate-100">
+                          <label className="font-semibold text-slate-700 block mb-1">VEHICLE TYPE & VALIDITY DATES</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {[
+                              { label: "NT Validity Date", key: "nt", stateKey: "ntValidity" },
+                              { label: "TR Validity Date", key: "tr", stateKey: "trValidity" },
+                              { label: "Hazardous Validity Date", key: "hazardous", stateKey: "hazardousValidity" },
+                            ].map((vtItem) => {
+                              const vtKey = vtItem.key as "nt" | "tr" | "hazardous";
+                              const checked = !!newLL.step2.vehicleTypes?.[vtKey];
+                              const validityVal = (newLL.step2 as any)[vtItem.stateKey] || "";
+
+                              return (
+                                <div key={vtItem.key} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) =>
+                                        setNewLL((prev) => ({
+                                          ...prev,
+                                          step2: {
+                                            ...prev.step2,
+                                            vehicleTypes: { ...prev.step2.vehicleTypes, [vtKey]: e.target.checked },
+                                          },
+                                        }))
+                                      }
+                                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span>{vtItem.key.toUpperCase()}</span>
+                                  </label>
+
+                                  {checked && (
+                                    <div>
+                                      <label className="text-[10px] font-semibold text-slate-500 block mb-1 uppercase">{vtItem.label}</label>
+                                      <input
+                                        type="date"
+                                        value={validityVal}
+                                        onChange={(e) =>
+                                          setNewLL((prev) => ({
+                                            ...prev,
+                                            step2: {
+                                              ...prev.step2,
+                                              [vtItem.stateKey]: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accounting Module for New Learning Licence */}
+                      <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">TOTAL AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter total amount"
+                            value={newLL.totalAmount}
+                            onChange={(e) => setNewLL((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">ADVANCE AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter advance amount"
+                            value={newLL.advanceAmount}
+                            onChange={(e) => setNewLL((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. DL New LL Endorsement Service (3 Steps) */}
+                <div className="border border-blue-200/80 rounded-2xl overflow-hidden bg-blue-50/20">
+                  <label className="flex items-center gap-3 p-4 bg-white cursor-pointer border-b border-slate-200/80 select-none">
+                    <input
+                      type="checkbox"
+                      checked={dlEndorsement.enabled}
+                      onChange={(e) => setDlEndorsement((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="font-bold text-slate-900 text-xs">DL New LL Endorsement</span>
+                  </label>
+
+                  {dlEndorsement.enabled && (
+                    <div className="p-5 space-y-5 text-xs">
+                      {/* Step 1: DL Details */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">1</span>
+                          <span className="uppercase tracking-wider">DL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">DL NUMBER</label>
+                            <input
+                              type="text"
+                              value={dlEndorsement.step1.dlNumber}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step1: { ...prev.step1, dlNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={dlEndorsement.step1.issueDate}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step1: { ...prev.step1, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <input
+                              type="date"
+                              value={dlEndorsement.step1.validityDate}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step1: { ...prev.step1, validityDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Vehicle Type Checkboxes */}
+                        <div className="pt-2">
+                          <label className="font-semibold text-slate-500 text-[11px] block mb-2 uppercase">VEHICLE TYPE</label>
+                          <div className="flex gap-6">
+                            {["NT", "TR", "Hazardous"].map((vt) => {
+                              const k = vt.toLowerCase() as "nt" | "tr" | "hazardous";
+                              const checked = !!(dlEndorsement.step1 as any)?.vehicleTypes?.[k];
+                              return (
+                                <label key={vt} className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 text-xs select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setDlEndorsement((prev) => ({
+                                        ...prev,
+                                        step1: {
+                                          ...prev.step1,
+                                          vehicleTypes: { ...(prev.step1 as any)?.vehicleTypes, [k]: e.target.checked },
+                                        },
+                                      }))
+                                    }
+                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span>{vt}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 2: LL Details */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">2</span>
+                          <span className="uppercase tracking-wider">LL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">LL NUMBER</label>
+                            <input
+                              type="text"
+                              value={dlEndorsement.step2.llNumber}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step2: { ...prev.step2, llNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={dlEndorsement.step2.issueDate}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step2: { ...prev.step2, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRY DATE</label>
+                            <input
+                              type="date"
+                              value={dlEndorsement.step2.expiryDate}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step2: { ...prev.step2, expiryDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <input
+                              type="text"
+                              placeholder="Select or enter vehicle class..."
+                              value={(dlEndorsement.step2 as any).classOfVehicle || ""}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step2: { ...prev.step2, classOfVehicle: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 3: DL Details */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">3</span>
+                          <span className="uppercase tracking-wider">DL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">DL NUMBER</label>
+                            <input
+                              type="text"
+                              value={dlEndorsement.step3.dlNumber}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step3: { ...prev.step3, dlNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={dlEndorsement.step3.issueDate}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step3: { ...prev.step3, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <input
+                              type="date"
+                              value={dlEndorsement.step3.validityDate}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step3: { ...prev.step3, validityDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-2 uppercase">VEHICLE TYPE</label>
+                            <div className="flex gap-6">
+                              {["NT", "TR", "Hazardous"].map((vt) => {
+                                const k = vt.toLowerCase() as "nt" | "tr" | "hazardous";
+                                const checked = !!(dlEndorsement.step3 as any)?.vehicleTypes?.[k];
+                                return (
+                                  <label key={vt} className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 text-xs select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) =>
+                                        setDlEndorsement((prev) => ({
+                                          ...prev,
+                                          step3: {
+                                            ...prev.step3,
+                                            vehicleTypes: { ...(prev.step3 as any)?.vehicleTypes, [k]: e.target.checked },
+                                          },
+                                        }))
+                                      }
+                                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span>{vt}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <input
+                              type="text"
+                              placeholder="Select or enter vehicle class..."
+                              value={(dlEndorsement.step3 as any).classOfVehicle || ""}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step3: { ...prev.step3, classOfVehicle: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accounting Module for DL New LL Endorsement */}
+                      <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">TOTAL AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter total amount"
+                            value={dlEndorsement.totalAmount}
+                            onChange={(e) => setDlEndorsement((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">ADVANCE AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter advance amount"
+                            value={dlEndorsement.advanceAmount}
+                            onChange={(e) => setDlEndorsement((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. LL Renew Class (3 Steps + Appointment Date + Class of Vehicle) */}
+                <div className="border border-blue-200/80 rounded-2xl overflow-hidden bg-blue-50/20">
+                  <label className="flex items-center gap-3 p-4 bg-white cursor-pointer border-b border-slate-200/80 select-none">
+                    <input
+                      type="checkbox"
+                      checked={llRenew.enabled}
+                      onChange={(e) => setLlRenew((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="font-bold text-slate-900 text-xs">LL Renew Class</span>
+                  </label>
+
+                  {llRenew.enabled && (
+                    <div className="p-5 space-y-5 text-xs">
+                      {/* Step 1: LL DETAILS */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">1</span>
+                          <span className="uppercase tracking-wider">LL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">LL NUMBER</label>
+                            <input
+                              type="text"
+                              value={(llRenew as any).step1?.llNumber || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step1: { ...prev.step1, llNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={(llRenew as any).step1?.issueDate || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step1: { ...prev.step1, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRY DATE</label>
+                            <input
+                              type="date"
+                              value={(llRenew as any).step1?.expiryDate || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step1: { ...prev.step1, expiryDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 2: NEW LL DETAILS */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">2</span>
+                          <span className="uppercase tracking-wider">NEW LL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">LL NUMBER</label>
+                            <input
+                              type="text"
+                              value={(llRenew as any).step2?.llNumber || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step2: { ...prev.step2, llNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={(llRenew as any).step2?.issueDate || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step2: { ...prev.step2, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRY DATE</label>
+                            <input
+                              type="date"
+                              value={(llRenew as any).step2?.expiryDate || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step2: { ...prev.step2, expiryDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 3: DL DETAILS */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">3</span>
+                          <span className="uppercase tracking-wider">DL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">DL NUMBER</label>
+                            <input
+                              type="text"
+                              value={(llRenew as any).step3?.dlNumber || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step3: { ...prev.step3, dlNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={(llRenew as any).step3?.issueDate || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step3: { ...prev.step3, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <input
+                              type="date"
+                              value={(llRenew as any).step3?.validityDate || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step3: { ...prev.step3, validityDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">APPOINTMENT DATE</label>
+                            <input
+                              type="date"
+                              value={llRenew.appointmentDate}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, appointmentDate: e.target.value }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <input
+                              type="text"
+                              placeholder="Select or enter vehicle class..."
+                              value={(llRenew as any).step3?.classOfVehicle || ""}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step3: { ...prev.step3, classOfVehicle: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accounting Module for LL Renew Class */}
+                      <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">TOTAL AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter total amount"
+                            value={llRenew.totalAmount}
+                            onChange={(e) => setLlRenew((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">ADVANCE AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter advance amount"
+                            value={llRenew.advanceAmount}
+                            onChange={(e) => setLlRenew((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. DL Renew + Retest (3 Steps + Application Numbers) */}
+                <div className="border border-blue-200/80 rounded-2xl overflow-hidden bg-blue-50/20">
+                  <label className="flex items-center gap-3 p-4 bg-white cursor-pointer border-b border-slate-200/80 select-none">
+                    <input
+                      type="checkbox"
+                      checked={dlRenewRetest.enabled}
+                      onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="font-bold text-slate-900 text-xs">DL Renew + Retest</span>
+                  </label>
+
+                  {dlRenewRetest.enabled && (
+                    <div className="p-5 space-y-5 text-xs">
+                      {/* Step 1: DL DETAILS */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">1</span>
+                          <span className="uppercase tracking-wider">DL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">DL NUMBER</label>
+                            <input
+                              type="text"
+                              value={dlRenewRetest.step1.dlNumber}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step1: { ...prev.step1, dlNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={dlRenewRetest.step1.issueDate}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step1: { ...prev.step1, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <input
+                              type="date"
+                              value={dlRenewRetest.step1.validityDate}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step1: { ...prev.step1, validityDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">APPLICATION NUMBER 1</label>
+                            <input
+                              type="text"
+                              value={dlRenewRetest.step1.appNo1}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step1: { ...prev.step1, appNo1: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 2: LL DETAILS */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">2</span>
+                          <span className="uppercase tracking-wider">LL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">LL NUMBER</label>
+                            <input
+                              type="text"
+                              value={(dlRenewRetest as any).step2?.llNumber || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step2: { ...prev.step2, llNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={(dlRenewRetest as any).step2?.issueDate || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step2: { ...prev.step2, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRY DATE</label>
+                            <input
+                              type="date"
+                              value={(dlRenewRetest as any).step2?.expiryDate || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step2: { ...prev.step2, expiryDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">APPLICATION NUMBER 2</label>
+                            <input
+                              type="text"
+                              value={(dlRenewRetest as any).step2?.appNo2 || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step2: { ...prev.step2, appNo2: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 3: DL DETAILS */}
+                      <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">3</span>
+                          <span className="uppercase tracking-wider">DL DETAILS</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">DL NUMBER</label>
+                            <input
+                              type="text"
+                              value={(dlRenewRetest as any).step3?.dlNumber || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step3: { ...prev.step3, dlNumber: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">ISSUE DATE</label>
+                            <input
+                              type="date"
+                              value={(dlRenewRetest as any).step3?.issueDate || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step3: { ...prev.step3, issueDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <input
+                              type="date"
+                              value={(dlRenewRetest as any).step3?.validityDate || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step3: { ...prev.step3, validityDate: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">APPLICATION NUMBER 1</label>
+                            <input
+                              type="text"
+                              value={(dlRenewRetest as any).step3?.appNo1 || ""}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, step3: { ...prev.step3, appNo1: e.target.value } }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accounting Module for DL Renew + Retest */}
+                      <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">TOTAL AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter total amount"
+                            value={dlRenewRetest.totalAmount}
+                            onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">ADVANCE AMOUNT (₹)</label>
+                          <input
+                            type="number"
+                            placeholder="Enter advance amount"
+                            value={dlRenewRetest.advanceAmount}
+                            onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* General Licence Services Grid */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="border-b border-slate-100 pb-3">
+                  <h3 className="text-sm font-bold text-slate-900">General Licence Services</h3>
+                  <p className="text-[11px] text-slate-400">Select multiple general services</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                  {[
+                    "Issue Of Duplicate DL",
+                    "Change Of Address In DL",
+                    "Change Of Name In DL",
+                    "Photo & Signature Change",
+                    "Hazardous Material Endorsement",
+                    "DL Replacement",
+                    "DL Extract",
+                    "Hazardous Training Card",
+                    "International Licence",
+                    "Change Date Of Birth In DL",
+                  ].map((srv) => {
+                    const isChecked = generalLicServices.selected.includes(srv);
+                    return (
+                      <label
+                        key={srv}
+                        className={cn(
+                          "flex items-center gap-3 p-3 rounded-xl border cursor-pointer font-medium transition-all",
+                          isChecked ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold" : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...generalLicServices.selected, srv]
+                              : generalLicServices.selected.filter((s) => s !== srv);
+                            setGeneralLicServices((prev) => ({ ...prev, selected: next }));
+                          }}
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>{srv}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {/* Change Date Of Birth Note Box */}
+                {generalLicServices.selected.includes("Change Date Of Birth In DL") && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 font-medium">
+                    On task completion a popup will capture the New Date Of Birth and update the applicant profile.
+                  </div>
+                )}
+
+                {/* Service Wise Amount Fields for General License Services */}
+                {generalLicServices.selected.length > 0 && (
+                  <div className="space-y-3 pt-3 border-t border-slate-100">
+                    <h4 className="font-bold text-slate-800 text-xs">Service Wise Accounting (General License Services)</h4>
+                    {generalLicServices.selected.map((genSrv) => {
+                      const acc = generalLicServices.accounting[genSrv] || { totalAmount: "", advanceAmount: "" };
+                      return (
+                        <div key={genSrv} className="p-3 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-3 items-center text-xs">
+                          <span className="font-bold text-slate-800">{genSrv}</span>
+                          <div>
+                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">TOTAL AMOUNT (₹)</label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={acc.totalAmount}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setGeneralLicServices((prev) => ({
+                                  ...prev,
+                                  accounting: {
+                                    ...prev.accounting,
+                                    [genSrv]: { ...acc, totalAmount: val },
+                                  },
+                                }));
+                              }}
+                              className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">ADVANCE AMOUNT (₹)</label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={acc.advanceAmount}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setGeneralLicServices((prev) => ({
+                                  ...prev,
+                                  accounting: {
+                                    ...prev.accounting,
+                                    [genSrv]: { ...acc, advanceAmount: val },
+                                  },
+                                }));
+                              }}
+                              className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold text-emerald-700"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  VEHICLE NUMBER *
-                </label>
-                <input
-                  type="text"
-                  placeholder="GJ-01-AB-1234"
-                  value={vehicleNumber}
-                  onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
-                  onBlur={handleVehicleBlur}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-              </div>
+          {/* DRIVING SCHOOL EMPTY SUB MODULE PLACEHOLDER */}
+          {activeSubModule === "driving_school" && (
+            <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-2">
+              <h3 className="text-lg font-bold text-slate-800">Driving School Module</h3>
+              <p className="text-xs text-slate-400">Driving School workflows and candidate registrations will appear here.</p>
+            </div>
+          )}
+
+          {/* SERVICES SUB MODULE FORM */}
+          {activeSubModule === "services" && (
+            <div className="space-y-6">
+              {/* 1. Vehicle Details Section */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <Car className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Vehicle Details</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Only Vehicle Number is mandatory. Rest is optional. Entering existing number auto populates details.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      VEHICLE NUMBER *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="GJ-01-AB-1234"
+                      value={vehicleNumber}
+                      onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
+                      onBlur={handleVehicleBlur}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
 
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">PHONE</label>
@@ -2368,6 +3546,8 @@ function ApplicationFormModal({
             </div>
           </div>
         </div>
+      )}
+      </div>
 
         {/* Document Preview Modal */}
         {previewDoc && (

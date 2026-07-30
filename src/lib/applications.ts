@@ -116,6 +116,85 @@ export interface ServiceAccountingItem {
   pendingAmount: number;
 }
 
+export interface LicenseDetailsData {
+  subModule?: "services" | "licence" | "driving_school";
+  dateOfBirth?: string;
+  isDrivingSchoolHolder?: boolean;
+  newLearningLicence?: {
+    enabled: boolean;
+    appointmentDate?: string;
+    classOfVehicle?: string[];
+    totalAmount?: number | string;
+    advanceAmount?: number | string;
+    step1?: {
+      llNumber?: string;
+      issueDate?: string;
+      expiryDate?: string;
+      classOfVehicle?: string[];
+    };
+    step2?: {
+      dlNumber?: string;
+      issueDate?: string;
+      validityDate?: string;
+      vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
+      classOfVehicle?: string[];
+    };
+  };
+  dlNewLlEndorsement?: {
+    enabled: boolean;
+    totalAmount?: number | string;
+    advanceAmount?: number | string;
+    step1?: {
+      dlNumber?: string;
+      issueDate?: string;
+      validityDate?: string;
+      vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
+    };
+    step2?: {
+      llNumber?: string;
+      issueDate?: string;
+      expiryDate?: string;
+      classOfVehicle?: string;
+    };
+    step3?: {
+      dlNumber?: string;
+      issueDate?: string;
+      validityDate?: string;
+      vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
+      classOfVehicle?: string;
+    };
+  };
+  llRenewClass?: {
+    enabled: boolean;
+    appointmentDate?: string;
+    totalAmount?: number | string;
+    advanceAmount?: number | string;
+    step1?: { llNumber?: string; issueDate?: string; expiryDate?: string };
+    step2?: { dlNumber?: string; issueDate?: string; validityDate?: string };
+    step3?: { dlNumber?: string; issueDate?: string; validityDate?: string };
+  };
+  dlRenewRetest?: {
+    enabled: boolean;
+    totalAmount?: number | string;
+    advanceAmount?: number | string;
+    step1?: { dlNumber?: string; issueDate?: string; validityDate?: string; appNo1?: string };
+    step2?: { llNumber?: string; issueDate?: string; expiryDate?: string; appNo2?: string };
+    step3?: { dlNumber?: string; issueDate?: string; validityDate?: string; appNo1?: string };
+  };
+  generalLicenceServices?: {
+    selectedServices?: string[];
+    serviceAccounting?: Record<string, { totalAmount: number | string; advanceAmount: number | string }>;
+    changeDobData?: {
+      dlNumber?: string;
+      classOfVehicle?: string;
+      issueDate?: string;
+      validityDate?: string;
+      vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
+      newDob?: string;
+    };
+  };
+}
+
 export interface ApplicationRecord {
   id: string;
   applicationId: string;
@@ -124,6 +203,8 @@ export interface ApplicationRecord {
   ownerName: string;
   mobileNumber: string;
   services: string[];
+  subModule?: "services" | "licence" | "driving_school";
+  licenseDetails?: LicenseDetailsData;
   serviceAccounting?: Record<string, ServiceAccountingItem>;
   assignedEmployeeId?: string;
   assignedEmployeeName?: string;

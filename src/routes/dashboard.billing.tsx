@@ -28,7 +28,10 @@ export const Route = createFileRoute("/dashboard/billing")({
   component: BillingDashboard,
 });
 
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+
 function BillingDashboard() {
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [metrics, setMetrics] = useState({
     totalInvoiced: 0,
@@ -183,6 +186,11 @@ function BillingDashboard() {
             <FileText className="size-4" /> Download Payment History PDF
           </Button>
         </div>
+      </div>
+
+      {/* 3 Main Sub Module Services, Licence, Driving School Tabs */}
+      <div>
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
       {/* Tabs */}

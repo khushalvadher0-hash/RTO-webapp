@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+
 export const Route = createFileRoute("/dashboard/")({
   component: Overview,
 });
@@ -51,6 +53,7 @@ function computeDaysRemaining(expiryStr: string): number {
 }
 
 function Overview() {
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [vehicles, setVehicles] = useState<VehicleMaster[]>([]);
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,8 +97,75 @@ function Overview() {
     });
   }, [vehicles, applications]);
 
-  // Compute 8 Expiry Categories strictly matching reference
+  // Compute Expiry Categories according to Active Sub Module
   const expiryCategories = useMemo(() => {
+    if (activeSubModule === "driving_school") {
+      return [];
+    }
+
+    if (activeSubModule === "licence") {
+      // License Dashboard: Show 5 License Expiries (4 Compulsory: NT, TR, LL, DL + Hazardous)
+      const ntList: ExpiryItem[] = [];
+      const trList: ExpiryItem[] = [];
+      const hazardousList: ExpiryItem[] = [];
+      const llList: ExpiryItem[] = [];
+      const dlList: ExpiryItem[] = [];
+
+      applications.forEach((app) => {
+        if (app.subModule === "licence" || app.licenseDetails) {
+          const lic = app.licenseDetails || {};
+          const ownerName = app.ownerName || app.vehicleNumber || "Applicant";
+          const phone = app.mobileNumber || "—";
+          const baseInfo = {
+            vehicleNumber: app.applicationId || app.id,
+            ownerName,
+            phone,
+            vehicleClass: "License Record",
+          };
+
+          // Check LL Expiries
+          const llExp = lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step2?.expiryDate || lic.llRenewClass?.step1?.expiryDate || lic.dlRenewRetest?.step2?.expiryDate;
+          if (llExp) {
+            const days = computeDaysRemaining(llExp);
+            llList.push({ ...baseInfo, expiryDate: llExp, daysRemaining: days, isCritical: days <= 15 });
+          }
+
+          // Check DL Expiries
+          const dlExp = lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step1?.validityDate || lic.llRenewClass?.step2?.validityDate || lic.dlRenewRetest?.step1?.validityDate;
+          if (dlExp) {
+            const days = computeDaysRemaining(dlExp);
+            dlList.push({ ...baseInfo, expiryDate: dlExp, daysRemaining: days, isCritical: days <= 15 });
+          }
+
+          // Check NT, TR, Hazardous validity expiries
+          const vTypes = lic.newLearningLicence?.step2?.vehicleTypes || lic.dlNewLlEndorsement?.step1?.vehicleTypes || lic.dlNewLlEndorsement?.step3?.vehicleTypes;
+          if (vTypes?.nt && dlExp) {
+            const days = computeDaysRemaining(dlExp);
+            ntList.push({ ...baseInfo, expiryDate: dlExp, daysRemaining: days, isCritical: days <= 15 });
+          }
+          if (vTypes?.tr && dlExp) {
+            const days = computeDaysRemaining(dlExp);
+            trList.push({ ...baseInfo, expiryDate: dlExp, daysRemaining: days, isCritical: days <= 15 });
+          }
+          if (vTypes?.hazardous && dlExp) {
+            const days = computeDaysRemaining(dlExp);
+            hazardousList.push({ ...baseInfo, expiryDate: dlExp, daysRemaining: days, isCritical: days <= 15 });
+          }
+        }
+      });
+
+      const sortFn = (a: ExpiryItem, b: ExpiryItem) => a.daysRemaining - b.daysRemaining;
+
+      return [
+        { title: "NT License Validity", icon: Shield, items: ntList.sort(sortFn), color: "text-blue-600 bg-blue-50 border-blue-100" },
+        { title: "TR License Validity", icon: FileCheck, items: trList.sort(sortFn), color: "text-amber-600 bg-amber-50 border-amber-100" },
+        { title: "LL License Expiry", icon: Calendar, items: llList.sort(sortFn), color: "text-purple-600 bg-purple-50 border-purple-100" },
+        { title: "DL License Expiry", icon: Building2, items: dlList.sort(sortFn), color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
+        { title: "Hazardous License Expiry", icon: AlertCircle, items: hazardousList.sort(sortFn), color: "text-rose-600 bg-rose-50 border-rose-100" },
+      ];
+    }
+
+    // Default: Services SubModule Expiry Cards
     const insuranceList: ExpiryItem[] = [];
     const fitnessList: ExpiryItem[] = [];
     const regRenewalList: ExpiryItem[] = [];
@@ -272,7 +342,7 @@ function Overview() {
         color: "text-teal-600 bg-teal-50 border-teal-100",
       },
     ];
-  }, [activeVehicles]);
+  }, [activeSubModule, activeVehicles, applications]);
 
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
@@ -293,6 +363,11 @@ function Overview() {
             New Application
           </Link>
         </div>
+      </div>
+
+      {/* 3 Main Sub Module Services, Licence, Driving School Tabs */}
+      <div>
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
       {/* 8 Expiry Cards Grid */}

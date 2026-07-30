@@ -57,7 +57,10 @@ export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingDashboardPage,
 });
 
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+
 function AccountingDashboardPage() {
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [activeTab, setActiveTab] = useState<"collections" | "outstanding" | "payments" | "ledger">("collections");
   const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
   const [paymentEntries, setPaymentEntries] = useState<PaymentHistoryItem[]>([]);
@@ -406,7 +409,40 @@ function AccountingDashboardPage() {
       let totAmt = app.totalFee || app.amount || 0;
       let totPaid = app.totalAdvance || app.totalPaid || 0;
 
-      if (app.serviceFees && Object.keys(app.serviceFees).length > 0) {
+      // Extract fees from licenseDetails if subModule === 'licence'
+      if (app.subModule === "licence" && app.licenseDetails) {
+        let licTot = 0;
+        let licPaid = 0;
+        const lic = app.licenseDetails;
+
+        if (lic.newLearningLicence?.enabled) {
+          licTot += Number(lic.newLearningLicence.totalAmount) || 0;
+          licPaid += Number(lic.newLearningLicence.advanceAmount) || 0;
+        }
+        if (lic.dlNewLlEndorsement?.enabled) {
+          licTot += Number(lic.dlNewLlEndorsement.totalAmount) || 0;
+          licPaid += Number(lic.dlNewLlEndorsement.advanceAmount) || 0;
+        }
+        if (lic.llRenewClass?.enabled) {
+          licTot += Number(lic.llRenewClass.totalAmount) || 0;
+          licPaid += Number(lic.llRenewClass.advanceAmount) || 0;
+        }
+        if (lic.dlRenewRetest?.enabled) {
+          licTot += Number(lic.dlRenewRetest.totalAmount) || 0;
+          licPaid += Number(lic.dlRenewRetest.advanceAmount) || 0;
+        }
+        if (lic.generalLicenceServices?.serviceAccounting) {
+          Object.values(lic.generalLicenceServices.serviceAccounting).forEach((item: any) => {
+            licTot += Number(item.totalAmount) || 0;
+            licPaid += Number(item.advanceAmount) || 0;
+          });
+        }
+
+        if (licTot > 0) {
+          totAmt = licTot;
+          totPaid = licPaid;
+        }
+      } else if (app.serviceFees && Object.keys(app.serviceFees).length > 0) {
         let calcTot = 0;
         let calcPaid = 0;
         Object.entries(app.serviceFees).forEach(([sKey, feeVal]) => {
@@ -471,6 +507,7 @@ function AccountingDashboardPage() {
 
       rows.push({
         id: appKey,
+        subModule: app.subModule || (app.licenseDetails ? "licence" : "services"),
         applicationId: app.applicationId || app.id,
         vehicleId: app.vehicleId || app.vehicleNumber,
         clientId: app.id,
@@ -528,6 +565,16 @@ function AccountingDashboardPage() {
   const filteredRecords = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     return allAccountingRows.filter((r) => {
+      if (activeSubModule === "driving_school") return false;
+      if (r.subModule) {
+        if (r.subModule !== activeSubModule) return false;
+      } else {
+        const srvs = (r.services || "").toLowerCase();
+        const isLic = srvs.includes("license") || srvs.includes("licence") || srvs.includes("learning") || srvs.includes("dl") || srvs.includes("ll");
+        if (activeSubModule === "licence" && !isLic) return false;
+        if (activeSubModule === "services" && isLic) return false;
+      }
+
       const term = searchTerm.toLowerCase();
       const mobile = r.clientMobile || "";
       const vehicle = r.vehicleNumber || "";
@@ -565,7 +612,7 @@ function AccountingDashboardPage() {
 
       return true;
     });
-  }, [allAccountingRows, searchTerm, filterEmployee, filterService, filterStatus, filterStartDate, filterEndDate]);
+  }, [allAccountingRows, searchTerm, filterEmployee, filterService, filterStatus, filterStartDate, filterEndDate, activeSubModule]);
 
   const filteredPayments = useMemo(() => {
     return paymentEntries.filter((p) => {
@@ -646,7 +693,7 @@ function AccountingDashboardPage() {
     });
   }, [clientSummaries, searchTerm, financeRecords]);
 
-  // Metrics
+  // Metrics (Independent per subModule)
   const metrics = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -654,43 +701,15 @@ function AccountingDashboardPage() {
     let totalReceived = 0;
     let overdueCollections = 0;
 
-    v2Services.forEach((s) => {
-      const amt = s.serviceAmount || 0;
-      const rec = (s.amountReceived || 0) + (s.advancePayment || 0);
-      const pending = Math.max(0, amt - rec);
+    filteredRecords.forEach((r) => {
+      const amt = r.invoiceAmount || 0;
+      const rec = r.receivedAmount || 0;
+      const pending = r.balanceAmount || 0;
 
       totalReceivable += amt;
       totalReceived += rec;
 
-      const colDate = s.collectionDate || s.dueDate || "";
-      if (pending > 0 && colDate && colDate < todayStr) {
-        overdueCollections += pending;
-      }
-    });
-
-    applications.forEach((app) => {
-      let totAmt = app.amount || 0;
-      let totPaid = app.totalPaid || 0;
-
-      if (app.serviceAccounting) {
-        let calcTot = 0;
-        let calcPaid = 0;
-        Object.values(app.serviceAccounting).forEach((sa: any) => {
-          calcTot += sa.totalAmount || 0;
-          calcPaid += sa.advancePayment || 0;
-        });
-        if (calcTot > 0) {
-          totAmt = calcTot;
-          totPaid = calcPaid;
-        }
-      }
-
-      totalReceivable += totAmt;
-      totalReceived += totPaid;
-
-      const pending = Math.max(0, totAmt - totPaid);
-      const colDate = app.expiryDate || app.createdAt?.slice(0, 10) || "";
-      if (pending > 0 && colDate && colDate < todayStr) {
+      if (pending > 0 && r.collectionDate && r.collectionDate < todayStr) {
         overdueCollections += pending;
       }
     });
@@ -711,7 +730,7 @@ function AccountingDashboardPage() {
       todayCollections,
       overdueCollections,
     };
-  }, [v2Services, applications, paymentEntries]);
+  }, [filteredRecords, paymentEntries]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {
@@ -1191,9 +1210,14 @@ function AccountingDashboardPage() {
             <FileText className="size-4 mr-1 text-red-600" /> Outstanding PDF
           </Button>
           <Button variant="outline" size="sm" onClick={generatePaymentsPDF} className="text-xs bg-slate-50 border-slate-200">
-            <FileText className="size-4 mr-1 text-red-600" /> Payments PDF
+            <FileText className="size-4 mr-1 text-red-600" /> Payments Log PDF
           </Button>
         </div>
+      </div>
+
+      {/* 3 Main Sub Module Services, Licence, Driving School Tabs */}
+      <div>
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
       {/* Summary Cards */}
