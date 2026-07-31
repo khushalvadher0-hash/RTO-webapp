@@ -59,11 +59,16 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { collection, onSnapshot, doc, query, where, updateDoc, getDoc, setDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, query, where, updateDoc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { getSession } from "@/lib/auth";
 import { ApplicationFullDetailsModal } from "@/components/ApplicationFullDetailsModal";
 import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+import {
+  subscribeApplications,
+  subscribeAccountingRecords,
+  type AccountingRecord,
+} from "@/lib/applications";
 import {
   STAFF_USERS,
   staffLabel,
@@ -327,6 +332,7 @@ function TasksPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [v2Services, setV2Services] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
 
   const isAdmin = session?.role === "admin" || session?.role === "manager";
   const canSeeAllTasks = isAdmin;
@@ -395,6 +401,7 @@ function TasksPage() {
       const apps = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setApplications(apps);
     });
+    const u8 = subscribeAccountingRecords(setAccountingMap);
     return () => {
       u1();
       u2();
@@ -402,6 +409,7 @@ function TasksPage() {
       u5();
       u6();
       u7();
+      u8();
     };
   }, []);
 
@@ -439,7 +447,7 @@ function TasksPage() {
         pendingAmount: linkedApp ? (typeof linkedApp.pendingAmount === "number" ? linkedApp.pendingAmount : Math.max(0, (linkedApp.amount || 0) - (linkedApp.totalPaid || 0))) : (t as any).pendingAmount ?? 0,
         paymentStatus: linkedApp?.paymentStatus || (t as any).paymentStatus || "Pending",
         clientName: linkedApp?.ownerName || (t as any).clientName || (t as any).ownerName || "",
-        mobileNumber: linkedApp?.mobileNumber || (t as any).mobileNumber || t.phone || "",
+        mobileNumber: linkedApp?.mobileNumber || (t as any).mobileNumber || (t as any).phone || "",
         reference: linkedApp?.reference || linkedApp?.applicationId || (t as any).reference || t.id,
       };
     });
@@ -1396,6 +1404,7 @@ function TasksPage() {
               onAddRemark={(t) => setRemarkTaskId(t.id)}
               onChangeStatus={handleQuickChangeStatus}
               onDuplicate={handleDuplicateTask}
+              accountingMap={accountingMap}
             />
           ) : (
             <TaskTable
@@ -1416,6 +1425,7 @@ function TasksPage() {
               onChangeStatus={handleQuickChangeStatus}
               onDuplicate={handleDuplicateTask}
               activeSubModule={activeSubModule}
+              accountingMap={accountingMap}
             />
           )}
         </TabsContent>
@@ -1651,19 +1661,19 @@ function TasksPage() {
 
 function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRecord[], vehicles: any[]) {
   let clientName = (t as any).ownerName || (t as any).clientName || "";
-  let clientPhone = (t as any).ownerPhone || (t as any).mobileNumber || t.phone || "";
+  let clientPhone = (t as any).ownerPhone || (t as any).mobileNumber || (t as any).phone || "";
   
   if (!clientName && (t.clientId || t.recordId)) {
     const targetId = t.clientId || t.recordId;
     const foundClient = clients.find((c) => c.id === targetId);
     if (foundClient) {
       clientName = foundClient.name;
-      if (!clientPhone) clientPhone = foundClient.phone || foundClient.mobile || "";
+      if (!clientPhone) clientPhone = (foundClient as any).phone || (foundClient as any).mobile || (foundClient as any).mo || "";
     } else {
       const foundLead = leads.find((l) => l.id === targetId);
       if (foundLead) {
         clientName = foundLead.name;
-        if (!clientPhone) clientPhone = foundLead.phone || foundLead.mobile || "";
+        if (!clientPhone) clientPhone = (foundLead as any).phone || (foundLead as any).mobile || (foundLead as any).mo || "";
       }
     }
   }
@@ -1688,7 +1698,7 @@ function getTaskInfoHelper(t: Task, clients: RegistryRecord[], leads: RegistryRe
   }
 
   // Resolve vehicle details if linked
-  let vehicleNum = t.vehicleNumber || "";
+  let vehicleNum = (t as any).vehicleNumber || "";
   if (!vehicleNum && t.vehicleId) {
     const found = vehicles.find((v) => v.id === t.vehicleId);
     if (found) {
@@ -1724,6 +1734,7 @@ function TaskTable({
   onChangeStatus,
   onDuplicate,
   activeSubModule = "services",
+  accountingMap,
 }: {
   tasks: Task[];
   clients: RegistryRecord[];
@@ -1739,6 +1750,7 @@ function TaskTable({
   onChangeStatus: (t: Task, s: TaskStatus) => void;
   onDuplicate: (t: Task) => void;
   activeSubModule?: SubModuleType;
+  accountingMap?: Map<string, AccountingRecord>;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
@@ -1822,10 +1834,14 @@ function TaskTable({
                 if (isLicenceSubModule) {
                   const ld = (t as any).licenseDetails;
                   const clientDob = ld?.dateOfBirth || "—";
-                  const totalPay = (t as any).amount || (t as any).totalAmount || 0;
-                  const advPay = (t as any).totalPaid || (t as any).advanceAmount || 0;
-                  const remPay = typeof (t as any).pendingAmount === "number" ? (t as any).pendingAmount : Math.max(0, totalPay - advPay);
-                  const pStatus = (t as any).paymentStatus || (remPay <= 0 ? "Paid" : advPay > 0 ? "Partial" : "Pending");
+                  
+                  const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;
+                  const acc = accountingMap?.get(targetAppKey) || accountingMap?.get(t.applicationId || "");
+                  const totalPay = acc?.totalPayment ?? ((t as any).amount || (t as any).totalAmount || 0);
+                  const advPay = acc?.advancePayment ?? ((t as any).totalPaid || (t as any).advanceAmount || 0);
+                  const remPay = acc?.remainingPayment ?? (typeof (t as any).pendingAmount === "number" ? (t as any).pendingAmount : Math.max(0, totalPay - advPay));
+                  const rawStatus = acc?.paymentStatus ?? (t as any).paymentStatus ?? (remPay <= 0 ? "Paid" : advPay > 0 ? "Partially Paid" : "Pending");
+                  const pStatus = rawStatus === "Partially Paid" ? "Partial" : rawStatus;
                   const refCode = t.applicationId || (t as any).reference || t.id;
 
                   const getExpiryForService = (srvName: string) => {
@@ -2088,6 +2104,7 @@ function TaskCards({
   onAddRemark,
   onChangeStatus,
   onDuplicate,
+  accountingMap,
 }: {
   tasks: Task[];
   clients: RegistryRecord[];
@@ -2102,6 +2119,7 @@ function TaskCards({
   onAddRemark: (t: Task) => void;
   onChangeStatus: (t: Task, s: TaskStatus) => void;
   onDuplicate: (t: Task) => void;
+  accountingMap?: Map<string, AccountingRecord>;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 9; // 3 columns * 3 rows looks best

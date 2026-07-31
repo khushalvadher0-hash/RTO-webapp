@@ -16,6 +16,67 @@ import { getSession } from "./auth";
 
 export const APPLICATIONS_COL = "registry_applications_v1";
 export const VEHICLES_CENTRIC_COL = "registry_vehicles_master_v1";
+export const ACCOUNTING_COL = "registry_accounting";
+
+export interface AccountingRecord {
+  id: string;
+  applicationId: string;
+  applicationDocId?: string;
+  clientId?: string;
+  clientName?: string;
+  mobileNumber?: string;
+  vehicleNumber?: string;
+  totalPayment: number;
+  advancePayment: number;
+  remainingPayment: number;
+  paymentStatus: "Paid" | "Partially Paid" | "Pending";
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function subscribeAccountingRecords(
+  callback: (recordsMap: Map<string, AccountingRecord>) => void
+): () => void {
+  const q = query(collection(db, ACCOUNTING_COL));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const map = new Map<string, AccountingRecord>();
+      snap.docs.forEach((d) => {
+        const data = d.data() as AccountingRecord;
+        const rec = { ...data, id: d.id };
+        map.set(d.id, rec);
+        if (data.applicationId) {
+          map.set(data.applicationId, rec);
+        }
+        if (data.applicationDocId) {
+          map.set(data.applicationDocId, rec);
+        }
+      });
+      callback(map);
+    },
+    (err) => {
+      console.error("Error subscribing to accounting records:", err);
+      callback(new Map());
+    }
+  );
+}
+
+export async function saveAccountingRecord(payload: AccountingRecord): Promise<void> {
+  const docId = payload.applicationDocId || payload.id || payload.applicationId;
+  if (!docId) return;
+  const ref = doc(db, ACCOUNTING_COL, docId);
+  const now = new Date().toISOString();
+  await setDoc(
+    ref,
+    removeUndefined({
+      ...payload,
+      id: docId,
+      updatedAt: now,
+    }),
+    { merge: true }
+  );
+}
 
 export interface TrackExpirySettings {
   puc?: boolean;
@@ -345,6 +406,32 @@ export async function saveApplicationAndVehicle(
     });
 
     await setDoc(docRef, updatePayload, { merge: true });
+  }
+
+  // ─── CREATE / SYNC ACCOUNTING RECORD FOR THIS APPLICATION ───────────────
+  try {
+    const totAmt = Number(appData.amount) || 0;
+    const advAmt = Number(appData.totalPaid) || 0;
+    const remAmt = typeof appData.pendingAmount === "number" ? appData.pendingAmount : Math.max(0, totAmt - advAmt);
+    const pStatus: "Paid" | "Partially Paid" | "Pending" = remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partially Paid" : "Pending";
+
+    await saveAccountingRecord({
+      id: finalAppId,
+      applicationId: generatedAppIdStr,
+      applicationDocId: finalAppId,
+      clientId: finalAppId,
+      clientName: appData.ownerName || "",
+      mobileNumber: appData.mobileNumber || "",
+      vehicleNumber: appData.vehicleNumber || "",
+      totalPayment: totAmt,
+      advancePayment: advAmt,
+      remainingPayment: remAmt,
+      paymentStatus: pStatus,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (accErr) {
+    console.error("Error creating/updating accounting record:", accErr);
   }
 
   // ─── AUTOMATIC TASK & SERVICES SYNC FOR APPLICATION SERVICES ──────────

@@ -52,6 +52,11 @@ import { db } from "@/lib/firebase";
 import { InvoiceViewer } from "@/components/InvoiceViewer";
 import { generateInvoicePDF } from "@/lib/pdfGenerator";
 import { subscribeAllClients, subscribeAllVehicles, subscribeAllServices, type Service } from "@/lib/hierarchy";
+import {
+  subscribeAccountingRecords,
+  saveAccountingRecord,
+  type AccountingRecord,
+} from "@/lib/applications";
 
 export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingDashboardPage,
@@ -119,6 +124,7 @@ function AccountingDashboardPage() {
   const isStaff = userRole === "employee" || userRole === "viewer";
 
   const [applications, setApplications] = useState<any[]>([]);
+  const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
 
   // Subscriptions
   useEffect(() => {
@@ -139,6 +145,7 @@ function AccountingDashboardPage() {
     const unsubApps = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
       setApplications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
+    const unsubAcc = subscribeAccountingRecords(setAccountingMap);
 
     return () => {
       unsubFinance();
@@ -148,6 +155,7 @@ function AccountingDashboardPage() {
       unsubVehicles();
       unsubServices();
       unsubApps();
+      unsubAcc();
     };
   }, []);
 
@@ -406,90 +414,137 @@ function AccountingDashboardPage() {
       const srvList = app.services || [];
       const appServicesStr = srvList.length > 0 ? srvList.join(", ") : "General Service";
 
-      let totAmt = app.totalFee || app.amount || 0;
-      let totPaid = app.totalAdvance || app.totalPaid || 0;
+      const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
 
-      // Extract fees from licenseDetails if subModule === 'licence'
-      if (app.subModule === "licence" && app.licenseDetails) {
-        let licTot = 0;
-        let licPaid = 0;
-        const lic = app.licenseDetails;
+      let totAmt = acc?.totalPayment ?? app.totalFee ?? app.amount ?? 0;
+      let totPaid = acc?.advancePayment ?? app.totalAdvance ?? app.totalPaid ?? 0;
 
-        if (lic.newLearningLicence?.enabled) {
-          licTot += Number(lic.newLearningLicence.totalAmount) || 0;
-          licPaid += Number(lic.newLearningLicence.advanceAmount) || 0;
-        }
-        if (lic.dlNewLlEndorsement?.enabled) {
-          licTot += Number(lic.dlNewLlEndorsement.totalAmount) || 0;
-          licPaid += Number(lic.dlNewLlEndorsement.advanceAmount) || 0;
-        }
-        if (lic.llRenewClass?.enabled) {
-          licTot += Number(lic.llRenewClass.totalAmount) || 0;
-          licPaid += Number(lic.llRenewClass.advanceAmount) || 0;
-        }
-        if (lic.dlRenewRetest?.enabled) {
-          licTot += Number(lic.dlRenewRetest.totalAmount) || 0;
-          licPaid += Number(lic.dlRenewRetest.advanceAmount) || 0;
-        }
-        if (lic.generalLicenceServices?.serviceAccounting) {
-          Object.values(lic.generalLicenceServices.serviceAccounting).forEach((item: any) => {
-            licTot += Number(item.totalAmount) || 0;
-            licPaid += Number(item.advanceAmount) || 0;
-          });
-        }
+      if (!acc) {
+        // Extract fees from licenseDetails if subModule === 'licence'
+        if (app.subModule === "licence" && app.licenseDetails) {
+          let licTot = 0;
+          let licPaid = 0;
+          const lic = app.licenseDetails;
 
-        if (licTot > 0) {
-          totAmt = licTot;
-          totPaid = licPaid;
-        }
-      } else if (app.serviceFees && Object.keys(app.serviceFees).length > 0) {
-        let calcTot = 0;
-        let calcPaid = 0;
-        Object.entries(app.serviceFees).forEach(([sKey, feeVal]) => {
-          if (srvList.length === 0 || srvList.includes(sKey)) {
-            calcTot += Number(feeVal) || 0;
-            calcPaid += Number(app.serviceAdvances?.[sKey]) || 0;
+          if (lic.newLearningLicence?.enabled) {
+            licTot += Number(lic.newLearningLicence.totalAmount) || 0;
+            licPaid += Number(lic.newLearningLicence.advanceAmount) || 0;
           }
-        });
-        if (calcTot > 0) {
-          totAmt = calcTot;
-          totPaid = calcPaid;
-        }
-      } else if (app.serviceAccounting) {
-        let calcTot = 0;
-        let calcPaid = 0;
-        Object.values(app.serviceAccounting).forEach((sa: any) => {
-          calcTot += sa.totalAmount || sa.fee || 0;
-          calcPaid += sa.advancePayment || sa.advance || 0;
-        });
-        if (calcTot > 0) {
-          totAmt = calcTot;
-          totPaid = calcPaid;
+          if (lic.dlNewLlEndorsement?.enabled) {
+            licTot += Number(lic.dlNewLlEndorsement.totalAmount) || 0;
+            licPaid += Number(lic.dlNewLlEndorsement.advanceAmount) || 0;
+          }
+          if (lic.llRenewClass?.enabled) {
+            licTot += Number(lic.llRenewClass.totalAmount) || 0;
+            licPaid += Number(lic.llRenewClass.advanceAmount) || 0;
+          }
+          if (lic.dlRenewRetest?.enabled) {
+            licTot += Number(lic.dlRenewRetest.totalAmount) || 0;
+            licPaid += Number(lic.dlRenewRetest.advanceAmount) || 0;
+          }
+          if (lic.generalLicenceServices?.serviceAccounting) {
+            Object.values(lic.generalLicenceServices.serviceAccounting).forEach((item: any) => {
+              licTot += Number(item.totalAmount) || 0;
+              licPaid += Number(item.advanceAmount) || 0;
+            });
+          }
+
+          if (licTot > 0) {
+            totAmt = licTot;
+            totPaid = licPaid;
+          }
+        } else if (app.serviceFees && Object.keys(app.serviceFees).length > 0) {
+          let calcTot = 0;
+          let calcPaid = 0;
+          Object.entries(app.serviceFees).forEach(([sKey, feeVal]) => {
+            if (srvList.length === 0 || srvList.includes(sKey)) {
+              calcTot += Number(feeVal) || 0;
+              calcPaid += Number(app.serviceAdvances?.[sKey]) || 0;
+            }
+          });
+          if (calcTot > 0) {
+            totAmt = calcTot;
+            totPaid = calcPaid;
+          }
+        } else if (app.serviceAccounting) {
+          let calcTot = 0;
+          let calcPaid = 0;
+          Object.values(app.serviceAccounting).forEach((sa: any) => {
+            calcTot += sa.totalAmount || sa.fee || 0;
+            calcPaid += sa.advancePayment || sa.advance || 0;
+          });
+          if (calcTot > 0) {
+            totAmt = calcTot;
+            totPaid = calcPaid;
+          }
         }
       }
 
-      const balAmt = Math.max(0, totAmt - totPaid);
-      const paymentStatus = balAmt === 0 && totAmt > 0 ? "Paid" : totPaid > 0 ? "Partially Paid" : "Pending";
+      const balAmt = acc?.remainingPayment ?? Math.max(0, totAmt - totPaid);
+      const paymentStatus = acc?.paymentStatus ?? (balAmt === 0 && totAmt > 0 ? "Paid" : totPaid > 0 ? "Partially Paid" : "Pending");
 
       const srvCount = srvList.length;
       const serviceList = srvList.map((srv: string) => {
         let srvAmount = 0;
         let srvReceived = 0;
 
-        if (app.serviceFees && app.serviceFees[srv] !== undefined && app.serviceFees[srv] !== null) {
+        // Check licenseDetails breakdown
+        if (app.subModule === "licence" && app.licenseDetails) {
+          const lic = app.licenseDetails;
+          if (srv.includes("Learning") || srv.includes("New Learning")) {
+            if (lic.newLearningLicence?.enabled) {
+              srvAmount = Number(lic.newLearningLicence.totalAmount) || 0;
+              srvReceived = Number(lic.newLearningLicence.advanceAmount) || 0;
+            }
+          } else if (srv.includes("Endorsement")) {
+            if (lic.dlNewLlEndorsement?.enabled) {
+              srvAmount = Number(lic.dlNewLlEndorsement.totalAmount) || 0;
+              srvReceived = Number(lic.dlNewLlEndorsement.advanceAmount) || 0;
+            }
+          } else if (srv.includes("Renew Class") || srv === "LL Renew Class") {
+            if (lic.llRenewClass?.enabled) {
+              srvAmount = Number(lic.llRenewClass.totalAmount) || 0;
+              srvReceived = Number(lic.llRenewClass.advanceAmount) || 0;
+            }
+          } else if (srv.includes("Retest") || srv.includes("DL Renew")) {
+            if (lic.dlRenewRetest?.enabled) {
+              srvAmount = Number(lic.dlRenewRetest.totalAmount) || 0;
+              srvReceived = Number(lic.dlRenewRetest.advanceAmount) || 0;
+            }
+          } else if (lic.generalLicenceServices?.serviceAccounting?.[srv]) {
+            const item = lic.generalLicenceServices.serviceAccounting[srv];
+            srvAmount = Number(item.totalAmount) || 0;
+            srvReceived = Number(item.advanceAmount) || 0;
+          }
+        }
+
+        if (srvAmount === 0 && app.serviceFees && app.serviceFees[srv] !== undefined && app.serviceFees[srv] !== null) {
           srvAmount = Number(app.serviceFees[srv]) || 0;
-        } else if (app.serviceAccounting && app.serviceAccounting[srv]) {
+        }
+        if (srvAmount === 0 && app.serviceAccounting && app.serviceAccounting[srv]) {
           srvAmount = Number(app.serviceAccounting[srv].totalAmount || app.serviceAccounting[srv].fee) || 0;
-        } else if (srvCount > 0) {
+        }
+
+        if (srvReceived === 0 && app.serviceAdvances && app.serviceAdvances[srv] !== undefined && app.serviceAdvances[srv] !== null) {
+          srvReceived = Number(app.serviceAdvances[srv]) || 0;
+        }
+        if (srvReceived === 0 && app.serviceAccounting && app.serviceAccounting[srv]) {
+          srvReceived = Number(app.serviceAccounting[srv].advancePayment || app.serviceAccounting[srv].advance) || 0;
+        }
+
+        // Fallback for amount: if srvAmount is 0 and totAmt > 0 & srvCount > 0
+        if (srvAmount === 0 && totAmt > 0 && srvCount > 0) {
           srvAmount = Math.round((totAmt / srvCount) * 100) / 100;
         }
 
-        if (app.serviceAdvances && app.serviceAdvances[srv] !== undefined && app.serviceAdvances[srv] !== null) {
-          srvReceived = Number(app.serviceAdvances[srv]) || 0;
-        } else if (app.serviceAccounting && app.serviceAccounting[srv]) {
-          srvReceived = Number(app.serviceAccounting[srv].advancePayment || app.serviceAccounting[srv].advance) || 0;
-        } else if (srvCount > 0) {
-          srvReceived = Math.round((totPaid / srvCount) * 100) / 100;
+        // Fallback for received: proportion totPaid according to srvAmount vs totAmt
+        if (totPaid > 0) {
+          if (totAmt > 0 && srvAmount > 0) {
+            const ratio = srvAmount / totAmt;
+            srvReceived = Math.round((totPaid * ratio) * 100) / 100;
+          } else if (srvCount > 0) {
+            srvReceived = Math.round((totPaid / srvCount) * 100) / 100;
+          }
         }
 
         const srvOutstanding = Math.max(0, srvAmount - srvReceived);
@@ -843,6 +898,27 @@ function AccountingDashboardPage() {
           paymentDate: payDate,
           referenceNumber: payReference || null,
         });
+
+        // Sync registry_accounting record directly
+        const targetId = selectedSingleInvoiceId;
+        const currentAcc = accountingMap.get(targetId);
+        const newPaid = (currentAcc?.advancePayment || fRec?.receivedAmount || 0) + amt;
+        const totalAmount = currentAcc?.totalPayment || fRec?.invoiceAmount || amt;
+        const newBal = Math.max(0, totalAmount - newPaid);
+        const newStatus = newBal === 0 ? "Paid" : newPaid > 0 ? "Partially Paid" : "Pending";
+
+        await saveAccountingRecord({
+          id: targetId,
+          applicationId: currentAcc?.applicationId || targetId,
+          applicationDocId: currentAcc?.applicationDocId || targetId,
+          clientId: paymentClientId,
+          clientName: clientName,
+          totalPayment: totalAmount,
+          advancePayment: newPaid,
+          remainingPayment: newBal,
+          paymentStatus: newStatus,
+        });
+
         toast.success("Payment recorded successfully!");
       } else {
         // Multiple Invoice Allocation

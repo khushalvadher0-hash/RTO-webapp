@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   subscribeApplications,
+  subscribeAccountingRecords,
   saveApplicationAndVehicle,
   deleteApplication,
   fetchVehicleByNumber,
@@ -29,6 +30,7 @@ import {
   type ApplicationRecord,
   type VehicleMaster,
   type ServiceAccountingItem,
+  type AccountingRecord,
 } from "@/lib/applications";
 import { getSession } from "@/lib/auth";
 import { fetchAllUsers } from "@/lib/userService";
@@ -152,12 +154,20 @@ function ApplicationsPage() {
     }
   };
 
+  const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
+
   useEffect(() => {
-    const unsub = subscribeApplications((data) => {
+    const unsubApps = subscribeApplications((data) => {
       setApplications(data);
       setLoading(false);
     });
-    return () => unsub();
+    const unsubAcc = subscribeAccountingRecords((map) => {
+      setAccountingMap(map);
+    });
+    return () => {
+      unsubApps();
+      unsubAcc();
+    };
   }, []);
 
   const filteredApps = applications.filter((app) => {
@@ -335,11 +345,13 @@ function ApplicationsPage() {
                   if (activeSubModule === "licence") {
                     const ld = app.licenseDetails;
                     const clientDob = ld?.dateOfBirth || "—";
-                    const totalPay = app.amount || 0;
-                    const advPay = app.totalPaid || 0;
-                    const remPay = typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, totalPay - advPay);
-                    const pStatus = app.paymentStatus || (remPay <= 0 ? "Paid" : advPay > 0 ? "Partial" : "Pending");
-                    const refCode = app.applicationId || app.reference || "—";
+                    const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
+                    const totalPay = acc?.totalPayment ?? app.amount ?? 0;
+                    const advPay = acc?.advancePayment ?? app.totalPaid ?? 0;
+                    const remPay = acc?.remainingPayment ?? (typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, totalPay - advPay));
+                    const rawStatus = acc?.paymentStatus ?? app.paymentStatus ?? (remPay <= 0 ? "Paid" : advPay > 0 ? "Partially Paid" : "Pending");
+                    const pStatus = rawStatus === "Partially Paid" ? "Partial" : rawStatus;
+                    const refCode = app.applicationId || (app as any).reference || "—";
 
                     // Compute dynamic services list & exps
                     const allUniqueServices = Array.from(
@@ -457,6 +469,13 @@ function ApplicationsPage() {
                   const pucExpiry = v.pucExpiryDate || "—";
                   const regValidity = v.registrationDetails?.registrationValidity || "—";
 
+                  const regAcc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
+                  const regTotalPay = regAcc?.totalPayment ?? app.amount ?? 0;
+                  const regAdvPay = regAcc?.advancePayment ?? app.totalPaid ?? 0;
+                  const regRemPay = regAcc?.remainingPayment ?? (typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, regTotalPay - regAdvPay));
+                  const regRawStatus = regAcc?.paymentStatus ?? app.paymentStatus ?? (regRemPay <= 0 ? "Paid" : regAdvPay > 0 ? "Partially Paid" : "Pending");
+                  const regPStatus = regRawStatus === "Partially Paid" ? "Partial" : regRawStatus;
+
                   return (
                     <tr
                       key={app.id}
@@ -532,25 +551,25 @@ function ApplicationsPage() {
                         <span
                           className={cn(
                             "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            app.paymentStatus === "Paid" &&
+                            regPStatus === "Paid" &&
                               "bg-emerald-50 text-emerald-700 border border-emerald-200",
-                            app.paymentStatus === "Pending" &&
+                            regPStatus === "Pending" &&
                               "bg-amber-50 text-amber-700 border border-amber-200",
-                            app.paymentStatus === "Partial" &&
+                            regPStatus === "Partial" &&
                               "bg-blue-50 text-blue-700 border border-blue-200"
                           )}
                         >
-                          {app.paymentStatus}
+                          {regPStatus}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
-                        ₹{app.amount?.toLocaleString("en-IN") || 0}
+                        ₹{regTotalPay.toLocaleString("en-IN")}
                       </td>
                       <td className="py-3.5 px-4 font-semibold text-emerald-700">
-                        ₹{(app.totalPaid || 0).toLocaleString("en-IN")}
+                        ₹{regAdvPay.toLocaleString("en-IN")}
                       </td>
                       <td className="py-3.5 px-4 font-semibold text-amber-700">
-                        ₹{(app.pendingAmount || 0).toLocaleString("en-IN")}
+                        ₹{regRemPay.toLocaleString("en-IN")}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-xs font-semibold text-blue-600">
                         {app.invoiceNumber || "—"}
@@ -1300,12 +1319,14 @@ function ApplicationFormModal({
     if (shouldGenerateInvoice) {
       try {
         const session = getSession();
+        const clientNameStr = ownerName || (name as any) || vehicleNumber || "Client";
+        const vehicleNumStr = vehicleNumber || (name as any) || "";
         const invoiceItems = activeServicesList.map((srv) => {
           const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
           return {
             serviceId: srv,
             serviceName: srv,
-            vehicleNumber: vehicleNumber || name,
+            vehicleNumber: vehicleNumStr,
             quantity: 1,
             unitPrice: item.totalAmount,
             amount: item.totalAmount,
@@ -1317,11 +1338,11 @@ function ApplicationFormModal({
         if (invoiceItems.length > 0) {
           const createdInv = await createInvoice(
             {
-              id: (vehicleNumber || name).trim().toUpperCase().replace(/[\s-]/g, ""),
-              name: ownerName || name || vehicleNumber,
+              id: vehicleNumStr.trim().toUpperCase().replace(/[\s-]/g, "") || "CLIENT",
+              name: clientNameStr,
               mo: phone,
               application: address,
-              mvNo: vehicleNumber,
+              mvNo: vehicleNumStr,
               work: activeServicesList.join(", "),
             } as any,
             invoiceItems,

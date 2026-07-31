@@ -8,6 +8,10 @@ import {
   getServiceDistributionSummary,
 } from "@/lib/services";
 import {
+  subscribeAccountingRecords,
+  type AccountingRecord,
+} from "@/lib/applications";
+import {
   serviceLabel,
   type ServiceType,
   type RegistryRecord,
@@ -242,30 +246,34 @@ export function ServiceDashboard({
     let snap1Data: any = null;
     let snap2Data: any = null;
     let snap3Data: any = null;
+    let accMapData: Map<string, AccountingRecord> = new Map();
 
     const handleDocsUpdateAll = () => {
       const docs1 = snap1Data ? snap1Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
       const docs2 = snap2Data ? snap2Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
       const apps = snap3Data ? snap3Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
       setAppsList(apps);
-      const appsMap = new Map(apps.map((a: any) => [a.id, a]));
+      const appsMap = new Map<string, any>(apps.map((a: any) => [a.id, a]));
 
       const combined = [...docs1, ...docs2];
       const completedList = combined.filter((t: any) => t.status === "Completed" || t.taskStatus === "Completed" || t.done === true);
 
-      // Deduplicate by ID and enrich with Application record details
+      // Deduplicate by ID and enrich with Application & Accounting record details
       const uniqueMap = new Map();
       completedList.forEach((item: any) => {
-        const targetAppId = item.applicationId || item.applicationDocId || item.recordId || item.clientId || item.id.replace("task-app-", "");
-        let app = appsMap.get(targetAppId);
+        const targetAppId = item.applicationDocId || item.applicationId || item.recordId || item.clientId || item.id.replace("task-app-", "");
+        let app: any = appsMap.get(targetAppId);
         if (!app && item.applicationId) {
           app = apps.find((a: any) => a.applicationId === item.applicationId || a.id === item.applicationId);
         }
 
-        const totalAmt = app?.amount ?? item.amount ?? item.totalAmount ?? 0;
-        const advAmt = app?.totalPaid ?? item.totalPaid ?? item.advanceAmount ?? 0;
-        const remAmt = app ? (typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, totalAmt - advAmt)) : item.pendingAmount ?? Math.max(0, totalAmt - advAmt);
-        const pStatus = app?.paymentStatus || item.paymentStatus || (remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partial" : "Pending");
+        const acc = accMapData.get(targetAppId) || accMapData.get(item.applicationId || "") || (app ? accMapData.get(app.id) || accMapData.get(app.applicationId) : null);
+
+        const totalAmt = acc?.totalPayment ?? app?.amount ?? item.amount ?? item.totalAmount ?? 0;
+        const advAmt = acc?.advancePayment ?? app?.totalPaid ?? item.totalPaid ?? item.advanceAmount ?? 0;
+        const remAmt = acc?.remainingPayment ?? (app ? (typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, totalAmt - advAmt)) : item.pendingAmount ?? Math.max(0, totalAmt - advAmt));
+        const rawStatus = acc?.paymentStatus ?? app?.paymentStatus ?? item.paymentStatus ?? (remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partially Paid" : "Pending");
+        const pStatus = rawStatus === "Partially Paid" ? "Partial" : rawStatus;
 
         const enriched = {
           ...item,
@@ -316,10 +324,16 @@ export function ServiceDashboard({
       handleDocsUpdateAll();
     });
 
+    const unsub4 = subscribeAccountingRecords((map) => {
+      accMapData = map;
+      handleDocsUpdateAll();
+    });
+
     return () => {
       unsub1();
       unsub2();
       unsub3();
+      unsub4();
     };
   }, []);
 
