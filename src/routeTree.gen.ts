@@ -19,13 +19,12 @@ import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settin
 import { Route as DashboardLeadsRouteImport } from './routes/dashboard.leads'
 import { Route as DashboardEmployeesRouteImport } from './routes/dashboard.employees'
 import { Route as DashboardClientsRouteImport } from './routes/dashboard.clients'
-import { Route as DashboardClientAnalyticsRouteImport } from './routes/dashboard.client-analytics'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard.billing'
 import { Route as DashboardApplicationsRouteImport } from './routes/dashboard.applications'
-import { Route as DashboardAllClientsRouteImport } from './routes/dashboard.all-clients'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
 import { Route as DashboardSettingsMigrationRouteImport } from './routes/dashboard.settings.migration'
 import { Route as DashboardServiceServiceTypeRouteImport } from './routes/dashboard.service.$serviceType'
+import { Route as DashboardDrivingSchoolVehiclesRouteImport } from './routes/dashboard.driving-school.vehicles'
 import { Route as DashboardSettingsMigrationAccountingRouteImport } from './routes/dashboard.settings.migration.accounting'
 
 const DashboardRoute = DashboardRouteImport.update({
@@ -78,12 +77,6 @@ const DashboardClientsRoute = DashboardClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardClientAnalyticsRoute =
-  DashboardClientAnalyticsRouteImport.update({
-    id: '/client-analytics',
-    path: '/client-analytics',
-    getParentRoute: () => DashboardRoute,
-  } as any)
 const DashboardBillingRoute = DashboardBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -92,11 +85,6 @@ const DashboardBillingRoute = DashboardBillingRouteImport.update({
 const DashboardApplicationsRoute = DashboardApplicationsRouteImport.update({
   id: '/applications',
   path: '/applications',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardAllClientsRoute = DashboardAllClientsRouteImport.update({
-  id: '/all-clients',
-  path: '/all-clients',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardAccountingRoute = DashboardAccountingRouteImport.update({
@@ -116,6 +104,12 @@ const DashboardServiceServiceTypeRoute =
     path: '/service/$serviceType',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardDrivingSchoolVehiclesRoute =
+  DashboardDrivingSchoolVehiclesRouteImport.update({
+    id: '/driving-school/vehicles',
+    path: '/driving-school/vehicles',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardSettingsMigrationAccountingRoute =
   DashboardSettingsMigrationAccountingRouteImport.update({
     id: '/accounting',
@@ -127,10 +121,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/accounting': typeof DashboardAccountingRoute
-  '/dashboard/all-clients': typeof DashboardAllClientsRoute
   '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
-  '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
   '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
@@ -139,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/task-templates': typeof DashboardTaskTemplatesRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/driving-school/vehicles': typeof DashboardDrivingSchoolVehiclesRoute
   '/dashboard/service/$serviceType': typeof DashboardServiceServiceTypeRoute
   '/dashboard/settings/migration': typeof DashboardSettingsMigrationRouteWithChildren
   '/dashboard/settings/migration/accounting': typeof DashboardSettingsMigrationAccountingRoute
@@ -146,10 +139,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
-  '/dashboard/all-clients': typeof DashboardAllClientsRoute
   '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
-  '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
   '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
@@ -158,6 +149,7 @@ export interface FileRoutesByTo {
   '/dashboard/task-templates': typeof DashboardTaskTemplatesRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/dashboard/driving-school/vehicles': typeof DashboardDrivingSchoolVehiclesRoute
   '/dashboard/service/$serviceType': typeof DashboardServiceServiceTypeRoute
   '/dashboard/settings/migration': typeof DashboardSettingsMigrationRouteWithChildren
   '/dashboard/settings/migration/accounting': typeof DashboardSettingsMigrationAccountingRoute
@@ -167,10 +159,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/accounting': typeof DashboardAccountingRoute
-  '/dashboard/all-clients': typeof DashboardAllClientsRoute
   '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
-  '/dashboard/client-analytics': typeof DashboardClientAnalyticsRoute
   '/dashboard/clients': typeof DashboardClientsRoute
   '/dashboard/employees': typeof DashboardEmployeesRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
@@ -179,6 +169,7 @@ export interface FileRoutesById {
   '/dashboard/task-templates': typeof DashboardTaskTemplatesRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/driving-school/vehicles': typeof DashboardDrivingSchoolVehiclesRoute
   '/dashboard/service/$serviceType': typeof DashboardServiceServiceTypeRoute
   '/dashboard/settings/migration': typeof DashboardSettingsMigrationRouteWithChildren
   '/dashboard/settings/migration/accounting': typeof DashboardSettingsMigrationAccountingRoute
@@ -189,10 +180,8 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/dashboard/accounting'
-    | '/dashboard/all-clients'
     | '/dashboard/applications'
     | '/dashboard/billing'
-    | '/dashboard/client-analytics'
     | '/dashboard/clients'
     | '/dashboard/employees'
     | '/dashboard/leads'
@@ -201,6 +190,7 @@ export interface FileRouteTypes {
     | '/dashboard/task-templates'
     | '/dashboard/tasks'
     | '/dashboard/'
+    | '/dashboard/driving-school/vehicles'
     | '/dashboard/service/$serviceType'
     | '/dashboard/settings/migration'
     | '/dashboard/settings/migration/accounting'
@@ -208,10 +198,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard/accounting'
-    | '/dashboard/all-clients'
     | '/dashboard/applications'
     | '/dashboard/billing'
-    | '/dashboard/client-analytics'
     | '/dashboard/clients'
     | '/dashboard/employees'
     | '/dashboard/leads'
@@ -220,6 +208,7 @@ export interface FileRouteTypes {
     | '/dashboard/task-templates'
     | '/dashboard/tasks'
     | '/dashboard'
+    | '/dashboard/driving-school/vehicles'
     | '/dashboard/service/$serviceType'
     | '/dashboard/settings/migration'
     | '/dashboard/settings/migration/accounting'
@@ -228,10 +217,8 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/dashboard/accounting'
-    | '/dashboard/all-clients'
     | '/dashboard/applications'
     | '/dashboard/billing'
-    | '/dashboard/client-analytics'
     | '/dashboard/clients'
     | '/dashboard/employees'
     | '/dashboard/leads'
@@ -240,6 +227,7 @@ export interface FileRouteTypes {
     | '/dashboard/task-templates'
     | '/dashboard/tasks'
     | '/dashboard/'
+    | '/dashboard/driving-school/vehicles'
     | '/dashboard/service/$serviceType'
     | '/dashboard/settings/migration'
     | '/dashboard/settings/migration/accounting'
@@ -322,13 +310,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardClientsRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/client-analytics': {
-      id: '/dashboard/client-analytics'
-      path: '/client-analytics'
-      fullPath: '/dashboard/client-analytics'
-      preLoaderRoute: typeof DashboardClientAnalyticsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/billing': {
       id: '/dashboard/billing'
       path: '/billing'
@@ -341,13 +322,6 @@ declare module '@tanstack/react-router' {
       path: '/applications'
       fullPath: '/dashboard/applications'
       preLoaderRoute: typeof DashboardApplicationsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/all-clients': {
-      id: '/dashboard/all-clients'
-      path: '/all-clients'
-      fullPath: '/dashboard/all-clients'
-      preLoaderRoute: typeof DashboardAllClientsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/accounting': {
@@ -369,6 +343,13 @@ declare module '@tanstack/react-router' {
       path: '/service/$serviceType'
       fullPath: '/dashboard/service/$serviceType'
       preLoaderRoute: typeof DashboardServiceServiceTypeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/driving-school/vehicles': {
+      id: '/dashboard/driving-school/vehicles'
+      path: '/driving-school/vehicles'
+      fullPath: '/dashboard/driving-school/vehicles'
+      preLoaderRoute: typeof DashboardDrivingSchoolVehiclesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/settings/migration/accounting': {
@@ -409,10 +390,8 @@ const DashboardSettingsRouteWithChildren =
 
 interface DashboardRouteChildren {
   DashboardAccountingRoute: typeof DashboardAccountingRoute
-  DashboardAllClientsRoute: typeof DashboardAllClientsRoute
   DashboardApplicationsRoute: typeof DashboardApplicationsRoute
   DashboardBillingRoute: typeof DashboardBillingRoute
-  DashboardClientAnalyticsRoute: typeof DashboardClientAnalyticsRoute
   DashboardClientsRoute: typeof DashboardClientsRoute
   DashboardEmployeesRoute: typeof DashboardEmployeesRoute
   DashboardLeadsRoute: typeof DashboardLeadsRoute
@@ -421,15 +400,14 @@ interface DashboardRouteChildren {
   DashboardTaskTemplatesRoute: typeof DashboardTaskTemplatesRoute
   DashboardTasksRoute: typeof DashboardTasksRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
+  DashboardDrivingSchoolVehiclesRoute: typeof DashboardDrivingSchoolVehiclesRoute
   DashboardServiceServiceTypeRoute: typeof DashboardServiceServiceTypeRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAccountingRoute: DashboardAccountingRoute,
-  DashboardAllClientsRoute: DashboardAllClientsRoute,
   DashboardApplicationsRoute: DashboardApplicationsRoute,
   DashboardBillingRoute: DashboardBillingRoute,
-  DashboardClientAnalyticsRoute: DashboardClientAnalyticsRoute,
   DashboardClientsRoute: DashboardClientsRoute,
   DashboardEmployeesRoute: DashboardEmployeesRoute,
   DashboardLeadsRoute: DashboardLeadsRoute,
@@ -438,6 +416,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardTaskTemplatesRoute: DashboardTaskTemplatesRoute,
   DashboardTasksRoute: DashboardTasksRoute,
   DashboardIndexRoute: DashboardIndexRoute,
+  DashboardDrivingSchoolVehiclesRoute: DashboardDrivingSchoolVehiclesRoute,
   DashboardServiceServiceTypeRoute: DashboardServiceServiceTypeRoute,
 }
 

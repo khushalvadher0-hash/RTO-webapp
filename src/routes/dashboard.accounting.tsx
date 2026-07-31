@@ -57,6 +57,10 @@ import {
   saveAccountingRecord,
   type AccountingRecord,
 } from "@/lib/applications";
+import {
+  subscribeDrivingSchoolApplications,
+  type DrivingSchoolApplication,
+} from "@/lib/drivingSchool";
 
 export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingDashboardPage,
@@ -124,6 +128,7 @@ function AccountingDashboardPage() {
   const isStaff = userRole === "employee" || userRole === "viewer";
 
   const [applications, setApplications] = useState<any[]>([]);
+  const [drivingSchoolApps, setDrivingSchoolApps] = useState<DrivingSchoolApplication[]>([]);
   const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
 
   // Subscriptions
@@ -145,6 +150,7 @@ function AccountingDashboardPage() {
     const unsubApps = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
       setApplications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
+    const unsubDSApps = subscribeDrivingSchoolApplications(setDrivingSchoolApps);
     const unsubAcc = subscribeAccountingRecords(setAccountingMap);
 
     return () => {
@@ -155,6 +161,7 @@ function AccountingDashboardPage() {
       unsubVehicles();
       unsubServices();
       unsubApps();
+      unsubDSApps();
       unsubAcc();
     };
   }, []);
@@ -614,13 +621,65 @@ function AccountingDashboardPage() {
       }
     });
 
-    return rows;
-  }, [v2Clients, v2Vehicles, v2Services, applications]);
+    // Add Driving School Applications into Accounting Rows
+    drivingSchoolApps.forEach((ds) => {
+      const acc = accountingMap.get(ds.id) || accountingMap.get(ds.applicationId);
+      const totFee = acc?.totalPayment ?? (Number(ds.totalCourseFees) || 0);
+      const advFee = acc?.advancePayment ?? (Number(ds.advancePaid) || 0);
+      const remFee = acc?.remainingPayment ?? (typeof ds.remainingFees === "number" ? ds.remainingFees : Math.max(0, totFee - advFee));
+      const pStatus: "Paid" | "Partially Paid" | "Pending" =
+        remFee <= 0 && totFee > 0 ? "Paid" : advFee > 0 ? "Partially Paid" : "Pending";
+
+      rows.push({
+        id: `ds-${ds.id}`,
+        subModule: "driving_school",
+        applicationId: ds.applicationId || ds.id,
+        vehicleId: ds.vehicleNumber || "",
+        clientId: ds.id,
+        clientName: ds.studentName || "Unknown Student",
+        clientMobile: ds.mobileNumber || "",
+        vehicleNumber: ds.vehicleNumber || "—",
+        invoiceId: ds.id,
+        invoiceNumber: ds.applicationId || "Driving School",
+        invoiceAmount: totFee,
+        receivedAmount: advFee,
+        balanceAmount: remFee,
+        collectionDate: ds.courseEndDate || ds.joiningDate || ds.createdAt?.slice(0, 10) || "",
+        paymentStatus: pStatus,
+        askBhaylubha: false,
+        assignedEmployee: ds.assignedEmployee || "Unassigned",
+        services: ds.courseType || "Driving School Course",
+        serviceList: [
+          {
+            id: ds.id,
+            serviceType: ds.courseType || "Driving School Course",
+            amount: totFee,
+            received: advFee,
+            outstanding: remFee,
+            status: ds.status || "Active",
+            dueDate: ds.courseEndDate || "",
+          },
+        ],
+        hasInvoice: true,
+        daysOverdue: 0,
+      });
+    });
+
+    // Filter out invalid "Unknown Client" / 0 amount orphan records
+    return rows.filter((r) => {
+      const cName = (r.clientName || "").trim().toLowerCase();
+      const isUnknown = cName === "unknown client" || cName === "unknown owner" || cName === "unknown student" || cName === "";
+      const isZeroAmt = (r.invoiceAmount || 0) === 0 && (r.receivedAmount || 0) === 0 && (r.balanceAmount || 0) === 0;
+      if (isUnknown && isZeroAmt) {
+        return false;
+      }
+      return true;
+    });
+  }, [v2Clients, v2Vehicles, v2Services, applications, drivingSchoolApps, accountingMap]);
 
   const filteredRecords = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     return allAccountingRows.filter((r) => {
-      if (activeSubModule === "driving_school") return false;
       if (r.subModule) {
         if (r.subModule !== activeSubModule) return false;
       } else {
@@ -628,6 +687,7 @@ function AccountingDashboardPage() {
         const isLic = srvs.includes("license") || srvs.includes("licence") || srvs.includes("learning") || srvs.includes("dl") || srvs.includes("ll");
         if (activeSubModule === "licence" && !isLic) return false;
         if (activeSubModule === "services" && isLic) return false;
+        if (activeSubModule === "driving_school") return false;
       }
 
       const term = searchTerm.toLowerCase();
@@ -918,6 +978,30 @@ function AccountingDashboardPage() {
           remainingPayment: newBal,
           paymentStatus: newStatus,
         });
+
+        // Sync directly to DrivingSchoolApplications if record originates from driving school
+        const cleanDsId = targetId.replace(/^ds-/, "");
+        const dsRef = doc(db, "DrivingSchoolApplications", cleanDsId);
+        const dsSnap = await getDoc(dsRef);
+        if (dsSnap.exists()) {
+          const dsData = dsSnap.data();
+          const dsTotal = Number(dsData.totalCourseFees) || totalAmount;
+          const dsNewPaid = Math.min(dsTotal, (Number(dsData.advancePaid) || 0) + amt);
+          const dsNewBal = Math.max(0, dsTotal - dsNewPaid);
+          const dsStatus: "Paid" | "Partial" | "Pending" =
+            dsNewBal <= 0 && dsTotal > 0 ? "Paid" : dsNewPaid > 0 ? "Partial" : "Pending";
+
+          await setDoc(
+            dsRef,
+            {
+              advancePaid: dsNewPaid,
+              remainingFees: dsNewBal,
+              paymentStatus: dsStatus,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        }
 
         toast.success("Payment recorded successfully!");
       } else {
@@ -1608,6 +1692,32 @@ function AccountingDashboardPage() {
                                     className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
                                   >
                                     WhatsApp
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={async () => {
+                                      if (confirm(`Are you sure you want to delete payment entry for "${r.clientName}"?`)) {
+                                        try {
+                                          if (r.clientId) await deleteDoc(doc(db, "v2_clients", r.clientId)).catch(() => {});
+                                          if (r.invoiceId && r.invoiceId !== "none") {
+                                            await deleteDoc(doc(db, "registry_accounting", r.invoiceId)).catch(() => {});
+                                            await deleteDoc(doc(db, "registry_services_v2", r.invoiceId)).catch(() => {});
+                                          }
+                                          if (r.serviceList && r.serviceList.length > 0) {
+                                            for (const s of r.serviceList) {
+                                              if (s.id) await deleteDoc(doc(db, "registry_services_v2", s.id)).catch(() => {});
+                                            }
+                                          }
+                                          toast.success("Entry deleted successfully!");
+                                        } catch (err) {
+                                          toast.error("Failed to delete entry");
+                                        }
+                                      }
+                                    }}
+                                    className="text-rose-600 hover:text-rose-900 text-xs px-2 py-1 h-auto font-semibold"
+                                  >
+                                    Delete
                                   </Button>
                                 </div>
                               </td>

@@ -1011,33 +1011,6 @@ export function generatePDF(type: string, data: any, actor: string = "system"): 
         break;
       }
 
-      case "client-analytics-reports":
-      case "client-analytics": {
-        const engine = new RegistryPDFEngine("Client Business Analytics Report", actor);
-        engine.drawKeyValueRow(
-          [
-            { label: "Total Registered Clients", value: String(data.totalClients || 0) },
-            { label: "Total Service Revenue", value: formatCurrency(data.totalRevenue || 0) },
-          ],
-          "Analytics Summary",
-        );
-
-        const topRows = (data.topClients || []).map((c: any) => [
-          c.name || "",
-          String(c.vehiclesCount || 0),
-          formatCurrency(c.revenue || 0),
-        ]);
-        engine.drawTable(
-          ["Client Name", "Vehicles Count", "Service Revenue Contribution"],
-          topRows,
-          ["left", "center", "right"],
-          [80, 40, 60],
-          "Client Business Analytics Report",
-        );
-        engine.save("CLIENT_BUSINESS_ANALYTICS_REPORT.pdf");
-        break;
-      }
-
       case "vehicle-details": {
         const engine = new RegistryPDFEngine("Vehicle Profile Details", actor);
         engine.drawKeyValueRow(

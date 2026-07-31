@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+import { DrivingSchoolDashboard } from "@/components/DrivingSchoolDashboard";
 
 export const Route = createFileRoute("/dashboard/")({
   component: Overview,
@@ -370,88 +371,92 @@ function Overview() {
         <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
-      {/* 8 Expiry Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {expiryCategories.map((cat, idx) => {
-          const Icon = cat.icon;
-          const criticalCount = cat.items.filter((i) => i.isCritical).length;
+      {activeSubModule === "driving_school" ? (
+        <DrivingSchoolDashboard />
+      ) : (
+        /* 8 Expiry Cards Grid */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {expiryCategories.map((cat, idx) => {
+            const Icon = cat.icon;
+            const criticalCount = cat.items.filter((i) => i.isCritical).length;
 
-          return (
-            <div
-              key={idx}
-              className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col justify-between"
-            >
-              {/* Card Header */}
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-xl border", cat.color)}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-900 leading-snug">{cat.title}</h3>
-                    <p className="text-[10px] text-slate-400 font-medium">
-                      {cat.items.length} upcoming •{" "}
-                      <span className="text-rose-600 font-semibold">{criticalCount} critical</span>
-                    </p>
+            return (
+              <div
+                key={idx}
+                className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col justify-between"
+              >
+                {/* Card Header */}
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="flex items-center gap-3">
+                    <div className={cn("p-2 rounded-xl border", cat.color)}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 leading-snug">{cat.title}</h3>
+                      <p className="text-[10px] text-slate-400 font-medium">
+                        {cat.items.length} upcoming •{" "}
+                        <span className="text-rose-600 font-semibold">{criticalCount} critical</span>
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Items List */}
-              <div className="p-4 space-y-3 flex-1 overflow-y-auto max-h-[300px] divide-y divide-slate-100">
-                {cat.items.length === 0 ? (
-                  <p className="text-center text-slate-400 text-xs py-6">No upcoming expiries</p>
-                ) : (
-                  cat.items.slice(0, 5).map((item, iIdx) => (
-                    <div key={iIdx} className="pt-2.5 first:pt-0 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900 font-mono tracking-tight">
-                          {item.vehicleNumber}
-                        </div>
-                        <div className="text-[11px] text-slate-600 font-medium">{item.ownerName}</div>
-                        {(item.makerName || item.modelName) && (
-                          <div className="text-[10px] text-slate-400 font-sans">
-                            {item.makerName || ""} {item.modelName || ""}{" "}
-                            {item.fuelType ? `(${item.fuelType})` : ""}
+                {/* Items List */}
+                <div className="p-4 space-y-3 flex-1 overflow-y-auto max-h-[300px] divide-y divide-slate-100">
+                  {cat.items.length === 0 ? (
+                    <p className="text-center text-slate-400 text-xs py-6">No upcoming expiries</p>
+                  ) : (
+                    cat.items.slice(0, 5).map((item, iIdx) => (
+                      <div key={iIdx} className="pt-2.5 first:pt-0 flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-bold text-slate-900 font-mono tracking-tight">
+                            {item.vehicleNumber}
                           </div>
-                        )}
-                      </div>
-
-                      <div className="text-right">
-                        <div className="font-mono text-[10px] text-slate-400">{item.expiryDate}</div>
-                        <span
-                          className={cn(
-                            "inline-block text-[10px] font-bold px-2 py-0.5 rounded-md mt-0.5",
-                            item.daysRemaining <= 0
-                              ? "bg-rose-100 text-rose-700"
-                              : item.daysRemaining <= 15
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-slate-100 text-slate-600"
+                          <div className="text-[11px] text-slate-600 font-medium">{item.ownerName}</div>
+                          {(item.makerName || item.modelName) && (
+                            <div className="text-[10px] text-slate-400 font-sans">
+                              {item.makerName || ""} {item.modelName || ""}{" "}
+                              {item.fuelType ? `(${item.fuelType})` : ""}
+                            </div>
                           )}
-                        >
-                          {item.daysRemaining <= 0
-                            ? `${Math.abs(item.daysRemaining)}d overdue`
-                            : `${item.daysRemaining}d left`}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                        </div>
 
-              {/* Card Footer */}
-              <div className="p-3 bg-slate-50/80 border-t border-slate-100 text-center">
-                <Link
-                  to="/dashboard/applications"
-                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
-                >
-                  View all {cat.items.length} vehicles <ArrowRight className="w-3 h-3" />
-                </Link>
+                        <div className="text-right">
+                          <div className="font-mono text-[10px] text-slate-400">{item.expiryDate}</div>
+                          <span
+                            className={cn(
+                              "inline-block text-[10px] font-bold px-2 py-0.5 rounded-md mt-0.5",
+                              item.daysRemaining <= 0
+                                ? "bg-rose-100 text-rose-700"
+                                : item.daysRemaining <= 15
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-slate-100 text-slate-600"
+                            )}
+                          >
+                            {item.daysRemaining <= 0
+                              ? `${Math.abs(item.daysRemaining)}d overdue`
+                              : `${item.daysRemaining}d left`}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Card Footer */}
+                <div className="p-3 bg-slate-50/80 border-t border-slate-100 text-center">
+                  <Link
+                    to="/dashboard/applications"
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                  >
+                    View all {cat.items.length} vehicles <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

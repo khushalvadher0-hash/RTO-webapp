@@ -15,7 +15,6 @@ import {
   UserCircle,
   BarChart3,
   DollarSign,
-  LineChart,
   Settings as SettingsIcon,
   LogOut,
   Menu,
@@ -30,6 +29,7 @@ import {
   Receipt,
   ChevronLeft,
   ChevronRight,
+  Car,
 } from "lucide-react";
 import { getSession, logout, isAuthReady, type StaffUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -85,9 +85,11 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "Database",
+    heading: "Driving School",
     items: [
-      { to: "/dashboard/all-clients", label: "All Clients", icon: Users2 },
+      { to: "/dashboard?subModule=driving_school", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/dashboard/applications?subModule=driving_school", label: "Applications", icon: FileText },
+      { to: "/dashboard/driving-school/vehicles", label: "School Vehicles", icon: Car },
     ],
   },
   {
@@ -95,7 +97,6 @@ const GROUPS: NavGroup[] = [
     items: [
       { to: "/dashboard/accounting", label: "Accounting", icon: DollarSign },
       { to: "/dashboard/billing", label: "Billing", icon: Receipt },
-      { to: "/dashboard/client-analytics", label: "Client Analytics", icon: LineChart },
       { to: "/dashboard/targets", label: "Target Management", icon: Target },
     ],
   },

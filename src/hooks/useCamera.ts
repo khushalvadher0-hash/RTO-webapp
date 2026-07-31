@@ -1,0 +1,279 @@
+import { useState, useCallback, useRef } from "react";
+
+export interface CameraState {
+  stream: MediaStream | null;
+  isLoading: boolean;
+  loadingMessage: string | null;
+  error: string | null;
+  isPlaying: boolean;
+}
+
+export function useCamera() {
+  const [state, setState] = useState<CameraState>({
+    stream: null,
+    isLoading: false,
+    loadingMessage: null,
+    error: null,
+    isPlaying: false,
+  });
+
+  const streamRef = useRef<MediaStream | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopCamera = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (e) {
+          console.warn("Error stopping track:", e);
+        }
+      });
+      streamRef.current = null;
+    }
+    setState({
+      stream: null,
+      isLoading: false,
+      loadingMessage: null,
+      error: null,
+      isPlaying: false,
+    });
+  }, []);
+
+  const startCamera = useCallback(
+    async (videoElement: HTMLVideoElement | null) => {
+      // 1. Reset state & stop existing stream
+      stopCamera();
+
+      // Check HTTPS or Localhost
+      const isSecure =
+        window.isSecureContext ||
+        location.protocol === "https:" ||
+        location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1";
+
+      if (!isSecure) {
+        setState({
+          stream: null,
+          isLoading: false,
+          loadingMessage: null,
+          error: "Camera requires HTTPS or localhost. Please access via secure URL or use upload.",
+          isPlaying: false,
+        });
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setState({
+          stream: null,
+          isLoading: false,
+          loadingMessage: null,
+          error: "Camera access is not supported on this browser. Please upload an image file.",
+          isPlaying: false,
+        });
+        return;
+      }
+
+      setState({
+        stream: null,
+        isLoading: true,
+        loadingMessage: "Opening Camera...",
+        error: null,
+        isPlaying: false,
+      });
+
+      // 2. Timeout Guard (5 seconds maximum loading)
+      timeoutRef.current = setTimeout(() => {
+        if (!streamRef.current) {
+          console.warn("Camera initialization timeout after 5s");
+          stopCamera();
+          setState({
+            stream: null,
+            isLoading: false,
+            loadingMessage: null,
+            error: "Unable to access camera. Connection timed out.",
+            isPlaying: false,
+          });
+        }
+      }, 5000);
+
+      // 1. Detect Device
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+      // Constraints strategy
+      const constraintsList: MediaStreamConstraints[] = [];
+
+      if (isMobile) {
+        // Mobile: Prefer facingMode ideal: environment
+        constraintsList.push({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+        // Fallback mobile: facingMode user
+        constraintsList.push({
+          video: { facingMode: "user" },
+          audio: false,
+        });
+      } else {
+        // Desktop / Laptop: Prefer facingMode user or video: true
+        constraintsList.push({
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      }
+
+      // Final fallback for all devices
+      constraintsList.push({ video: true, audio: false });
+
+      let activeStream: MediaStream | null = null;
+      let lastError: any = null;
+
+      for (let i = 0; i < constraintsList.length; i++) {
+        try {
+          if (i > 0) {
+            setState((prev) => ({
+              ...prev,
+              loadingMessage: "Trying another camera...",
+            }));
+          }
+          activeStream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
+          const track = activeStream.getVideoTracks()[0];
+          if (track && track.readyState === "live") {
+            break;
+          } else if (activeStream) {
+            activeStream.getTracks().forEach((t) => t.stop());
+            activeStream = null;
+          }
+        } catch (err: any) {
+          console.warn(`Camera constraint index ${i} failed:`, err);
+          lastError = err;
+        }
+      }
+
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      if (!activeStream) {
+        let errText = "Could not access camera. You can upload an image file.";
+        if (lastError) {
+          if (lastError.name === "NotAllowedError" || lastError.name === "PermissionDeniedError") {
+            errText = "Camera permission denied. Please allow camera access in browser settings or upload an image file.";
+          } else if (lastError.name === "NotFoundError" || lastError.name === "DevicesNotFoundError") {
+            errText = "No camera found on this device. Please upload an image file.";
+          } else if (lastError.name === "NotReadableError" || lastError.name === "TrackStartError") {
+            errText = "Camera is currently in use by another application.";
+          }
+        }
+
+        setState({
+          stream: null,
+          isLoading: false,
+          loadingMessage: null,
+          error: errText,
+          isPlaying: false,
+        });
+        return;
+      }
+
+      streamRef.current = activeStream;
+
+      if (videoElement) {
+        try {
+          videoElement.srcObject = activeStream;
+          await videoElement.play();
+
+          // Wait for metadata
+          await new Promise<void>((resolve) => {
+            if (videoElement.readyState >= 1) {
+              resolve();
+            } else {
+              videoElement.onloadedmetadata = () => resolve();
+            }
+          });
+
+          // Check for 0x0 video dimensions after short delay
+          setTimeout(() => {
+            if (videoElement && (videoElement.videoWidth === 0 || videoElement.videoHeight === 0)) {
+              console.warn("Video dimensions 0x0 detected, falling back to basic video: true");
+              // Retrying with basic video: true
+              navigator.mediaDevices
+                .getUserMedia({ video: true, audio: false })
+                .then((fallbackStream) => {
+                  stopCamera();
+                  streamRef.current = fallbackStream;
+                  videoElement.srcObject = fallbackStream;
+                  videoElement.play();
+                  setState({
+                    stream: fallbackStream,
+                    isLoading: false,
+                    loadingMessage: null,
+                    error: null,
+                    isPlaying: true,
+                  });
+                })
+                .catch(() => {
+                  setState({
+                    stream: null,
+                    isLoading: false,
+                    loadingMessage: null,
+                    error: "Unable to render video stream. Please upload an image.",
+                    isPlaying: false,
+                  });
+                });
+            }
+          }, 1500);
+
+          setState({
+            stream: activeStream,
+            isLoading: false,
+            loadingMessage: null,
+            error: null,
+            isPlaying: true,
+          });
+        } catch (playErr) {
+          console.error("Error playing video stream:", playErr);
+          setState({
+            stream: activeStream,
+            isLoading: false,
+            loadingMessage: null,
+            error: null,
+            isPlaying: true,
+          });
+        }
+      } else {
+        setState({
+          stream: activeStream,
+          isLoading: false,
+          loadingMessage: null,
+          error: null,
+          isPlaying: true,
+        });
+      }
+    },
+    [stopCamera]
+  );
+
+  return {
+    stream: state.stream,
+    isLoading: state.isLoading,
+    loadingMessage: state.loadingMessage,
+    error: state.error,
+    isPlaying: state.isPlaying,
+    startCamera,
+    stopCamera,
+  };
+}

@@ -19,6 +19,7 @@ import {
   CheckCircle,
   Pencil,
   Trash2,
+  GraduationCap,
 } from "lucide-react";
 import {
   subscribeApplications,
@@ -33,6 +34,15 @@ import {
   type AccountingRecord,
 } from "@/lib/applications";
 import { getSession } from "@/lib/auth";
+import {
+  saveDrivingSchoolApplication,
+  subscribeDrivingSchoolApplications,
+  deleteDrivingSchoolApplication,
+  exportDrivingSchoolToCSV,
+  exportDrivingSchoolToExcel,
+  exportDrivingSchoolToPDF,
+  type DrivingSchoolApplication,
+} from "@/lib/drivingSchool";
 import { fetchAllUsers } from "@/lib/userService";
 import { createInvoice } from "@/lib/billing";
 import { toast } from "sonner";
@@ -155,6 +165,10 @@ function ApplicationsPage() {
   };
 
   const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
+  const [drivingSchoolApps, setDrivingSchoolApps] = useState<DrivingSchoolApplication[]>([]);
+  const [dsCourseFilter, setDsCourseFilter] = useState("all");
+  const [dsEmployeeFilter, setDsEmployeeFilter] = useState("all");
+  const [dsStatusFilter, setDsStatusFilter] = useState("all");
 
   useEffect(() => {
     const unsubApps = subscribeApplications((data) => {
@@ -164,9 +178,13 @@ function ApplicationsPage() {
     const unsubAcc = subscribeAccountingRecords((map) => {
       setAccountingMap(map);
     });
+    const unsubDS = subscribeDrivingSchoolApplications((data) => {
+      setDrivingSchoolApps(data);
+    });
     return () => {
       unsubApps();
       unsubAcc();
+      unsubDS();
     };
   }, []);
 
@@ -191,14 +209,35 @@ function ApplicationsPage() {
     return matchSearch && matchStatus && matchPayment;
   });
 
+  const filteredDrivingSchoolApps = useMemo(() => {
+    return drivingSchoolApps.filter((ds) => {
+      const term = searchTerm.toLowerCase().trim();
+      const matchSearch =
+        !term ||
+        ds.studentName.toLowerCase().includes(term) ||
+        (ds.mobileNumber && ds.mobileNumber.includes(term)) ||
+        (ds.courseType && ds.courseType.toLowerCase().includes(term)) ||
+        (ds.applicationId && ds.applicationId.toLowerCase().includes(term));
+
+      const matchPayment = paymentFilter === "all" || ds.paymentStatus === paymentFilter;
+      const matchCourse = dsCourseFilter === "all" || ds.courseType === dsCourseFilter;
+      const matchEmployee = dsEmployeeFilter === "all" || ds.assignedEmployee === dsEmployeeFilter;
+      const matchStatus = dsStatusFilter === "all" || ds.status === dsStatusFilter;
+
+      return matchSearch && matchPayment && matchCourse && matchEmployee && matchStatus;
+    });
+  }, [drivingSchoolApps, searchTerm, paymentFilter, dsCourseFilter, dsEmployeeFilter, dsStatusFilter]);
+
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Applications</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {activeSubModule === "driving_school" ? "Driving School Applications" : "Applications"}
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {applications.length} total records • updated a moment ago
+            {activeSubModule === "driving_school" ? drivingSchoolApps.length : applications.length} total records • updated a moment ago
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -226,7 +265,7 @@ function ApplicationsPage() {
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search vehicle, owner, mobile..."
+            placeholder={activeSubModule === "driving_school" ? "Search student, mobile, course..." : "Search vehicle, owner, mobile..."}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
@@ -234,19 +273,46 @@ function ApplicationsPage() {
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          >
-            <option value="all">All Statuses</option>
-            <option value="Draft">Draft</option>
-            <option value="Submitted">Submitted</option>
-            <option value="In Review">In Review</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-            <option value="On Hold">On Hold</option>
-          </select>
+          {activeSubModule === "driving_school" ? (
+            <>
+              <select
+                value={dsCourseFilter}
+                onChange={(e) => setDsCourseFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="all">All Courses</option>
+                <option value="15 Days">15 Days</option>
+                <option value="21 Days">21 Days</option>
+                <option value="26 Days">26 Days</option>
+                <option value="45 Days">45 Days</option>
+                <option value="60 Days">60 Days</option>
+              </select>
+              <select
+                value={dsStatusFilter}
+                onChange={(e) => setDsStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="all">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Completed">Completed</option>
+                <option value="On Hold">On Hold</option>
+              </select>
+            </>
+          ) : (
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value="all">All Statuses</option>
+              <option value="Draft">Draft</option>
+              <option value="Submitted">Submitted</option>
+              <option value="In Review">In Review</option>
+              <option value="Approved">Approved</option>
+              <option value="Rejected">Rejected</option>
+              <option value="On Hold">On Hold</option>
+            </select>
+          )}
 
           <select
             value={paymentFilter}
@@ -268,7 +334,23 @@ function ApplicationsPage() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center">SR No</th>
-                {activeSubModule === "licence" ? (
+                {activeSubModule === "driving_school" ? (
+                  <>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Student Name</th>
+                    <th className="py-3.5 px-4">Mobile Number</th>
+                    <th className="py-3.5 px-4">Date of Birth</th>
+                    <th className="py-3.5 px-4">Course</th>
+                    <th className="py-3.5 px-4">Joining Date</th>
+                    <th className="py-3.5 px-4">Course End Date</th>
+                    <th className="py-3.5 px-4">Duration</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Fees</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Paid</th>
+                    <th className="py-3.5 px-4 font-bold text-amber-700">Remaining Fees</th>
+                    <th className="py-3.5 px-4">Payment Status</th>
+                    <th className="py-3.5 px-4">Assigned Employee</th>
+                    <th className="py-3.5 px-4">Status</th>
+                  </>
+                ) : activeSubModule === "licence" ? (
                   <>
                     <th className="py-3.5 px-4">Client Name</th>
                     <th className="py-3.5 px-4">DOB</th>
@@ -334,6 +416,127 @@ function ApplicationsPage() {
                     Loading applications...
                   </td>
                 </tr>
+              ) : activeSubModule === "driving_school" ? (
+                filteredDrivingSchoolApps.length === 0 ? (
+                  <tr>
+                    <td colSpan={15} className="py-12 text-center text-slate-400">
+                      No Driving School Applications Found.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDrivingSchoolApps.map((ds, index) => {
+                    const totFee = Number(ds.totalCourseFees) || 0;
+                    const advFee = Number(ds.advancePaid) || 0;
+                    const remFee = typeof ds.remainingFees === "number" ? ds.remainingFees : Math.max(0, totFee - advFee);
+                    const pStatus = remFee <= 0 && totFee > 0 ? "Paid" : advFee > 0 ? "Partial" : "Pending";
+
+                    let durationStr = "—";
+                    if (ds.courseStartDate && ds.courseEndDate) {
+                      const start = new Date(ds.courseStartDate);
+                      const end = new Date(ds.courseEndDate);
+                      const diffTime = Math.abs(end.getTime() - start.getTime());
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                      durationStr = `${diffDays} Days`;
+                    }
+
+                    return (
+                      <tr
+                        key={ds.id}
+                        className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 text-center text-slate-400 font-mono">{index + 1}</td>
+                        <td className="py-3.5 px-4 font-bold text-slate-900">{ds.studentName}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{ds.mobileNumber || "—"}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{ds.dateOfBirth || "—"}</td>
+                        <td className="py-3.5 px-4 font-semibold text-blue-600">{ds.courseType || "—"}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{ds.joiningDate || "—"}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{ds.courseEndDate || "—"}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-700">{durationStr}</td>
+                        <td className="py-3.5 px-4 font-bold font-mono text-slate-900">₹{totFee.toLocaleString("en-IN")}</td>
+                        <td className="py-3.5 px-4 font-bold font-mono text-emerald-700">₹{advFee.toLocaleString("en-IN")}</td>
+                        <td className="py-3.5 px-4 font-bold font-mono text-amber-700">₹{remFee.toLocaleString("en-IN")}</td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={cn(
+                              "px-2.5 py-1 rounded-full text-[10px] font-bold border",
+                              pStatus === "Paid"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : pStatus === "Partial"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-rose-50 text-rose-700 border-rose-200"
+                            )}
+                          >
+                            {pStatus}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600">{ds.assignedEmployee || "Unassigned"}</td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded-md text-[10px] font-semibold",
+                              ds.status === "Completed"
+                                ? "bg-slate-100 text-slate-600"
+                                : "bg-blue-50 text-blue-700"
+                            )}
+                          >
+                            {ds.status || "Active"}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => {
+                                setEditingApp({
+                                  id: ds.id,
+                                  applicationId: ds.applicationId || ds.id,
+                                  vehicleNumber: ds.vehicleNumber || "",
+                                  ownerName: ds.studentName,
+                                  mobileNumber: ds.mobileNumber,
+                                  subModule: "driving_school",
+                                  dateOfBirth: ds.dateOfBirth,
+                                  joiningDate: ds.joiningDate,
+                                  courseStartDate: ds.courseStartDate,
+                                  courseEndDate: ds.courseEndDate,
+                                  courseType: ds.courseType,
+                                  totalCourseFees: ds.totalCourseFees,
+                                  advancePaid: ds.advancePaid,
+                                  remainingFees: ds.remainingFees,
+                                  assignedEmployee: ds.assignedEmployee,
+                                  reminderDate: ds.reminderDate,
+                                  priority: ds.priority,
+                                  employeeNotes: ds.employeeNotes,
+                                  documents: ds.documents,
+                                  status: ds.status,
+                                } as any);
+                                setIsModalOpen(true);
+                              }}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 transition-colors"
+                              title="Edit Application"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`Delete Driving School application for ${ds.studentName}?`)) {
+                                  try {
+                                    await deleteDrivingSchoolApplication(ds.id);
+                                    toast.success("Driving School application deleted.");
+                                  } catch (err) {
+                                    toast.error("Failed to delete application.");
+                                  }
+                                }
+                              }}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-rose-600 transition-colors"
+                              title="Delete Application"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )
               ) : filteredApps.length === 0 ? (
                 <tr>
                   <td colSpan={25} className="py-12 text-center text-slate-400">
@@ -696,6 +899,19 @@ function ApplicationFormModal({
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>(
     editingApp?.subModule || initialSubModule
   );
+
+  // Driving School State
+  const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">("Male");
+  const [dsHasDrivingLicence, setDsHasDrivingLicence] = useState<boolean>(false);
+  const [dsDlNumber, setDsDlNumber] = useState<string>("");
+  const [dsJoiningDate, setDsJoiningDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [dsCourseStartDate, setDsCourseStartDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [dsCourseEndDate, setDsCourseEndDate] = useState<string>(
+    new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0]
+  );
+  const [dsCourseType, setDsCourseType] = useState<string>("15 Days");
+  const [dsTotalCourseFees, setDsTotalCourseFees] = useState<number | string>(9500);
+  const [dsAdvancePaid, setDsAdvancePaid] = useState<number | string>(4000);
 
   // License Applicant Details
   const [dateOfBirth, setDateOfBirth] = useState(editingApp?.licenseDetails?.dateOfBirth || "");
@@ -1199,6 +1415,62 @@ function ApplicationFormModal({
   };
 
   const handleSave = async (status: "Draft" | "Submitted") => {
+    if (activeSubModule === "driving_school") {
+      if (!ownerName.trim()) {
+        toast.error("Student Name is mandatory!");
+        return;
+      }
+      if (!dateOfBirth.trim()) {
+        toast.error("Date of Birth is mandatory!");
+        return;
+      }
+
+      setSaving(true);
+      try {
+        const totFee = Number(dsTotalCourseFees) || 0;
+        const advFee = Number(dsAdvancePaid) || 0;
+        const remFee = Math.max(0, totFee - advFee);
+        const pStatus: "Paid" | "Partial" | "Pending" =
+          remFee <= 0 ? "Paid" : advFee > 0 ? "Partial" : "Pending";
+
+        await saveDrivingSchoolApplication({
+          studentName: ownerName.trim(),
+          mobileNumber: phone.trim(),
+          co: fatherHusbandName.trim() || coName.trim(),
+          address: address.trim(),
+          dateOfBirth,
+          gender: dsGender,
+          hasDrivingLicence: dsHasDrivingLicence,
+          drivingLicenceNumber: dsHasDrivingLicence ? dsDlNumber.trim() : "",
+          joiningDate: dsJoiningDate,
+          courseStartDate: dsCourseStartDate,
+          courseEndDate: dsCourseEndDate,
+          courseType: dsCourseType,
+          totalCourseFees: totFee,
+          advancePaid: advFee,
+          remainingFees: remFee,
+          paymentStatus: pStatus,
+          assignedEmployee,
+          reminderDate: reminder,
+          priority,
+          employeeNotes: employeeRemarks,
+          documents: uploadedDocs,
+          vehicleNumber: vehicleNumber.trim() || undefined,
+          status: "Active",
+        });
+
+        toast.success("Driving School Application Created Successfully!");
+        setSaving(false);
+        onClose();
+        return;
+      } catch (err) {
+        console.error("Error creating Driving School application:", err);
+        toast.error("Failed to create Driving School application");
+        setSaving(false);
+        return;
+      }
+    }
+
     if (activeSubModule === "licence") {
       if (!ownerName.trim() || !dateOfBirth.trim()) {
         toast.error("Name and Date of Birth are mandatory for License Applications!");
@@ -2769,11 +3041,451 @@ function ApplicationFormModal({
             </div>
           )}
 
-          {/* DRIVING SCHOOL EMPTY SUB MODULE PLACEHOLDER */}
+          {/* DRIVING SCHOOL FORM (MATCHING SCREENSHOT 1) */}
           {activeSubModule === "driving_school" && (
-            <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-2">
-              <h3 className="text-lg font-bold text-slate-800">Driving School Module</h3>
-              <p className="text-xs text-slate-400">Driving School workflows and candidate registrations will appear here.</p>
+            <div className="space-y-6">
+              {/* SECTION 1 — STUDENT DETAILS */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Student Details</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Only Student Name and Date Of Birth are mandatory.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      STUDENT NAME <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Full name"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER</label>
+                    <input
+                      type="text"
+                      placeholder="+91 XXXXXXXXXX"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">C/O</label>
+                    <input
+                      type="text"
+                      placeholder="Father / Guardian name"
+                      value={fatherHusbandName}
+                      onChange={(e) => setFatherHusbandName(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
+                    <input
+                      type="text"
+                      placeholder="House, street, city"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      DATE OF BIRTH <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={dateOfBirth}
+                      onChange={(e) => setDateOfBirth(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">GENDER</label>
+                    <select
+                      value={dsGender}
+                      onChange={(e) => setDsGender(e.target.value as any)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Driving Licence Status Toggle */}
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="font-semibold text-slate-700 block mb-2 text-xs uppercase tracking-wider">
+                    DRIVING LICENCE STATUS
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <label
+                      className={cn(
+                        "flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer font-medium transition-all select-none",
+                        dsHasDrivingLicence
+                          ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold"
+                          : "bg-slate-50/80 border-slate-200 text-slate-700 hover:bg-slate-100"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="dsDlStatus"
+                        checked={dsHasDrivingLicence}
+                        onChange={() => setDsHasDrivingLicence(true)}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>With Driving Licence</span>
+                    </label>
+
+                    <label
+                      className={cn(
+                        "flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer font-medium transition-all select-none",
+                        !dsHasDrivingLicence
+                          ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold"
+                          : "bg-slate-50/80 border-slate-200 text-slate-700 hover:bg-slate-100"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="dsDlStatus"
+                        checked={!dsHasDrivingLicence}
+                        onChange={() => setDsHasDrivingLicence(false)}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Without Driving Licence</span>
+                    </label>
+                  </div>
+
+                  {dsHasDrivingLicence && (
+                    <div className="mt-3">
+                      <label className="font-semibold text-slate-700 block mb-1 text-xs">
+                        DRIVING LICENCE NUMBER
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. GJ01 20260001234"
+                        value={dsDlNumber}
+                        onChange={(e) => setDsDlNumber(e.target.value)}
+                        className="w-full p-3 bg-white border border-blue-300 rounded-xl font-mono text-xs font-semibold text-slate-900"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SECTION 2 — COURSE DETAILS */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                    <GraduationCap className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Course Details</h3>
+                    <p className="text-[11px] text-slate-400">Fees are calculated automatically</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">JOINING DATE</label>
+                    <input
+                      type="date"
+                      value={dsJoiningDate}
+                      onChange={(e) => setDsJoiningDate(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">COURSE START DATE</label>
+                    <input
+                      type="date"
+                      value={dsCourseStartDate}
+                      onChange={(e) => setDsCourseStartDate(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">COURSE END DATE</label>
+                    <input
+                      type="date"
+                      value={dsCourseEndDate}
+                      onChange={(e) => setDsCourseEndDate(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">COURSE TYPE</label>
+                    <select
+                      value={dsCourseType}
+                      onChange={(e) => setDsCourseType(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                    >
+                      <option value="15 Days">15 Days</option>
+                      <option value="21 Days">21 Days</option>
+                      <option value="26 Days">26 Days</option>
+                      <option value="45 Days">45 Days</option>
+                      <option value="60 Days">60 Days</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">TOTAL COURSE FEES</label>
+                    <input
+                      type="number"
+                      placeholder="9500"
+                      value={dsTotalCourseFees}
+                      onChange={(e) => setDsTotalCourseFees(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ADVANCE PAID</label>
+                    <input
+                      type="number"
+                      placeholder="4000"
+                      value={dsAdvancePaid}
+                      onChange={(e) => setDsAdvancePaid(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-emerald-700"
+                    />
+                  </div>
+                </div>
+
+                {/* Auto Calculated Remaining Fees & Payment Status Badge */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-4 text-xs">
+                  <div>
+                    <span className="font-semibold text-slate-500 block text-[10px] uppercase">
+                      REMAINING FEES
+                    </span>
+                    <div className="text-lg font-bold font-mono text-slate-900 mt-0.5">
+                      ₹
+                      {Math.max(
+                        0,
+                        (Number(dsTotalCourseFees) || 0) - (Number(dsAdvancePaid) || 0)
+                      ).toLocaleString("en-IN")}
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      Auto = Total Fees − Advance Paid
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-600 text-xs">PAYMENT STATUS</span>
+                    <span
+                      className={cn(
+                        "px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider",
+                        (Number(dsTotalCourseFees) || 0) - (Number(dsAdvancePaid) || 0) <= 0
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                          : (Number(dsAdvancePaid) || 0) > 0
+                          ? "bg-amber-50 text-amber-700 border-amber-300"
+                          : "bg-rose-50 text-rose-700 border-rose-300"
+                      )}
+                    >
+                      {(Number(dsTotalCourseFees) || 0) - (Number(dsAdvancePaid) || 0) <= 0
+                        ? "Paid"
+                        : (Number(dsAdvancePaid) || 0) > 0
+                        ? "Partial"
+                        : "Pending"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3 — DOCUMENTS */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Documents</h3>
+                    <p className="text-[11px] text-slate-400">Upload supporting documents</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {[
+                    "Aadhaar",
+                    "Driving Licence",
+                    "Learning Licence",
+                    "Passport Size Photo",
+                    "Medical Certificate",
+                    "Other Document",
+                  ].map((docName) => {
+                    const docUrl = uploadedDocs[docName];
+                    const isUploaded = !!docUrl;
+
+                    return (
+                      <div
+                        key={docName}
+                        className={cn(
+                          "p-4 rounded-2xl border border-dashed text-center transition-all flex flex-col items-center justify-center gap-2 min-h-[120px] relative group",
+                          isUploaded
+                            ? "bg-emerald-50/70 border-emerald-300 text-emerald-900"
+                            : "bg-slate-50/60 border-slate-300 text-slate-600 hover:bg-slate-100"
+                        )}
+                      >
+                        <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center gap-1.5">
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 15 * 1024 * 1024) {
+                                toast.error("File size must be under 15MB");
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (evt) => {
+                                const result = evt.target?.result as string;
+                                setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
+                                toast.success(`${docName} uploaded!`);
+                              };
+                              reader.readAsDataURL(file);
+                            }}
+                          />
+                          <Upload
+                            className={cn(
+                              "w-5 h-5",
+                              isUploaded ? "text-emerald-600" : "text-slate-400"
+                            )}
+                          />
+                          <span className="text-xs font-bold text-slate-900 leading-tight">
+                            {docName}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400 uppercase">
+                            PDF • JPG • PNG
+                          </span>
+                        </label>
+
+                        {isUploaded && (
+                          <div className="flex gap-1 mt-1 z-10">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewDoc({ name: docName, url: docUrl });
+                              }}
+                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 bg-white/90 px-2 py-0.5 rounded border border-emerald-200"
+                            >
+                              Preview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadedDocs((prev) => {
+                                  const next = { ...prev };
+                                  delete next[docName];
+                                  return next;
+                                });
+                                toast.info(`${docName} removed`);
+                              }}
+                              className="text-[10px] font-bold text-rose-600 hover:text-rose-900 ml-1 bg-white/90 px-2 py-0.5 rounded border border-rose-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SECTION 4 — INTERNAL NOTES */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Internal Notes</h3>
+                    <p className="text-[11px] text-slate-400">Visible to internal team only</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      EMPLOYEE NOTES
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Notes visible to internal team only..."
+                      value={employeeRemarks}
+                      onChange={(e) => setEmployeeRemarks(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        ASSIGNED EMPLOYEE
+                      </label>
+                      <select
+                        value={assignedEmployee}
+                        onChange={(e) => setAssignedEmployee(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        {activeEmployees.map((emp) => (
+                          <option key={emp.id} value={emp.name}>
+                            {emp.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">REMINDER</label>
+                      <input
+                        type="date"
+                        value={reminder}
+                        onChange={(e) => setReminder(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">PRIORITY</label>
+                      <select
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value as any)}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Urgent">Urgent</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
