@@ -280,7 +280,10 @@ export interface ApplicationRecord {
   allExpiries?: Array<{ title: string; date: string }>;
   remarks?: string;
   reminder?: string;
+  dueDate?: string;
   priority?: "Low" | "Medium" | "High" | "Urgent";
+  createTaskAuto?: boolean;
+  documents?: Record<string, string>;
   applicationType?: string;
   trackExpiry?: TrackExpirySettings;
   vehicleDetails: VehicleMaster;
@@ -461,6 +464,12 @@ export async function saveApplicationAndVehicle(
       reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
       trackExpiry: appData.trackExpiry || appData.vehicleDetails?.trackExpiry,
       remarks: appData.remarks || "",
+      dueDate: appData.dueDate || "",
+      reminder: appData.reminder || "",
+      priority: appData.priority || "Medium",
+      documents: appData.documents || {},
+      subModule: appData.subModule,
+      licenseDetails: appData.licenseDetails,
       updatedAt: now,
     });
 

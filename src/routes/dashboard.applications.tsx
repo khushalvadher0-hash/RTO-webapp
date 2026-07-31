@@ -907,10 +907,12 @@ function ApplicationFormModal({
   // Generate Invoice Checkbox
   const [shouldGenerateInvoice, setShouldGenerateInvoice] = useState(!editingApp);
 
-  // Remarks / Internal Notes
+  // Remarks / Internal Notes & Task Assignment
   const [employeeRemarks, setEmployeeRemarks] = useState(editingApp?.remarks || "");
   const [reminder, setReminder] = useState(editingApp?.reminder || "");
+  const [dueDate, setDueDate] = useState(editingApp?.dueDate || "");
   const [priority, setPriority] = useState<"Low" | "Medium" | "High" | "Urgent">(editingApp?.priority || "Low");
+  const [createTaskAuto, setCreateTaskAuto] = useState(editingApp?.createTaskAuto ?? true);
   const [assignedEmployee, setAssignedEmployee] = useState(editingApp?.assignedEmployeeName || "");
   const [activeEmployees, setActiveEmployees] = useState<{ id: string; name: string }[]>([]);
 
@@ -1415,8 +1417,11 @@ function ApplicationFormModal({
           invoiceId: generatedInvoiceId || undefined,
           invoiceNumber: generatedInvoiceNumber || undefined,
           remarks: employeeRemarks,
+          dueDate,
           reminder,
           priority,
+          createTaskAuto,
+          documents: uploadedDocs,
           applicationType: finalAppType,
           trackExpiry: {
             puc: trackPuc,
@@ -2526,6 +2531,240 @@ function ApplicationFormModal({
                     })}
                   </div>
                 )}
+              </div>
+
+              {/* License Accounting Summary Section */}
+              <div className="bg-white p-6 rounded-2xl border border-blue-200 shadow-sm space-y-4 bg-blue-50/20">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-3">
+                    <DollarSign className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        License Accounting & Invoice Generation
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Specify service charges & advance payments. Connected to Accounting & Invoicing.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={shouldGenerateInvoice}
+                      onChange={(e) => setShouldGenerateInvoice(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    Auto-Generate Invoice in Accounting
+                  </label>
+                </div>
+
+                {/* Total Accounting Summary */}
+                <div className="p-4 bg-slate-900 text-white rounded-xl flex flex-wrap justify-between items-center text-xs font-medium gap-4">
+                  <div>
+                    <span className="text-slate-400">Total Charges:</span>{" "}
+                    <strong className="text-white text-sm">
+                      ₹{overallTotals.totalAmt.toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Total Advance Received:</span>{" "}
+                    <strong className="text-emerald-400 text-sm">
+                      ₹{overallTotals.totalAdv.toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Net Balance Due:</span>{" "}
+                    <strong className="text-amber-400 text-sm">
+                      ₹{overallTotals.pending.toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                      Payment Status: {overallTotals.payStatus}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* License Documents Section */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-3">
+                    <Upload className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Documents Upload</h3>
+                      <p className="text-[11px] text-slate-400">
+                        Light Red = Missing • Light Green = Uploaded
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                  {documentItems.map((docName) => {
+                    const docUrl = uploadedDocs[docName];
+                    const isUploaded = !!docUrl;
+                    return (
+                      <div
+                        key={docName}
+                        className={cn(
+                          "p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 min-h-[100px] relative group",
+                          isUploaded
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                            : "bg-rose-50/80 border-rose-200 text-rose-800"
+                        )}
+                      >
+                        <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center gap-1">
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 15 * 1024 * 1024) {
+                                toast.error("File size must be under 15MB");
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (evt) => {
+                                const result = evt.target?.result as string;
+                                setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
+                                toast.success(`${docName} file uploaded!`);
+                              };
+                              reader.readAsDataURL(file);
+                            }}
+                          />
+                          <Upload
+                            className={cn("w-5 h-5", isUploaded ? "text-emerald-600" : "text-rose-500")}
+                          />
+                          <span className="text-[11px] font-bold leading-tight px-1">{docName}</span>
+                          <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded-full border bg-white/80">
+                            {isUploaded ? "✓ Uploaded" : "Click to Upload"}
+                          </span>
+                        </label>
+
+                        {isUploaded && (
+                          <div className="flex gap-1 mt-1 z-10">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewDoc({ name: docName, url: docUrl });
+                              }}
+                              className="text-[9px] underline font-bold text-emerald-700 hover:text-emerald-900 bg-white/90 px-1.5 py-0.5 rounded border border-emerald-200"
+                            >
+                              View File
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadedDocs((prev) => {
+                                  const next = { ...prev };
+                                  delete next[docName];
+                                  return next;
+                                });
+                                toast.info(`${docName} removed`);
+                              }}
+                              className="text-[9px] font-bold text-rose-600 hover:text-rose-900 ml-1 bg-white/90 px-1.5 py-0.5 rounded border border-rose-200"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* License Task Assignment & Internal Notes */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Task Assignment & Internal Notes</h3>
+                    <p className="text-[11px] text-slate-400">Assign employee, set priority, due date, reminder and remarks</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      EMPLOYEE REMARKS
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Notes visible to internal team only..."
+                      value={employeeRemarks}
+                      onChange={(e) => setEmployeeRemarks(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">DUE DATE</label>
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">REMINDER</label>
+                      <input
+                        type="date"
+                        value={reminder}
+                        onChange={(e) => setReminder(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">PRIORITY</label>
+                      <select
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value as any)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Urgent">Urgent</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        ASSIGNED EMPLOYEE
+                      </label>
+                      <select
+                        value={assignedEmployee}
+                        onChange={(e) => setAssignedEmployee(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        {activeEmployees.map((emp) => (
+                          <option key={emp.id} value={emp.name}>
+                            {emp.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={createTaskAuto}
+                        onChange={(e) => setCreateTaskAuto(e.target.checked)}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Create Task Automatically</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           )}
