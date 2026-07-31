@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
 import { ApplicationFullDetailsModal } from "./ApplicationFullDetailsModal";
+import { cn } from "@/lib/utils";
 
 interface ServiceDashboardProps {
   serviceType: ServiceType;
@@ -255,25 +256,33 @@ export function ServiceDashboard({
       // Deduplicate by ID and enrich with Application record details
       const uniqueMap = new Map();
       completedList.forEach((item: any) => {
-        const appDocId = item.applicationDocId || item.recordId || item.clientId || item.id.replace("task-app-", "");
-        let app = appsMap.get(appDocId);
+        const targetAppId = item.applicationId || item.applicationDocId || item.recordId || item.clientId || item.id.replace("task-app-", "");
+        let app = appsMap.get(targetAppId);
         if (!app && item.applicationId) {
-          app = apps.find((a: any) => a.applicationId === item.applicationId);
+          app = apps.find((a: any) => a.applicationId === item.applicationId || a.id === item.applicationId);
         }
-        if (!app && item.vehicleNumber) {
-          app = apps.find((a: any) => a.vehicleNumber === item.vehicleNumber);
-        }
+
+        const totalAmt = app?.amount ?? item.amount ?? item.totalAmount ?? 0;
+        const advAmt = app?.totalPaid ?? item.totalPaid ?? item.advanceAmount ?? 0;
+        const remAmt = app ? (typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, totalAmt - advAmt)) : item.pendingAmount ?? Math.max(0, totalAmt - advAmt);
+        const pStatus = app?.paymentStatus || item.paymentStatus || (remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partial" : "Pending");
 
         const enriched = {
           ...item,
           applicationId: app?.applicationId || item.applicationId || "",
           vehicleNumber: app?.vehicleNumber || item.vehicleNumber || item.vehicleId || "",
-          clientName: app?.ownerName || item.ownerName || item.clientName || "",
-          mobileNumber: app?.mobileNumber || item.ownerPhone || item.mobileNumber || item.phone || "",
+          clientName: app?.ownerName || item.clientName || item.ownerName || "",
+          mobileNumber: app?.mobileNumber || item.mobileNumber || item.ownerPhone || item.phone || "",
           serviceName: (app?.services && app.services.join(", ")) || item.serviceName || item.serviceType || "",
-          reference: item.reference || (app ? `${app.applicationId} - ${app.vehicleNumber}` : item.title) || "",
+          reference: app?.reference || app?.applicationId || item.reference || item.title || item.id,
           assignedEmployeeName: app?.assignedEmployeeName || item.assignedEmployeeName || item.assignee || "Unassigned",
-          rtoExpense: item.rtoExpense || app?.amount || 0,
+          rtoExpense: item.rtoExpense || 0,
+          amount: totalAmt,
+          totalPaid: advAmt,
+          pendingAmount: remAmt,
+          paymentStatus: pStatus,
+          licenseDetails: app?.licenseDetails || item.licenseDetails,
+          dateOfBirth: app?.licenseDetails?.dateOfBirth || item.dateOfBirth,
         };
         uniqueMap.set(item.id, enriched);
       });
@@ -337,27 +346,11 @@ export function ServiceDashboard({
     if (activeSubModule === "driving_school") return [];
     if (activeSubModule === "licence") {
       list = list.filter((t: any) => {
-        const sName = (t.serviceName || t.serviceType || t.title || "").toLowerCase();
-        return (
-          sName.includes("license") ||
-          sName.includes("licence") ||
-          sName.includes("learning") ||
-          sName.includes("dl") ||
-          sName.includes("ll") ||
-          t.subModule === "licence"
-        );
+        return t.subModule === "licence" || !!t.licenseDetails || (t.applicationType || "").toLowerCase() === "licence";
       });
     } else {
       list = list.filter((t: any) => {
-        const sName = (t.serviceName || t.serviceType || t.title || "").toLowerCase();
-        const isLic =
-          sName.includes("license") ||
-          sName.includes("licence") ||
-          sName.includes("learning") ||
-          sName.includes("dl") ||
-          sName.includes("ll") ||
-          t.subModule === "licence";
-        return !isLic;
+        return t.subModule !== "licence" && !t.licenseDetails && (t.applicationType || "").toLowerCase() !== "licence";
       });
     }
 
@@ -491,25 +484,56 @@ export function ServiceDashboard({
               <thead className="bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b">
                 <tr>
                   <th className="p-3 text-center">SR NO</th>
-                  <th className="p-3">APPOINTMENT DATE</th>
-                  <th className="p-3">DAYS</th>
-                  <th className="p-3">DAYS AFTER APPOINTMENT</th>
-                  <th className="p-3">VEHICLE NUMBER</th>
-                  <th className="p-3">SERVICE</th>
-                  <th className="p-3">CLIENT NAME</th>
-                  <th className="p-3">NUMBER</th>
-                  <th className="p-3">APPLICATION NUMBER</th>
-                  <th className="p-3">REFERENCE</th>
-                  <th className="p-3">ASSIGNED EMPLOYEE</th>
-                  <th className="p-3">RTO EXPENSE</th>
-                  <th className="p-3">STATUS</th>
+                  {activeSubModule === "licence" ? (
+                    <>
+                      <th className="p-3">CLIENT NAME</th>
+                      <th className="p-3">DOB</th>
+                      <th className="p-3">MOBILE NUMBER</th>
+                      <th className="p-3">APPOINTMENT DATE</th>
+                      <th className="p-3">DAYS</th>
+                      <th className="p-3">DAYS AFTER APPOINTMENT</th>
+                      {Array.from(
+                        new Set(
+                          filteredCompletedTasks.flatMap((t: any) => {
+                            const sName = t.serviceName || t.serviceType || t.title || "License Service";
+                            return sName.split(",").map((s: string) => s.trim()).filter(Boolean);
+                          })
+                        )
+                      ).map((srv) => (
+                        <th key={srv} className="p-3">
+                          {srv.toUpperCase()} EXPIRE DATE
+                        </th>
+                      ))}
+                      <th className="p-3">TOTAL PAYMENT</th>
+                      <th className="p-3">ADVANCE PAYMENT</th>
+                      <th className="p-3">REMAINING PAYMENT</th>
+                      <th className="p-3">PAYMENT STATUS</th>
+                      <th className="p-3">STATUS OF TASK</th>
+                      <th className="p-3">REFERENCE</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="p-3">APPOINTMENT DATE</th>
+                      <th className="p-3">DAYS</th>
+                      <th className="p-3">DAYS AFTER APPOINTMENT</th>
+                      <th className="p-3">VEHICLE NUMBER</th>
+                      <th className="p-3">SERVICE</th>
+                      <th className="p-3">CLIENT NAME</th>
+                      <th className="p-3">NUMBER</th>
+                      <th className="p-3">APPLICATION NUMBER</th>
+                      <th className="p-3">REFERENCE</th>
+                      <th className="p-3">ASSIGNED EMPLOYEE</th>
+                      <th className="p-3">RTO EXPENSE</th>
+                      <th className="p-3">STATUS</th>
+                    </>
+                  )}
                   <th className="p-3 text-center">ACTION</th>
                 </tr>
               </thead>
               <tbody className="divide-y text-gray-700 font-medium">
                 {filteredCompletedTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="p-8 text-center text-slate-400">
+                    <td colSpan={25} className="p-8 text-center text-slate-400">
                       No completed services found. Complete a task in the Task Module to transfer automatically.
                     </td>
                   </tr>
@@ -533,6 +557,120 @@ export function ServiceDashboard({
                       const diffTime = today.getTime() - apptDate.getTime();
                       const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
                       daysAfterAppt = `${diffDays} Days After Appointment`;
+                    }
+
+                    if (activeSubModule === "licence") {
+                      const ld = t.licenseDetails;
+                      const clientDob = ld?.dateOfBirth || t.dateOfBirth || "—";
+                      const totalPay = t.amount || t.totalAmount || 0;
+                      const advPay = t.totalPaid || t.advanceAmount || 0;
+                      const remPay = typeof t.pendingAmount === "number" ? t.pendingAmount : Math.max(0, totalPay - advPay);
+                      const pStatus = t.paymentStatus || (remPay <= 0 ? "Paid" : advPay > 0 ? "Partial" : "Pending");
+                      const refCode = t.reference || t.applicationId || t.id;
+
+                      const licServices = Array.from(
+                        new Set(
+                          filteredCompletedTasks.flatMap((item: any) => {
+                            const sName = item.serviceName || item.serviceType || item.title || "License Service";
+                            return sName.split(",").map((s: string) => s.trim()).filter(Boolean);
+                          })
+                        )
+                      );
+
+                      const getExpiryForService = (srvName: string) => {
+                        if (!ld) return t.dueDate || t.expiryDate || "—";
+                        if (srvName.includes("Learning") || srvName.includes("New Learning")) {
+                          return ld.newLearningLicence?.step1?.expiryDate || ld.newLearningLicence?.appointmentDate || t.dueDate || "—";
+                        }
+                        if (srvName.includes("Endorsement")) {
+                          return ld.dlNewLlEndorsement?.step2?.expiryDate || ld.dlNewLlEndorsement?.step3?.validityDate || t.dueDate || "—";
+                        }
+                        if (srvName.includes("Renew")) {
+                          return ld.llRenewClass?.step1?.expiryDate || ld.llRenewClass?.step3?.validityDate || t.dueDate || "—";
+                        }
+                        return t.dueDate || t.expiryDate || "—";
+                      };
+
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                          <td className="p-3 text-blue-600 font-bold">{t.clientName || "—"}</td>
+                          <td className="p-3 font-mono text-slate-600">{clientDob}</td>
+                          <td className="p-3 font-mono text-slate-500">{t.mobileNumber || t.phone || "—"}</td>
+                          <td className="p-3 font-mono font-semibold text-slate-900">
+                            {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                          </td>
+                          <td className="p-3 font-semibold text-indigo-600">{daysTaken}</td>
+                          <td className="p-3 font-semibold text-amber-600">{daysAfterAppt}</td>
+                          {licServices.map((srv) => (
+                            <td key={srv} className="p-3 font-mono text-slate-600">
+                              {getExpiryForService(srv)}
+                            </td>
+                          ))}
+                          <td className="p-3 font-bold text-slate-900 font-mono">
+                            ₹{Number(totalPay).toLocaleString("en-IN")}
+                          </td>
+                          <td className="p-3 font-bold text-emerald-700 font-mono">
+                            ₹{Number(advPay).toLocaleString("en-IN")}
+                          </td>
+                          <td className="p-3 font-bold text-amber-700 font-mono">
+                            ₹{Number(remPay).toLocaleString("en-IN")}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                pStatus === "Paid" && "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                                pStatus === "Pending" && "bg-amber-50 text-amber-700 border border-amber-200",
+                                pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
+                              )}
+                            >
+                              {pStatus}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              {t.status || t.taskStatus || "Completed"}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-slate-700 font-semibold">{refCode}</td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const appDoc =
+                                    appsList.find(
+                                      (a: any) =>
+                                        a.id === (t.applicationDocId || t.recordId || t.clientId) ||
+                                        a.applicationId === t.applicationId ||
+                                        (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
+                                    ) || t;
+                                  setSelectedAppModal(appDoc);
+                                  setAppModalOpen(true);
+                                }}
+                                title="View Full Application Form Details"
+                              >
+                                <FileText className="size-3.5 text-indigo-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (t.recordId || t.clientId) {
+                                    setSelectedRecord({ id: t.recordId || t.clientId } as any);
+                                    setProfileOpen(true);
+                                  }
+                                }}
+                                title="View Client Workspace"
+                              >
+                                <Eye className="size-3.5 text-blue-600" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
                     }
 
                     return (
@@ -590,7 +728,7 @@ export function ServiceDashboard({
                                 }
                               }}
                               title="View Client Workspace"
-                            >
+                              >
                               <Eye className="size-3.5 text-blue-600" />
                             </Button>
                           </div>

@@ -417,11 +417,9 @@ function TasksPage() {
 
       const linkedApp = applications.find(
         (a: any) =>
-          a.id === (t as any).recordId ||
-          a.id === (t as any).applicationDocId ||
           (t.applicationId && a.applicationId === t.applicationId) ||
-          (a.vehicleNumber && t.title && t.title.toLowerCase().includes(a.vehicleNumber.toLowerCase())) ||
-          (a.applicationId && t.title && t.title.toLowerCase().includes(a.applicationId.toLowerCase()))
+          a.id === (t as any).recordId ||
+          a.id === (t as any).applicationDocId
       );
 
       const resolvedSubModule =
@@ -433,9 +431,16 @@ function TasksPage() {
         ...t,
         subModule: resolvedSubModule,
         licenseDetails: (t as any).licenseDetails || linkedApp?.licenseDetails,
-        applicationId: t.applicationId || svc?.applicationId || linkedApp?.applicationId || "",
-        applicationType: t.applicationType || svc?.applicationType || linkedApp?.applicationType || "",
-        appointmentDate: t.appointmentDate || "",
+        applicationId: t.applicationId || linkedApp?.applicationId || "",
+        applicationType: t.applicationType || linkedApp?.applicationType || "",
+        appointmentDate: t.appointmentDate || linkedApp?.appointmentDate || "",
+        amount: linkedApp?.amount ?? (t as any).amount ?? 0,
+        totalPaid: linkedApp?.totalPaid ?? (t as any).totalPaid ?? 0,
+        pendingAmount: linkedApp ? (typeof linkedApp.pendingAmount === "number" ? linkedApp.pendingAmount : Math.max(0, (linkedApp.amount || 0) - (linkedApp.totalPaid || 0))) : (t as any).pendingAmount ?? 0,
+        paymentStatus: linkedApp?.paymentStatus || (t as any).paymentStatus || "Pending",
+        clientName: linkedApp?.ownerName || (t as any).clientName || (t as any).ownerName || "",
+        mobileNumber: linkedApp?.mobileNumber || (t as any).mobileNumber || t.phone || "",
+        reference: linkedApp?.reference || linkedApp?.applicationId || (t as any).reference || t.id,
       };
     });
 
@@ -446,7 +451,13 @@ function TasksPage() {
       const vehicleNo = vehicle?.vehicleNumber || "";
       const clientId = s.clientId || vehicle?.clientId || "";
       const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
-      const clientName = client?.name || s.clientName || "Unknown Client";
+
+      const linkedApp = applications.find(
+        (a: any) => (s.applicationId && a.applicationId === s.applicationId) || a.id === s.id || a.id === s.recordId
+      );
+
+      const clientName = linkedApp?.ownerName || client?.name || s.clientName || "Unknown Client";
+      const mobNo = linkedApp?.mobileNumber || s.mobileNumber || s.phone || client?.mo || "";
       const taskTitle = s.title || (isLicense ? `${s.serviceType || "License Service"} - ${clientName}` : `${s.serviceType || "Service"} - ${vehicleNo || "—"}`);
       const taskDesc = s.description || (isLicense ? `Client: ${clientName}. Status: ${s.taskStatus || s.status || "Pending"}. Notes: ${s.notes || s.remarks || "—"}` : `Vehicle: ${vehicleNo || "—"}. Status: ${s.taskStatus || s.status || "Pending"}. Remarks: ${s.remarks || "—"}`);
 
@@ -469,13 +480,22 @@ function TasksPage() {
         recordId: clientId,
         clientId: clientId,
         clientName: clientName,
+        mobileNumber: mobNo,
+        phone: mobNo,
         manual: false,
         progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
         reminderMinutes: s.reminderMinutes || 0,
         remarks: s.remarks || "",
-        applicationId: s.applicationId || "",
-        applicationType: s.applicationType || "",
+        applicationId: s.applicationId || linkedApp?.applicationId || "",
+        applicationType: s.applicationType || linkedApp?.applicationType || "",
         appointmentDate: s.appointmentDate || s.dueDate || "",
+        subModule: linkedApp?.subModule || (linkedApp?.licenseDetails ? "licence" : undefined),
+        licenseDetails: linkedApp?.licenseDetails,
+        amount: linkedApp?.amount ?? s.serviceAmount ?? 0,
+        totalPaid: linkedApp?.totalPaid ?? s.amountReceived ?? 0,
+        pendingAmount: linkedApp ? (typeof linkedApp.pendingAmount === "number" ? linkedApp.pendingAmount : Math.max(0, (linkedApp.amount || 0) - (linkedApp.totalPaid || 0))) : s.pendingAmount ?? 0,
+        paymentStatus: linkedApp?.paymentStatus || "Pending",
+        reference: linkedApp?.reference || linkedApp?.applicationId || s.reference || s.id,
         subtasks: s.subtasks || [],
       };
     });
@@ -522,11 +542,15 @@ function TasksPage() {
         applicationType: app.subModule === "licence" ? "Licence" : app.applicationType || "Home",
         subModule: app.subModule || (app.licenseDetails ? "licence" : "services"),
         licenseDetails: app.licenseDetails,
+        amount: app.amount || 0,
+        totalPaid: app.totalPaid || 0,
+        pendingAmount: typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, (app.amount || 0) - (app.totalPaid || 0)),
+        paymentStatus: app.paymentStatus || (app.totalPaid >= app.amount && app.amount > 0 ? "Paid" : app.totalPaid > 0 ? "Partial" : "Pending"),
         appointmentDate: app.appointmentDate || "",
         vehicleNumber: vehNo,
         mobileNumber: mobNo,
         phone: mobNo,
-        reference: `${appNum} - ${vehNo}`,
+        reference: app.reference || appNum || (vehNo ? `${appNum} - ${vehNo}` : appNum),
         issueDate: app.createdAt || "",
         subtasks: [],
       } as any);
@@ -536,30 +560,37 @@ function TasksPage() {
     const activeServiceTasksOnly = serviceTasks.filter((s) => s.status !== "Completed" && !s.done);
     const activeAppTasksOnly = appTasks.filter((a) => a.status !== "Completed" && !a.done);
 
-    // Deduplicate by ID & Application reference to avoid double counts
+    // Map strictly by Application ID or Task ID to guarantee 1 task row per Application ID
     const map = new Map<string, Task>();
-    [...activeTasksOnly, ...activeServiceTasksOnly, ...activeAppTasksOnly].forEach((item: any) => {
-      // Create a unique composite key for deduplication
-      const appRef = item.recordId || item.applicationDocId || item.applicationId || "";
-      const vehRef = item.vehicleNumber || item.vehicleId || "";
-      const key = item.taskId || item.id || (appRef ? `app-${appRef}` : vehRef ? `veh-${vehRef}` : `${item.title}`);
-      
-      // If a task for this application ID or exact title already exists, merge or keep existing
-      const existingKey = Array.from(map.keys()).find(k => k === key || (appRef && k.includes(appRef)) || (vehRef && k.includes(vehRef) && item.serviceName === (map.get(k) as any)?.serviceName));
 
-      if (!existingKey) {
-        map.set(key, item);
+    // 1. First add application-generated tasks (primary single source of truth for application tasks)
+    activeAppTasksOnly.forEach((appTask: any) => {
+      const appKey = appTask.applicationId || appTask.recordId;
+      if (appKey) {
+        map.set(`app-${appKey}`, appTask);
       } else {
-        // Update existing task details dynamically
-        const existing = map.get(existingKey)!;
-        map.set(existingKey, {
+        map.set(appTask.id, appTask);
+      }
+    });
+
+    // 2. Add manual tasks & service tasks, merging into existing application task if Application ID matches
+    [...activeTasksOnly, ...activeServiceTasksOnly].forEach((item: any) => {
+      const appKey = item.applicationId || item.applicationDocId;
+      const mapKey = appKey ? `app-${appKey}` : item.taskId || item.id;
+
+      if (map.has(mapKey)) {
+        // Merge attributes into existing application task
+        const existing = map.get(mapKey)!;
+        map.set(mapKey, {
           ...existing,
-          serviceName: item.serviceName || existing.serviceName,
-          title: item.title || existing.title,
-          description: item.description || existing.description,
-          subModule: item.subModule || (existing as any).subModule,
-          licenseDetails: item.licenseDetails || (existing as any).licenseDetails,
+          status: item.status !== "Assigned" ? item.status : existing.status,
+          assignee: item.assignee || existing.assignee,
+          assignedEmployeeName: item.assignedEmployeeName || existing.assignedEmployeeName,
+          remarks: item.remarks || existing.remarks,
+          appointmentDate: item.appointmentDate || existing.appointmentDate,
         });
+      } else if (!appKey) {
+        map.set(mapKey, item);
       }
     });
 
@@ -605,47 +636,28 @@ function TasksPage() {
     if (activeSubModule === "licence") {
       list = list.filter((t) => {
         if ((t as any).subModule) return (t as any).subModule === "licence";
-        // Check linked application subModule explicitly
+        if ((t as any).licenseDetails) return true;
         const linked = applications.find(
           (a: any) =>
-            a.id === (t as any).recordId ||
-            a.id === (t as any).applicationDocId ||
             (t.applicationId && a.applicationId === t.applicationId) ||
-            (a.vehicleNumber && t.title && t.title.toLowerCase().includes(a.vehicleNumber.toLowerCase()))
+            a.id === (t as any).recordId ||
+            a.id === (t as any).applicationDocId
         );
         if (linked) return linked.subModule === "licence" || !!linked.licenseDetails;
-
-        const sName = (t.serviceName || t.title || "").toLowerCase();
-        return (
-          sName.includes("license") ||
-          sName.includes("licence") ||
-          sName.includes("learning") ||
-          sName.includes("dl") ||
-          sName.includes("ll") ||
-          t.applicationType === "Licence"
-        );
+        return (t.applicationType || "").toLowerCase() === "licence";
       });
     } else {
       list = list.filter((t) => {
         if ((t as any).subModule) return (t as any).subModule === "services";
+        if ((t as any).licenseDetails) return false;
         const linked = applications.find(
           (a: any) =>
-            a.id === (t as any).recordId ||
-            a.id === (t as any).applicationDocId ||
             (t.applicationId && a.applicationId === t.applicationId) ||
-            (a.vehicleNumber && t.title && t.title.toLowerCase().includes(a.vehicleNumber.toLowerCase()))
+            a.id === (t as any).recordId ||
+            a.id === (t as any).applicationDocId
         );
         if (linked) return linked.subModule !== "licence" && !linked.licenseDetails;
-
-        const sName = (t.serviceName || t.title || "").toLowerCase();
-        const isLic =
-          sName.includes("license") ||
-          sName.includes("licence") ||
-          sName.includes("learning") ||
-          sName.includes("dl") ||
-          sName.includes("ll") ||
-          t.applicationType === "Licence";
-        return !isLic;
+        return (t.applicationType || "").toLowerCase() !== "licence";
       });
     }
 
@@ -1403,6 +1415,7 @@ function TasksPage() {
               onAddRemark={(t) => setRemarkTaskId(t.id)}
               onChangeStatus={handleQuickChangeStatus}
               onDuplicate={handleDuplicateTask}
+              activeSubModule={activeSubModule}
             />
           )}
         </TabsContent>
@@ -1710,6 +1723,7 @@ function TaskTable({
   onAddRemark,
   onChangeStatus,
   onDuplicate,
+  activeSubModule = "services",
 }: {
   tasks: Task[];
   clients: RegistryRecord[];
@@ -1724,6 +1738,7 @@ function TaskTable({
   onAddRemark: (t: Task) => void;
   onChangeStatus: (t: Task, s: TaskStatus) => void;
   onDuplicate: (t: Task) => void;
+  activeSubModule?: SubModuleType;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
@@ -1738,6 +1753,21 @@ function TaskTable({
     return getTaskInfoHelper(t, clients, leads, vehicles);
   };
 
+  const isLicenceSubModule = activeSubModule === "licence";
+
+  // Unique dynamic license service expiry column names
+  const licenseExpiryCols = useMemo(() => {
+    if (!isLicenceSubModule) return [];
+    return Array.from(
+      new Set(
+        tasks.flatMap((t: any) => {
+          const sName = t.serviceName || t.title || "License Service";
+          return sName.split(",").map((s: string) => s.trim()).filter(Boolean);
+        })
+      )
+    );
+  }, [tasks, isLicenceSubModule]);
+
   return (
     <div className="space-y-4">
       <div className="border rounded-xl bg-white overflow-hidden shadow-sm">
@@ -1745,16 +1775,39 @@ function TaskTable({
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b z-10">
               <tr>
-                <th className="p-3">SR NO</th>
-                <th className="p-3">TASK CREATED DATE</th>
-                <th className="p-3">VEHICLE NUMBER</th>
-                <th className="p-3">SERVICE</th>
-                <th className="p-3">CLIENT NAME</th>
-                <th className="p-3">NUMBER</th>
-                <th className="p-3">STATUS</th>
-                <th className="p-3">APPLICATION NUMBER</th>
-                <th className="p-3">REFERENCE</th>
-                <th className="p-3">ASSIGNED EMPLOYEE</th>
+                <th className="p-3 text-center">SR NO</th>
+                {isLicenceSubModule ? (
+                  <>
+                    <th className="p-3">CLIENT NAME</th>
+                    <th className="p-3">DOB</th>
+                    <th className="p-3">MOBILE NUMBER</th>
+                    {licenseExpiryCols.length > 0
+                      ? licenseExpiryCols.map((srv) => (
+                          <th key={srv} className="p-3">
+                            {srv} EXPIRE DATE
+                          </th>
+                        ))
+                      : <th className="p-3">SERVICE EXPIRE DATE</th>}
+                    <th className="p-3">TOTAL PAYMENT</th>
+                    <th className="p-3">ADVANCE PAYMENT</th>
+                    <th className="p-3">REMAINING PAYMENT</th>
+                    <th className="p-3">PAYMENT STATUS</th>
+                    <th className="p-3">STATUS OF TASK</th>
+                    <th className="p-3">REFERENCE</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="p-3">TASK CREATED DATE</th>
+                    <th className="p-3">VEHICLE NUMBER</th>
+                    <th className="p-3">SERVICE</th>
+                    <th className="p-3">CLIENT NAME</th>
+                    <th className="p-3">NUMBER</th>
+                    <th className="p-3">STATUS</th>
+                    <th className="p-3">APPLICATION NUMBER</th>
+                    <th className="p-3">REFERENCE</th>
+                    <th className="p-3">ASSIGNED EMPLOYEE</th>
+                  </>
+                )}
                 <th className="p-3 text-center">ACTION</th>
               </tr>
             </thead>
@@ -1765,6 +1818,117 @@ function TaskTable({
                 const creationDate = t.createdDate || t.createdAt
                   ? new Date(t.createdDate || t.createdAt).toLocaleDateString("en-IN")
                   : "—";
+
+                if (isLicenceSubModule) {
+                  const ld = (t as any).licenseDetails;
+                  const clientDob = ld?.dateOfBirth || "—";
+                  const totalPay = (t as any).amount || (t as any).totalAmount || 0;
+                  const advPay = (t as any).totalPaid || (t as any).advanceAmount || 0;
+                  const remPay = typeof (t as any).pendingAmount === "number" ? (t as any).pendingAmount : Math.max(0, totalPay - advPay);
+                  const pStatus = (t as any).paymentStatus || (remPay <= 0 ? "Paid" : advPay > 0 ? "Partial" : "Pending");
+                  const refCode = t.applicationId || (t as any).reference || t.id;
+
+                  const getExpiryForService = (srvName: string) => {
+                    if (!ld) return t.dueDate || (t as any).expiryDate || "—";
+                    if (srvName.includes("Learning") || srvName.includes("New Learning")) {
+                      return ld.newLearningLicence?.step1?.expiryDate || ld.newLearningLicence?.appointmentDate || t.dueDate || "—";
+                    }
+                    if (srvName.includes("Endorsement")) {
+                      return ld.dlNewLlEndorsement?.step2?.expiryDate || ld.dlNewLlEndorsement?.step3?.validityDate || t.dueDate || "—";
+                    }
+                    if (srvName.includes("Renew")) {
+                      return ld.llRenewClass?.step1?.expiryDate || ld.llRenewClass?.step3?.validityDate || t.dueDate || "—";
+                    }
+                    return t.dueDate || (t as any).expiryDate || "—";
+                  };
+
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-3 text-center font-mono text-slate-400 font-semibold">{srNo}</td>
+                      <td className="p-3 font-bold text-blue-900">{info.clientName || "—"}</td>
+                      <td className="p-3 font-mono text-slate-600">{clientDob}</td>
+                      <td className="p-3 font-mono text-slate-700">{info.clientPhone || "—"}</td>
+                      {licenseExpiryCols.length > 0
+                        ? licenseExpiryCols.map((srv) => (
+                            <td key={srv} className="p-3 font-mono text-slate-600">
+                              {getExpiryForService(srv)}
+                            </td>
+                          ))
+                        : (
+                          <td className="p-3 font-mono text-slate-600">
+                            {t.dueDate || (t as any).expiryDate || "—"}
+                          </td>
+                        )}
+                      <td className="p-3 font-bold text-slate-900 font-mono">
+                        ₹{Number(totalPay).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3 font-bold text-emerald-700 font-mono">
+                        ₹{Number(advPay).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3 font-bold text-amber-700 font-mono">
+                        ₹{Number(remPay).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                            pStatus === "Paid" && "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                            pStatus === "Pending" && "bg-amber-50 text-amber-700 border border-amber-200",
+                            pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
+                          )}
+                        >
+                          {pStatus}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <select
+                          value={t.status}
+                          onChange={(e) => onChangeStatus(t, e.target.value as TaskStatus)}
+                          className={cn(
+                            "px-2 py-1 rounded text-[10px] font-bold border bg-transparent cursor-pointer",
+                            statusBadgeClass(t.status)
+                          )}
+                        >
+                          {TASK_STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-3 font-mono text-slate-700 font-semibold">{refCode}</td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onView(t)}
+                            title="View Detail"
+                          >
+                            <Eye className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onEdit(t)}
+                            title="Edit Task"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onDuplicate(t)}
+                            title="Duplicate Task"
+                            className="text-emerald-600 hover:bg-emerald-50"
+                          >
+                            <Copy className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
 
                 return (
                   <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/20">
@@ -2791,84 +2955,42 @@ function TaskDetailsSheet({
 
     // Subscribe to registry_tasks
     const unsubTasks = onSnapshot(doc(db, "registry_tasks", initialTask.id), (snap) => {
+      let currentTask: Task | null = null;
       if (snap.exists()) {
-        const t = { id: snap.id, ...snap.data() } as Task;
-        setLiveTask(t);
-        setSelectedStatus(t.status || "Assigned");
-        if (t.dueDate) {
-          setExpectedDate(new Date(t.dueDate).toISOString().slice(0, 10));
-        } else {
-          setExpectedDate("");
-        }
-
-        // Fetch linked application record if applicationDocId or recordId exists
-        const targetAppId = (t as any).applicationDocId || t.recordId || t.clientId || t.id.replace("task-app-", "");
-        if (targetAppId) {
-          getDoc(doc(db, "registry_applications_v1", targetAppId)).then((aSnap) => {
-            if (aSnap.exists()) {
-              setLinkedApp({ id: aSnap.id, ...aSnap.data() });
-            }
-          }).catch(console.error);
-        }
+        currentTask = { id: snap.id, ...snap.data() } as Task;
       } else {
-        // Fallback: Subscribe to registry_services_v2
-        const unsubServices = onSnapshot(doc(db, "registry_services_v2", initialTask.id), (sSnap) => {
-          if (sSnap.exists()) {
-            const s = sSnap.data() as any;
-            const isLicense = s.serviceType === "License New" || s.serviceType === "License Renew";
-            const vehicle = s.vehicleId ? vehicles.find((v) => v.id === s.vehicleId) : null;
-            const vehicleNo = vehicle?.vehicleNumber || "";
-            const clientId = s.clientId || vehicle?.clientId || "";
-            const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
-            const clientName = client?.name || s.clientName || "Unknown Client";
+        currentTask = initialTask;
+      }
 
-            const resolvedTask = {
-              id: sSnap.id,
-              title: s.title || (isLicense ? `${s.serviceType || "License Service"} - ${clientName}` : `${s.serviceType || "Service"} - ${vehicleNo || "—"}`),
-              serviceName: s.serviceType || "",
-              description: s.remarks || s.notes || (isLicense ? `Client: ${clientName}. Status: ${s.taskStatus || s.status || "Pending"}` : `Vehicle: ${vehicleNo || "—"}. Status: ${s.taskStatus || s.status || "Pending"}`),
-              assignee: s.assignedTo || s.employeeId || s.assignee || "",
-              assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
-              assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
-              status: (s.taskStatus || s.status || "Assigned") as TaskStatus,
-              priority: (s.priority || "Medium") as TaskPriority,
-              done: s.taskStatus === "Completed",
-              createdAt: s.createdAt || s.startDate || new Date().toISOString(),
-              createdBy: s.createdBy || "System",
-              dueDate: s.dueDate || s.startDate || "",
-              associationType: (client?.isDeleted ? "lead" : "client") as AssociationType,
-              bucket: client?.isDeleted ? "leads" : "clients",
-              recordId: clientId,
-              clientId: clientId,
-              clientName: clientName,
-              manual: false,
-              progress: s.taskStatus === "Completed" ? 100 : s.taskStatus === "In Progress" ? 50 : 0,
-              reminderMinutes: s.reminderMinutes || 0,
-              applicationId: s.applicationId || "",
-              applicationType: s.applicationType || "",
-              appointmentDate: s.appointmentDate || s.dueDate || "",
-              subtasks: s.subtasks || [],
-              comments: s.comments || [],
-              activity: s.activity || [],
-              activityLogs: s.activityLogs || [],
-              attachments: s.attachments || [],
-            } as Task;
+      setLiveTask(currentTask);
+      setSelectedStatus(currentTask.status || "Assigned");
+      if (currentTask.dueDate) {
+        setExpectedDate(new Date(currentTask.dueDate).toISOString().slice(0, 10));
+      } else {
+        setExpectedDate("");
+      }
 
-            setLiveTask(resolvedTask);
-            setSelectedStatus(resolvedTask.status || "Assigned");
-            if (resolvedTask.dueDate) {
-              setExpectedDate(new Date(resolvedTask.dueDate).toISOString().slice(0, 10));
-            } else {
-              setExpectedDate("");
-            }
+      // Fetch linked application record strictly by Application ID or document ID
+      const targetAppId = (currentTask as any).applicationDocId || currentTask.recordId || currentTask.applicationId || currentTask.id.replace("task-app-", "");
+      if (targetAppId) {
+        getDoc(doc(db, "registry_applications_v1", targetAppId)).then((aSnap) => {
+          if (aSnap.exists()) {
+            setLinkedApp({ id: aSnap.id, ...aSnap.data() });
+          } else if (currentTask?.applicationId) {
+            // Secondary lookup by applicationId string field
+            const q = query(collection(db, "registry_applications_v1"), where("applicationId", "==", currentTask.applicationId));
+            getDocs(q).then((qSnap) => {
+              if (!qSnap.empty) {
+                setLinkedApp({ id: qSnap.docs[0].id, ...qSnap.docs[0].data() });
+              }
+            }).catch(console.error);
           }
-        });
-        return () => unsubServices();
+        }).catch(console.error);
       }
     });
 
     return () => unsubTasks();
-  }, [open, initialTask.id, clients, leads, vehicles]);
+  }, [open, initialTask.id, initialTask.applicationId, initialTask.recordId]);
 
   const activeTask = useMemo(() => {
     const base = liveTask || initialTask;

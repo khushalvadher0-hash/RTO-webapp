@@ -330,7 +330,29 @@ export async function recordPaymentEntry(
     invoiceNumber = sData.invoiceNumber || invoiceNumber;
   }
 
-  // 2. Also try updating invoice in billing_invoices
+  // 2. Also try updating invoice in billing_invoices or application in registry_applications_v1
+  const cleanAppId = recordId.replace("app-fin-", "");
+  const appRef = doc(db, "registry_applications_v1", cleanAppId);
+  const appSnap = await getDoc(appRef);
+  if (appSnap.exists()) {
+    const aData = appSnap.data() as any;
+    clientName = aData.ownerName || clientName;
+    clientId = aData.id || clientId;
+    invoiceNumber = aData.applicationId || aData.invoiceNumber || invoiceNumber;
+    const totalAmount = aData.amount || 0;
+    const currentPaid = aData.totalPaid || 0;
+    const newPaid = currentPaid + payment.amount;
+    const newPending = Math.max(0, totalAmount - newPaid);
+    const newPaymentStatus = newPending === 0 && totalAmount > 0 ? "Paid" : newPaid > 0 ? "Partial" : "Pending";
+
+    await updateDoc(appRef, {
+      totalPaid: newPaid,
+      pendingAmount: newPending,
+      paymentStatus: newPaymentStatus,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   const ref = doc(db, INVOICES_COL, targetInvoiceId);
   const snap = await getDoc(ref);
   if (snap.exists()) {

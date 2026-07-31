@@ -251,49 +251,202 @@ function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Applications Table - Showing All Columns & Necessary Details */}
+      {/* Applications Table - Dynamic Column View according to SubModule */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1200px]">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center">SR No</th>
-                <th className="py-3.5 px-4">Vehicle Number</th>
-                <th className="py-3.5 px-4">Make & Model</th>
-                <th className="py-3.5 px-4">Owner Name</th>
-                <th className="py-3.5 px-4">Mobile</th>
-                <th className="py-3.5 px-4">Service(s)</th>
-                <th className="py-3.5 px-4">Employee</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4">Payment Status</th>
-                <th className="py-3.5 px-4">Total Amount</th>
-                <th className="py-3.5 px-4">Advance Paid</th>
-                <th className="py-3.5 px-4">Pending</th>
-                <th className="py-3.5 px-4">Invoice No</th>
-                <th className="py-3.5 px-4">Insurance Expiry</th>
-                <th className="py-3.5 px-4">Fitness Expiry</th>
-                <th className="py-3.5 px-4">Permit Expiry</th>
-                <th className="py-3.5 px-4">Tax Expiry</th>
-                <th className="py-3.5 px-4">PUC Expiry</th>
-                <th className="py-3.5 px-4">Reg Validity</th>
+                {activeSubModule === "licence" ? (
+                  <>
+                    <th className="py-3.5 px-4">Client Name</th>
+                    <th className="py-3.5 px-4">DOB</th>
+                    <th className="py-3.5 px-4">Mobile Number</th>
+                    {/* Dynamic service expiries */}
+                    {Array.from(
+                      new Set(
+                        filteredApps.flatMap((app) => {
+                          const services: string[] = app.services || [];
+                          if (services.length > 0) return services;
+                          const licServices: string[] = [];
+                          const ld = app.licenseDetails;
+                          if (ld?.newLearningLicence?.enabled) licServices.push("New Learning Licence");
+                          if (ld?.dlNewLlEndorsement?.enabled) licServices.push("DL New LL Endorsement");
+                          if (ld?.llRenewClass?.enabled) licServices.push("LL Renew Class");
+                          if (ld?.dlRenewRetest?.enabled) licServices.push("DL Renew / Retest");
+                          if (ld?.generalLicenceServices?.selectedServices) {
+                            licServices.push(...ld.generalLicenceServices.selectedServices);
+                          }
+                          return licServices.length > 0 ? licServices : ["License Service"];
+                        })
+                      )
+                    ).map((srvName) => (
+                      <th key={srvName} className="py-3.5 px-4">
+                        {srvName} Expire Date
+                      </th>
+                    ))}
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Payment</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Payment</th>
+                    <th className="py-3.5 px-4 font-bold text-amber-700">Remaining Payment</th>
+                    <th className="py-3.5 px-4">Payment Status</th>
+                    <th className="py-3.5 px-4 font-mono text-slate-600">Reference</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="py-3.5 px-4">Vehicle Number</th>
+                    <th className="py-3.5 px-4">Make & Model</th>
+                    <th className="py-3.5 px-4">Owner Name</th>
+                    <th className="py-3.5 px-4">Mobile</th>
+                    <th className="py-3.5 px-4">Service(s)</th>
+                    <th className="py-3.5 px-4">Employee</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4">Payment Status</th>
+                    <th className="py-3.5 px-4">Total Amount</th>
+                    <th className="py-3.5 px-4">Advance Paid</th>
+                    <th className="py-3.5 px-4">Pending</th>
+                    <th className="py-3.5 px-4">Invoice No</th>
+                    <th className="py-3.5 px-4">Insurance Expiry</th>
+                    <th className="py-3.5 px-4">Fitness Expiry</th>
+                    <th className="py-3.5 px-4">Permit Expiry</th>
+                    <th className="py-3.5 px-4">Tax Expiry</th>
+                    <th className="py-3.5 px-4">PUC Expiry</th>
+                    <th className="py-3.5 px-4">Reg Validity</th>
+                  </>
+                )}
                 <th className="py-3.5 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={20} className="py-12 text-center text-slate-400">
+                  <td colSpan={25} className="py-12 text-center text-slate-400">
                     Loading applications...
                   </td>
                 </tr>
               ) : filteredApps.length === 0 ? (
                 <tr>
-                  <td colSpan={20} className="py-12 text-center text-slate-400">
+                  <td colSpan={25} className="py-12 text-center text-slate-400">
                     No applications found.
                   </td>
                 </tr>
               ) : (
                 filteredApps.map((app, index) => {
+                  if (activeSubModule === "licence") {
+                    const ld = app.licenseDetails;
+                    const clientDob = ld?.dateOfBirth || "—";
+                    const totalPay = app.amount || 0;
+                    const advPay = app.totalPaid || 0;
+                    const remPay = typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, totalPay - advPay);
+                    const pStatus = app.paymentStatus || (remPay <= 0 ? "Paid" : advPay > 0 ? "Partial" : "Pending");
+                    const refCode = app.applicationId || app.reference || "—";
+
+                    // Compute dynamic services list & exps
+                    const allUniqueServices = Array.from(
+                      new Set(
+                        filteredApps.flatMap((a) => {
+                          const services: string[] = a.services || [];
+                          if (services.length > 0) return services;
+                          const licServices: string[] = [];
+                          const l = a.licenseDetails;
+                          if (l?.newLearningLicence?.enabled) licServices.push("New Learning Licence");
+                          if (l?.dlNewLlEndorsement?.enabled) licServices.push("DL New LL Endorsement");
+                          if (l?.llRenewClass?.enabled) licServices.push("LL Renew Class");
+                          if (l?.dlRenewRetest?.enabled) licServices.push("DL Renew / Retest");
+                          if (l?.generalLicenceServices?.selectedServices) {
+                            licServices.push(...l.generalLicenceServices.selectedServices);
+                          }
+                          return licServices.length > 0 ? licServices : ["License Service"];
+                        })
+                      )
+                    );
+
+                    const getExpiryForService = (srvName: string) => {
+                      if (!ld) return app.expiryDate || "—";
+                      if (srvName.includes("Learning") || srvName.includes("New Learning")) {
+                        return ld.newLearningLicence?.step1?.expiryDate || ld.newLearningLicence?.appointmentDate || app.expiryDate || "—";
+                      }
+                      if (srvName.includes("Endorsement")) {
+                        return ld.dlNewLlEndorsement?.step2?.expiryDate || ld.dlNewLlEndorsement?.step3?.validityDate || app.expiryDate || "—";
+                      }
+                      if (srvName.includes("Renew")) {
+                        return ld.llRenewClass?.step1?.expiryDate || ld.llRenewClass?.step3?.validityDate || app.expiryDate || "—";
+                      }
+                      return app.expiryDate || "—";
+                    };
+
+                    return (
+                      <tr
+                        key={app.id}
+                        onClick={() => setViewingApp(app)}
+                        className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 text-center text-slate-400 font-mono">{index + 1}</td>
+                        <td className="py-3.5 px-4 font-bold text-blue-900">{app.ownerName}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{clientDob}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-700">{app.mobileNumber}</td>
+                        {allUniqueServices.map((srvName) => (
+                          <td key={srvName} className="py-3.5 px-4 font-mono text-slate-600">
+                            {getExpiryForService(srvName)}
+                          </td>
+                        ))}
+                        <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
+                          ₹{totalPay.toLocaleString("en-IN")}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-emerald-700 font-mono">
+                          ₹{advPay.toLocaleString("en-IN")}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-amber-700 font-mono">
+                          ₹{remPay.toLocaleString("en-IN")}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={cn(
+                              "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                              pStatus === "Paid" && "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                              pStatus === "Pending" && "bg-amber-50 text-amber-700 border border-amber-200",
+                              pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
+                            )}
+                          >
+                            {pStatus}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-700 font-semibold">{refCode}</td>
+                        <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => setViewingApp(app)}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-blue-600 transition-all"
+                              title="View Application Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingApp(app);
+                                setIsModalOpen(true);
+                              }}
+                              className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600 transition-all"
+                              title="Edit Application"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDeletingApp(app);
+                                setDeletePasscode("");
+                              }}
+                              className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-600 transition-all"
+                              title="Delete Application"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   const v = app.vehicleDetails || {};
                   const insExpiry = v.insuranceDetails?.expiryDate || "—";
                   const fitExpiry = v.fitnessDetails?.expiryDate || "—";
@@ -968,11 +1121,36 @@ function ApplicationFormModal({
     let totalAmt = 0;
     let totalAdv = 0;
 
-    selectedServices.forEach((srv) => {
-      const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
-      totalAmt += item.totalAmount;
-      totalAdv += item.advancePayment;
-    });
+    if (activeSubModule === "licence") {
+      if (newLL.enabled) {
+        totalAmt += Number(newLL.totalAmount) || 0;
+        totalAdv += Number(newLL.advanceAmount) || 0;
+      }
+      if (dlEndorsement.enabled) {
+        totalAmt += Number(dlEndorsement.totalAmount) || 0;
+        totalAdv += Number(dlEndorsement.advanceAmount) || 0;
+      }
+      if (llRenew.enabled) {
+        totalAmt += Number(llRenew.totalAmount) || 0;
+        totalAdv += Number(llRenew.advanceAmount) || 0;
+      }
+      if (dlRenewRetest.enabled) {
+        totalAmt += Number(dlRenewRetest.totalAmount) || 0;
+        totalAdv += Number(dlRenewRetest.advanceAmount) || 0;
+      }
+      if (generalLicServices.accounting) {
+        Object.values(generalLicServices.accounting).forEach((item: any) => {
+          totalAmt += Number(item.totalAmount) || 0;
+          totalAdv += Number(item.advanceAmount) || 0;
+        });
+      }
+    } else {
+      selectedServices.forEach((srv) => {
+        const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+        totalAmt += item.totalAmount;
+        totalAdv += item.advancePayment;
+      });
+    }
 
     const pending = Math.max(0, totalAmt - totalAdv);
     let payStatus: "Paid" | "Pending" | "Partial" = "Pending";
@@ -980,7 +1158,16 @@ function ApplicationFormModal({
     else if (totalAdv > 0) payStatus = "Partial";
 
     return { totalAmt, totalAdv, pending, payStatus };
-  }, [selectedServices, serviceAccountingMap]);
+  }, [
+    activeSubModule,
+    newLL,
+    dlEndorsement,
+    llRenew,
+    dlRenewRetest,
+    generalLicServices,
+    selectedServices,
+    serviceAccountingMap,
+  ]);
 
   const handleDocSimulateUpload = (docName: string) => {
     setUploadedDocs((prev) => ({
