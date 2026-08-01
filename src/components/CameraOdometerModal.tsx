@@ -273,6 +273,11 @@ export function CameraOdometerModal({
               isPlaying={isPlaying}
               onVideoRefReady={handleVideoRefReady}
               onCapture={handleTakeSnapshot}
+              onSwitchCamera={() => {
+                if (videoElementRef.current) {
+                  startCamera(videoElementRef.current);
+                }
+              }}
             />
           )}
         </div>

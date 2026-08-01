@@ -63,7 +63,7 @@ export function ApplicationFullDetailsModal({
   if (!application && !vehicle) return null;
 
   const app = application || {};
-  const veh = vehicle || app.vehicleMaster || {};
+  const veh = vehicle || (app as any).vehicleDetails || (app as any).vehicleMaster || app || {};
   const track = app.trackExpiry || veh.trackExpiry || {};
 
   // Extract insurance details
@@ -78,8 +78,11 @@ export function ApplicationFullDetailsModal({
   const reg = app.registrationDetails || veh.registrationDetails || {};
 
   const services: string[] = app.services || [];
+  const serviceAccounting = app.serviceAccounting || {};
   const serviceFees = app.serviceFees || {};
   const serviceAdvances = app.serviceAdvances || {};
+  const totalFee = app.totalFee || app.amount || app.totalAmount || 0;
+  const totalAdvance = app.totalAdvance || app.totalPaid || app.advancePayment || 0;
 
   const handlePrint = () => {
     window.print();
@@ -371,7 +374,7 @@ export function ApplicationFullDetailsModal({
                 <span>6. Selected Services & Accounting Breakdown</span>
               </div>
               <span className="font-mono font-bold text-xs text-slate-700">
-                Total Fee: ₹{app.totalFee || 0}
+                Total Fee: ₹{totalFee}
               </span>
             </div>
 
@@ -390,8 +393,9 @@ export function ApplicationFullDetailsModal({
                   </thead>
                   <tbody className="divide-y font-medium text-slate-800">
                     {services.map((srv) => {
-                      const fee = Number(serviceFees[srv]) || 0;
-                      const adv = Number(serviceAdvances[srv]) || 0;
+                      const item = serviceAccounting[srv] || {};
+                      const fee = Number(item.totalAmount ?? serviceFees[srv] ?? 0);
+                      const adv = Number(item.advancePayment ?? serviceAdvances[srv] ?? 0);
                       const bal = Math.max(0, fee - adv);
                       return (
                         <tr key={srv} className="hover:bg-slate-50">
@@ -406,10 +410,10 @@ export function ApplicationFullDetailsModal({
                   <tfoot className="bg-slate-50 border-t font-bold text-xs">
                     <tr>
                       <td className="p-2 uppercase text-slate-500 text-[10px]">Total Accounting</td>
-                      <td className="p-2 text-right font-mono text-slate-900">₹{app.totalFee || 0}</td>
-                      <td className="p-2 text-right font-mono text-emerald-700">₹{app.totalAdvance || 0}</td>
+                      <td className="p-2 text-right font-mono text-slate-900">₹{totalFee}</td>
+                      <td className="p-2 text-right font-mono text-emerald-700">₹{totalAdvance}</td>
                       <td className="p-2 text-right font-mono text-rose-700">
-                        ₹{Math.max(0, (app.totalFee || 0) - (app.totalAdvance || 0))}
+                        ₹{Math.max(0, totalFee - totalAdvance)}
                       </td>
                     </tr>
                   </tfoot>

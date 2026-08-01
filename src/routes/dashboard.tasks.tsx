@@ -423,12 +423,28 @@ function TasksPage() {
           (s.vehicleId === t.vehicleId && s.serviceType === t.serviceName),
       );
 
-      const linkedApp = applications.find(
-        (a: any) =>
-          (t.applicationId && a.applicationId === t.applicationId) ||
+      const cleanVeh = t.vehicleNumber || t.vehicleId;
+      const cleanVehNo = cleanVeh ? cleanVeh.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+
+      const linkedApp = applications.find((a: any) => {
+        const aAppId = a.applicationId ? a.applicationId.trim().toUpperCase() : "";
+        const tAppId = t.applicationId ? t.applicationId.trim().toUpperCase() : "";
+        const aVeh = a.vehicleNumber ? a.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+        
+        return (
+          (tAppId && aAppId === tAppId) ||
           a.id === (t as any).recordId ||
-          a.id === (t as any).applicationDocId
-      );
+          a.id === (t as any).applicationDocId ||
+          (t.id && t.id.replace("task-app-", "") === a.id) ||
+          (cleanVehNo && aVeh === cleanVehNo)
+        );
+      });
+
+      // If task is linked to an application but the application has been deleted, exclude it
+      const isLinkedToApp = !!(t.applicationId || (t as any).applicationDocId || t.id.startsWith("task-app-") || (t as any).recordId?.startsWith("task-app-"));
+      if (isLinkedToApp && !linkedApp) {
+        return null;
+      }
 
       const resolvedSubModule =
         (t as any).subModule ||
@@ -450,7 +466,7 @@ function TasksPage() {
         mobileNumber: linkedApp?.mobileNumber || (t as any).mobileNumber || (t as any).phone || "",
         reference: linkedApp?.reference || linkedApp?.applicationId || (t as any).reference || t.id,
       };
-    });
+    }).filter(Boolean) as Task[];
 
     // 2. Generate task objects dynamically from registry_services_v2 joined with vehicles and clients/leads
     const serviceTasks: Task[] = v2Services.map((s: any) => {
@@ -460,9 +476,26 @@ function TasksPage() {
       const clientId = s.clientId || vehicle?.clientId || "";
       const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
 
-      const linkedApp = applications.find(
-        (a: any) => (s.applicationId && a.applicationId === s.applicationId) || a.id === s.id || a.id === s.recordId
-      );
+      const cleanVehNo = vehicleNo ? vehicleNo.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+      const linkedApp = applications.find((a: any) => {
+        const aAppId = a.applicationId ? a.applicationId.trim().toUpperCase() : "";
+        const sAppId = s.applicationId ? s.applicationId.trim().toUpperCase() : "";
+        const aVeh = a.vehicleNumber ? a.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+        
+        return (
+          (sAppId && aAppId === sAppId) ||
+          a.id === s.id ||
+          a.id === s.recordId ||
+          (s.id && s.id.replace("task-app-", "") === a.id) ||
+          (cleanVehNo && aVeh === cleanVehNo)
+        );
+      });
+
+      // If task is linked to an application but the application has been deleted, exclude it
+      const isLinkedToApp = !!(s.applicationId || s.id?.startsWith("task-app-") || s.recordId?.startsWith("task-app-") || s.applicationDocId?.startsWith("task-app-"));
+      if (isLinkedToApp && !linkedApp) {
+        return null;
+      }
 
       const clientName = linkedApp?.ownerName || client?.name || s.clientName || "Unknown Client";
       const mobNo = linkedApp?.mobileNumber || s.mobileNumber || s.phone || client?.mo || "";
@@ -506,7 +539,7 @@ function TasksPage() {
         reference: linkedApp?.reference || linkedApp?.applicationId || s.reference || s.id,
         subtasks: s.subtasks || [],
       };
-    });
+    }).filter(Boolean) as Task[];
 
     // 3. Generate task objects dynamically from registry_applications_v1 (1 application per row)
     const appTasks: Task[] = [];
@@ -564,10 +597,6 @@ function TasksPage() {
       } as any);
     });
 
-    const activeTasksOnly = manualTasksMapped.filter((t) => t.status !== "Completed" && !t.done);
-    const activeServiceTasksOnly = serviceTasks.filter((s) => s.status !== "Completed" && !s.done);
-    const activeAppTasksOnly = appTasks.filter((a) => a.status !== "Completed" && !a.done);
-
     // Map strictly by Application ID or Task ID to guarantee 1 task row per Application ID
     const map = new Map<string, Task>();
 
@@ -585,7 +614,7 @@ function TasksPage() {
     };
 
     // 1. First add application-generated tasks (primary single source of truth for application tasks)
-    activeAppTasksOnly.forEach((appTask: any) => {
+    appTasks.forEach((appTask: any) => {
       const keys = getAppKeys(appTask);
       const primaryKey = keys[0] || appTask.id;
       keys.forEach((k) => map.set(k, appTask));
@@ -593,7 +622,7 @@ function TasksPage() {
     });
 
     // 2. Add manual tasks & service tasks, merging into existing application task if Application ID matches
-    [...activeTasksOnly, ...activeServiceTasksOnly].forEach((item: any) => {
+    [...manualTasksMapped, ...serviceTasks].forEach((item: any) => {
       const keys = getAppKeys(item);
       const existingKey = keys.find((k) => map.has(k));
 
@@ -604,6 +633,7 @@ function TasksPage() {
           ...existing,
           ...item,
           status: item.status !== undefined ? item.status : existing.status,
+          done: item.done !== undefined ? item.done : existing.done,
           assignee: item.assignee || existing.assignee,
           assignedEmployeeName: item.assignedEmployeeName || existing.assignedEmployeeName,
           remarks: item.remarks || existing.remarks,
@@ -620,9 +650,9 @@ function TasksPage() {
       }
     });
 
-    // Return unique tasks by deduplicating array values
+    // Return unique tasks by deduplicating array values and filtering out completed ones
     const uniqueValues = Array.from(new Set(map.values()));
-    return uniqueValues;
+    return uniqueValues.filter((t) => t.status !== "Completed" && !t.done);
   }, [tasks, v2Services, vehicles, clients, leads, applications]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
@@ -1238,6 +1268,7 @@ function TasksPage() {
               vehicles={vehicles}
               isAdmin={!!isAdmin}
               session={session}
+              applications={applications}
               onView={(t) => setDetailsId(t.id)}
               onEdit={openEdit}
               onDelete={(t) => {
@@ -1434,6 +1465,7 @@ function TasksPage() {
               vehicles={vehicles}
               isAdmin={!!isAdmin}
               session={session}
+              applications={applications}
               onView={(t) => setDetailsId(t.id)}
               onEdit={openEdit}
               onDelete={(t) => {
@@ -1755,6 +1787,7 @@ function TaskTable({
   onDuplicate,
   activeSubModule = "services",
   accountingMap,
+  applications = [],
 }: {
   tasks: Task[];
   clients: RegistryRecord[];
@@ -1771,6 +1804,7 @@ function TaskTable({
   onDuplicate: (t: Task) => void;
   activeSubModule?: SubModuleType;
   accountingMap?: Map<string, AccountingRecord>;
+  applications?: any[];
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
@@ -1831,13 +1865,20 @@ function TaskTable({
                   <>
                     <th className="p-3">TASK CREATED DATE</th>
                     <th className="p-3">VEHICLE NUMBER</th>
-                    <th className="p-3">SERVICE</th>
-                    <th className="p-3">CLIENT NAME</th>
-                    <th className="p-3">NUMBER</th>
-                    <th className="p-3">STATUS</th>
-                    <th className="p-3">APPLICATION NUMBER</th>
-                    <th className="p-3">REFERENCE</th>
+                    <th className="p-3">OWNER NAME</th>
+                    <th className="p-3 text-center">TOTAL SERVICES</th>
                     <th className="p-3">ASSIGNED EMPLOYEE</th>
+                    <th className="p-3">TASK STATUS</th>
+                    <th className="p-3">PUC EXPIRY</th>
+                    <th className="p-3">TAX EXPIRY</th>
+                    <th className="p-3">FITNESS EXPIRY</th>
+                    <th className="p-3">INSURANCE EXPIRY</th>
+                    <th className="p-3">NATIONAL PERMIT EXPIRY</th>
+                    <th className="p-3">GUJARAT PERMIT EXPIRY</th>
+                    <th className="p-3 font-bold text-slate-900">TOTAL CHARGES</th>
+                    <th className="p-3 font-bold text-emerald-700">TOTAL ADVANCE PAYMENT</th>
+                    <th className="p-3">APPLICATION NO.</th>
+                    <th className="p-3">APPLICATION TYPE</th>
                   </>
                 )}
                 <th className="p-3 text-center">ACTION</th>
@@ -1966,27 +2007,72 @@ function TaskTable({
                   );
                 }
 
+                const tRaw = t as any;
+                const cleanVeh = tRaw.vehicleNumber || tRaw.vehicleId;
+                const cleanVehNo = cleanVeh ? cleanVeh.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+
+                const linkedApp = applications.find((a: any) => {
+                  const aAppId = a.applicationId ? a.applicationId.trim().toUpperCase() : "";
+                  const tAppId = tRaw.applicationId ? tRaw.applicationId.trim().toUpperCase() : "";
+                  const aVeh = a.vehicleNumber ? a.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+                  
+                  return (
+                    (tAppId && aAppId === tAppId) ||
+                    a.id === tRaw.recordId ||
+                    a.id === tRaw.applicationDocId ||
+                    (tRaw.id && tRaw.id.replace("task-app-", "") === a.id) ||
+                    (cleanVehNo && aVeh === cleanVehNo)
+                  );
+                });
+                const appRaw = linkedApp as any || {};
+                const v = appRaw.vehicleDetails || appRaw.vehicleMaster || appRaw || {};
+                
+                const appCreatedDate = linkedApp?.createdAt || tRaw.createdDate || tRaw.createdAt;
+                const taskCreatedDateStr = appCreatedDate ? new Date(appCreatedDate).toLocaleDateString("en-IN") : "—";
+                
+                const vehicleNumber = tRaw.vehicleNumber || tRaw.vehicleId || linkedApp?.vehicleNumber || "—";
+                const ownerName = tRaw.clientName || tRaw.ownerName || linkedApp?.ownerName || "—";
+                
+                const srvList = linkedApp?.services || (tRaw.serviceName ? tRaw.serviceName.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+                const totalServices = srvList.length || 1;
+                
+                const assignedEmployee = tRaw.assignedEmployeeName || tRaw.assignee || linkedApp?.assignedEmployeeName || "Unassigned";
+                
+                const pucExp = appRaw.pucExpiryDate || v.pucExpiryDate || v.pucDetails?.expiryDate || "—";
+                const taxExp = appRaw.taxExpiryDate || v.taxExpiryDate || v.taxDetails?.expiryDate || "—";
+                const fitExp = appRaw.fitnessExpiryDate || v.fitnessExpiryDate || v.fitnessDetails?.expiryDate || "—";
+                const insExp = appRaw.insuranceExpiryDate || v.insuranceExpiryDate || v.insuranceDetails?.expiryDate || "—";
+                const natPermitExp = appRaw.nationalPermitExpiryDate || v.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate || "—";
+                const gujPermitExp = appRaw.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "—";
+                
+                const acc = accountingMap?.get(linkedApp?.id || "") || accountingMap?.get(tRaw.applicationId || "") || accountingMap?.get(tRaw.id);
+                const totalPay = acc?.totalPayment ?? linkedApp?.amount ?? tRaw.amount ?? 0;
+                const advPay = acc?.advancePayment ?? linkedApp?.totalPaid ?? tRaw.totalPaid ?? 0;
+                
+                const appNo = tRaw.applicationId || linkedApp?.applicationId || "—";
+                const appType = linkedApp?.applicationType || tRaw.applicationType || "Home";
+
                 return (
-                  <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/20">
-                    <td className="p-3 font-mono text-gray-500 font-semibold">{srNo}</td>
-                    <td className="p-3 font-mono">{creationDate}</td>
+                  <tr key={t.id} className="hover:bg-slate-50/20">
+                    <td className="p-3 font-mono text-gray-500 font-semibold text-center">{srNo}</td>
+                    <td className="p-3 font-mono">{taskCreatedDateStr}</td>
                     <td className="p-3 font-mono text-[11px] text-gray-600">
-                      {info.vehicleNum ? (
-                        <span className="flex items-center gap-1">
-                          <Car className="size-3 text-muted-foreground" /> {info.vehicleNum}
+                      {vehicleNumber !== "—" ? (
+                        <span className="flex items-center gap-1 font-bold">
+                          <Car className="size-3 text-muted-foreground" /> {vehicleNumber}
                         </span>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="p-3 font-semibold text-gray-900 max-w-[150px] truncate" title={info.service}>
-                      {info.service}
+                    <td className="p-3 font-bold text-slate-900" title={ownerName}>
+                      {ownerName}
                     </td>
-                    <td className="p-3 max-w-[130px] truncate text-primary font-bold" title={info.clientName}>
-                      {info.clientName}
+                    <td className="p-3 text-center font-bold text-slate-800">
+                      {totalServices}
                     </td>
-                    <td className="p-3 font-mono text-gray-600">
-                      {info.clientPhone || "—"}
+                    <td className="p-3 text-slate-700 font-semibold" title={assignedEmployee}>
+                      {assignedEmployee}
                     </td>
                     <td className="p-3">
                       <select
@@ -2004,14 +2090,28 @@ function TaskTable({
                         ))}
                       </select>
                     </td>
-                    <td className="p-3 font-mono font-semibold text-slate-800">
-                      {t.applicationId || "—"}
+                    <td className="p-3 font-mono text-slate-600">{pucExp}</td>
+                    <td className="p-3 font-mono text-slate-600">{taxExp}</td>
+                    <td className="p-3 font-mono text-slate-600">{fitExp}</td>
+                    <td className="p-3 font-mono text-slate-600">{insExp}</td>
+                    <td className="p-3 font-mono text-slate-600">{natPermitExp}</td>
+                    <td className="p-3 font-mono text-slate-600">{gujPermitExp}</td>
+                    <td className="p-3 font-bold text-slate-900 font-mono">
+                      ₹{Number(totalPay).toLocaleString("en-IN")}
                     </td>
-                    <td className="p-3 text-gray-600 truncate max-w-[120px]" title={info.taskName}>
-                      {info.taskName}
+                    <td className="p-3 font-bold text-emerald-700 font-mono">
+                      ₹{Number(advPay).toLocaleString("en-IN")}
                     </td>
-                    <td className="p-3 text-gray-800 font-medium truncate max-w-[120px]" title={t.assignedEmployeeName || t.assignee || "Unassigned"}>
-                      {t.assignedEmployeeName || t.assignee || "Unassigned"}
+                    <td className="p-3 font-semibold text-blue-600 font-mono">
+                      {appNo}
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border border-slate-200"
+                        style={getApplicationTypeStyle(appType)}
+                      >
+                        {appType}
+                      </span>
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -2069,7 +2169,7 @@ function TaskTable({
               })}
               {paginatedTasks.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={25} className="p-6 text-center text-muted-foreground">
                     No tasks match the active filters.
                   </td>
                 </tr>
@@ -2349,6 +2449,7 @@ function TaskFormDialog({
   const [reminderMinutes, setReminderMinutes] = useState<string>("0");
   const [saving, setSaving] = useState(false);
   const [remarks, setRemarks] = useState("");
+  const [applicationId, setApplicationId] = useState("");
 
   // Subtasks and Templates
   const [checklist, setChecklist] = useState<TaskSubtask[]>([]);
@@ -2370,6 +2471,7 @@ function TaskFormDialog({
       setServiceName(editing.serviceName ?? "");
       setDescription(editing.description ?? "");
       setRemarks(editing.remarks ?? "");
+      setApplicationId(editing.applicationId ?? "");
       const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
       const matchedEmp = activeEmployees.find(e =>
         e.id === editing.assignee ||
@@ -2404,6 +2506,7 @@ function TaskFormDialog({
       setServiceName("");
       setDescription("");
       setRemarks("");
+      setApplicationId("");
       const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
       const defaultEmp = activeEmployees.find((e) => e.role === "admin" || e.username === "admin") || activeEmployees[0];
       setAssignee(defaultEmp?.id || "");
@@ -2527,6 +2630,7 @@ function TaskFormDialog({
             clientName: activeClientName,
             serviceType: serviceName.trim(),
             remarks: remarks.trim(),
+            applicationId: applicationId.trim(),
           },
           actor,
           "Task edited",
@@ -2554,6 +2658,7 @@ function TaskFormDialog({
           clientName: activeClientName,
           serviceType: serviceName.trim(),
           remarks: remarks.trim(),
+          applicationId: applicationId.trim(),
         });
       }
       onClose();
@@ -2621,6 +2726,15 @@ function TaskFormDialog({
               placeholder="Remarks or latest status updates..."
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Application Number</Label>
+            <Input
+              placeholder="e.g. APL-2026-9926 (Enter manually or leave empty)"
+              value={applicationId}
+              onChange={(e) => setApplicationId(e.target.value)}
             />
           </div>
 
@@ -3014,12 +3128,20 @@ function TaskDetailsSheet({
         getDoc(doc(db, "registry_applications_v1", targetAppId)).then((aSnap) => {
           if (aSnap.exists()) {
             setLinkedApp({ id: aSnap.id, ...aSnap.data() });
-          } else if (currentTask?.applicationId) {
+          } else {
             // Secondary lookup by applicationId string field
-            const q = query(collection(db, "registry_applications_v1"), where("applicationId", "==", currentTask.applicationId));
+            const appId = currentTask?.applicationId || targetAppId;
+            const q = query(collection(db, "registry_applications_v1"), where("applicationId", "==", appId));
             getDocs(q).then((qSnap) => {
               if (!qSnap.empty) {
                 setLinkedApp({ id: qSnap.docs[0].id, ...qSnap.docs[0].data() });
+              } else if (currentTask?.vehicleNumber) {
+                const qVeh = query(collection(db, "registry_applications_v1"), where("vehicleNumber", "==", currentTask.vehicleNumber));
+                getDocs(qVeh).then((vSnap) => {
+                  if (!vSnap.empty) {
+                    setLinkedApp({ id: vSnap.docs[0].id, ...vSnap.docs[0].data() });
+                  }
+                }).catch(console.error);
               }
             }).catch(console.error);
           }
@@ -3537,7 +3659,7 @@ function TaskDetailsSheet({
                 open={fullAppModalOpen}
                 onOpenChange={setFullAppModalOpen}
                 application={linkedApp}
-                vehicle={linkedVehicle}
+                vehicle={linkedVehicle || linkedApp?.vehicleDetails || linkedApp?.vehicleMaster || linkedApp}
               />
 
               {activeTask.recordId && (

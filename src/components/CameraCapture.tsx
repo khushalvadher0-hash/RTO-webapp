@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { Camera } from "lucide-react";
+import { Camera, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface CameraCaptureProps {
@@ -7,6 +7,7 @@ interface CameraCaptureProps {
   isPlaying: boolean;
   onVideoRefReady: (videoElement: HTMLVideoElement) => void;
   onCapture: () => void;
+  onSwitchCamera?: () => void;
 }
 
 export function CameraCapture({
@@ -14,6 +15,7 @@ export function CameraCapture({
   isPlaying,
   onVideoRefReady,
   onCapture,
+  onSwitchCamera,
 }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -43,7 +45,20 @@ export function CameraCapture({
 
       {isPlaying && (
         <div className="flex items-center justify-center gap-3 pt-1">
+          {onSwitchCamera && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onSwitchCamera}
+              className="bg-white border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-xl px-4 py-3 text-xs flex items-center gap-2"
+              title="Switch Camera (Front/Rear)"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Flip Camera
+            </Button>
+          )}
           <Button
+            type="button"
             onClick={onCapture}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl px-8 py-3 text-xs flex items-center gap-2 shadow-lg shadow-blue-500/25 transition active:scale-95"
           >

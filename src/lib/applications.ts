@@ -478,7 +478,7 @@ export async function saveApplicationAndVehicle(
       services: servicesList,
       serviceCards: serviceCards,
       applicationDocId: finalAppId,
-      applicationId: generatedAppIdStr,
+      applicationId: "",
       applicationType: appData.applicationType || "Home",
       vehicleId: cleanVehicleNo,
       vehicleNumber: appData.vehicleNumber,

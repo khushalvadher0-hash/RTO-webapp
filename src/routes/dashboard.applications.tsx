@@ -668,20 +668,26 @@ function ApplicationsPage() {
                     );
                   }
 
-                  const v = app.vehicleDetails || {};
+                  const appRaw = app as any;
+                  const v = appRaw.vehicleDetails || appRaw.vehicleMaster || appRaw || {};
                   const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
                   const regTotalPay = acc?.totalCharges ?? acc?.totalPayment ?? app.amount ?? 0;
                   const regAdvPay = acc?.advancePaid ?? acc?.advancePayment ?? app.totalPaid ?? 0;
 
                   const srvs = app.services || [];
-                  const pucExp = srvs.includes("PUC") ? (app.pucExpiryDate || v.pucExpiryDate || "") : "";
-                  const taxExp = srvs.includes("Tax") ? (app.taxExpiryDate || v.taxDetails?.expiryDate || "") : "";
-                  const fitExp = srvs.includes("Fitness") ? (app.fitnessExpiryDate || v.fitnessDetails?.expiryDate || "") : "";
-                  const insExp = srvs.includes("Insurance") ? (app.insuranceExpiryDate || v.insuranceDetails?.expiryDate || "") : "";
-                  const natPermitExp = srvs.includes("Permit") ? (app.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate || "") : "";
-                  const gujPermitExp = srvs.includes("Permit") ? (app.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "") : "";
-                  const npAuthExp = srvs.includes("Permit") ? (app.npAuthExpiryDate || v.permitDetails?.nationalAuthExpiryDate || "") : "";
-                  const regValidity = srvs.includes("Registration Renewal") ? (app.registrationRenewalExpiryDate || v.registrationDetails?.registrationValidity || "") : "";
+                  const ownerName = app.ownerName || appRaw.clientName || v.ownerName || "—";
+                  const phoneNo = app.mobileNumber || appRaw.phone || appRaw.phoneNo || v.phone || v.mobileNumber || "—";
+                  const makerName = v.makerName || appRaw.makerName || "—";
+                  const modelName = v.modelName || appRaw.modelName || "—";
+
+                  const pucExp = appRaw.pucExpiryDate || v.pucExpiryDate || v.pucDetails?.expiryDate || "—";
+                  const taxExp = appRaw.taxExpiryDate || v.taxExpiryDate || v.taxDetails?.expiryDate || "—";
+                  const fitExp = appRaw.fitnessExpiryDate || v.fitnessExpiryDate || v.fitnessDetails?.expiryDate || "—";
+                  const insExp = appRaw.insuranceExpiryDate || v.insuranceExpiryDate || v.insuranceDetails?.expiryDate || "—";
+                  const natPermitExp = appRaw.nationalPermitExpiryDate || v.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate || "—";
+                  const gujPermitExp = appRaw.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "—";
+                  const npAuthExp = appRaw.npAuthExpiryDate || v.npAuthExpiryDate || v.permitDetails?.nationalAuthExpiryDate || "—";
+                  const regValidity = appRaw.registrationRenewalExpiryDate || v.registrationRenewalExpiryDate || v.registrationDetails?.registrationValidity || "—";
 
                   return (
                     <tr
@@ -689,20 +695,21 @@ function ApplicationsPage() {
                       onClick={() => setViewingApp(app)}
                       className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                     >
+                      <td className="py-3.5 px-4 text-center text-slate-400 font-mono">{index + 1}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
                         {app.vehicleNumber}
                       </td>
                       <td className="py-3.5 px-4 font-bold text-slate-800">
-                        {app.ownerName}
+                        {ownerName}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-700">
-                        {app.mobileNumber}
+                        {phoneNo}
                       </td>
                       <td className="py-3.5 px-4 text-slate-700">
-                        {v.makerName || "—"}
+                        {makerName}
                       </td>
                       <td className="py-3.5 px-4 text-slate-700">
-                        {v.modelName || "—"}
+                        {modelName}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{pucExp}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{taxExp}</td>

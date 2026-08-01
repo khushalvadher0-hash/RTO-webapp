@@ -101,40 +101,66 @@ export function useCamera() {
         }
       }, 5000);
 
-      // 1. Detect Device
-      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      // 1. Detect Device & Touch support
+      const isMobile =
+        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+        (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) ||
+        window.innerWidth < 1024;
 
       // Constraints strategy
       const constraintsList: MediaStreamConstraints[] = [];
 
       if (isMobile) {
-        // Mobile: Prefer facingMode ideal: environment
+        // Attempt enumerating devices to locate rear camera ID directly
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoInputs = devices.filter((d) => d.kind === "videoinput");
+          const rearDevice = videoInputs.find((d) =>
+            /back|rear|environment|0|main/i.test(d.label || "")
+          );
+          if (rearDevice && rearDevice.deviceId) {
+            constraintsList.push({
+              video: { deviceId: { exact: rearDevice.deviceId } },
+              audio: false,
+            });
+            constraintsList.push({
+              video: { deviceId: rearDevice.deviceId },
+              audio: false,
+            });
+          }
+        } catch (e) {
+          console.warn("enumerateDevices check error:", e);
+        }
+
+        // Mobile Constraint 1: Exact environment facingMode
         constraintsList.push({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
+          video: { facingMode: { exact: "environment" } },
           audio: false,
         });
-        // Fallback mobile: facingMode user
+        // Mobile Constraint 2: String environment facingMode
+        constraintsList.push({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+        // Mobile Constraint 3: Ideal environment facingMode
+        constraintsList.push({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        // Mobile Fallback: User facingMode
         constraintsList.push({
           video: { facingMode: "user" },
           audio: false,
         });
       } else {
-        // Desktop / Laptop: Prefer facingMode user or video: true
+        // Desktop / Laptop: Prefer user facingMode
         constraintsList.push({
-          video: {
-            facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
+          video: { facingMode: "user" },
           audio: false,
         });
       }
 
-      // Final fallback for all devices
+      // Final universal fallback for all devices
       constraintsList.push({ video: true, audio: false });
 
       let activeStream: MediaStream | null = null;

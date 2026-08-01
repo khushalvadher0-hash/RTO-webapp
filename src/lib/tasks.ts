@@ -646,6 +646,7 @@ export interface CreateTaskInput {
   assignedEmployeeRole?: string;
   remarks?: string;
   appointmentDate?: string;
+  applicationId?: string;
 }
 
 export async function resolveAssigneeIdentity(input: string): Promise<{
@@ -760,6 +761,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     createdDate: now,
     remarks: input.description ?? "",
     activityLog: [initActivity],
+    applicationId: input.applicationId,
   };
 
   try {
@@ -797,6 +799,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
       createdDate: task.createdDate,
       remarks: task.remarks,
       activityLog: task.activityLog,
+      applicationId: task.applicationId,
       // Conditionally include optional fields only if they have values
       ...(task.dueDate ? { dueDate: task.dueDate } : {}),
       ...(task.reminderMinutes !== undefined ? { reminderMinutes: task.reminderMinutes } : {}),
@@ -961,7 +964,7 @@ export async function updateTask(
         ...existingTaskData,
         id: taskId,
         taskId: taskId,
-        applicationId: appData.applicationId || existingTaskData.applicationId || (patch as any).applicationId,
+        applicationId: (patch as any).applicationId !== undefined ? (patch as any).applicationId : (existingTaskData.applicationId || appData.applicationId || ""),
         applicationDocId: appDocId,
         recordId: appDocId,
         clientId: appDocId,

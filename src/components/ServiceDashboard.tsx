@@ -275,6 +275,7 @@ export function ServiceDashboard({
         const rawStatus = acc?.paymentStatus ?? app?.paymentStatus ?? item.paymentStatus ?? (remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partially Paid" : "Pending");
         const pStatus = rawStatus === "Partially Paid" ? "Partial" : rawStatus;
 
+        const v = app?.vehicleDetails || app?.vehicleMaster || app || {};
         const enriched = {
           ...item,
           applicationId: app?.applicationId || item.applicationId || "",
@@ -289,8 +290,18 @@ export function ServiceDashboard({
           totalPaid: advAmt,
           pendingAmount: remAmt,
           paymentStatus: pStatus,
+          subModule: app?.subModule || (app?.licenseDetails ? "licence" : item.subModule || "services"),
+          applicationType: app?.applicationType || item.applicationType || (app?.subModule === "licence" ? "Licence" : "Home"),
           licenseDetails: app?.licenseDetails || item.licenseDetails,
           dateOfBirth: app?.licenseDetails?.dateOfBirth || item.dateOfBirth,
+          pucExpiryDate: app?.pucExpiryDate || item.pucExpiryDate || v.pucExpiryDate || v.pucDetails?.expiryDate || "—",
+          taxExpiryDate: app?.taxExpiryDate || item.taxExpiryDate || v.taxExpiryDate || v.taxDetails?.expiryDate || "—",
+          fitnessExpiryDate: app?.fitnessExpiryDate || item.fitnessExpiryDate || v.fitnessExpiryDate || v.fitnessDetails?.expiryDate || "—",
+          insuranceExpiryDate: app?.insuranceExpiryDate || item.insuranceExpiryDate || v.insuranceExpiryDate || v.insuranceDetails?.expiryDate || "—",
+          nationalPermitExpiryDate: app?.nationalPermitExpiryDate || item.nationalPermitExpiryDate || v.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate || "—",
+          gujaratPermitExpiryDate: app?.gujaratPermitExpiryDate || item.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "—",
+          npAuthExpiryDate: app?.npAuthExpiryDate || item.npAuthExpiryDate || v.npAuthExpiryDate || v.permitDetails?.nationalAuthExpiryDate || "—",
+          registrationRenewalExpiryDate: app?.registrationRenewalExpiryDate || item.registrationRenewalExpiryDate || v.registrationRenewalExpiryDate || v.registrationDetails?.registrationValidity || "—",
         };
         uniqueMap.set(item.id, enriched);
       });

@@ -1,7 +1,6 @@
-// Firebase app initialisation — import this before using db / auth / storage.
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -12,13 +11,6 @@ const firebaseConfig = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
-
-// DEBUG: Verify Vite environment variables are loading
-console.log("Firebase Config", firebaseConfig);
-console.log("API Key:", import.meta.env.VITE_FIREBASE_API_KEY);
-console.log("Auth Domain:", import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
-console.log("Project ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
-console.log("Storage Bucket:", import.meta.env.VITE_FIREBASE_STORAGE_BUCKET);
 
 // DEBUG: Validate critical fields are present
 if (!firebaseConfig.projectId) {
@@ -32,6 +24,17 @@ if (!firebaseConfig.apiKey) {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Use auto-detect long-polling to prevent ERR_QUIC_PROTOCOL_ERROR and network drops
+let dbInstance;
+try {
+  dbInstance = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch (e) {
+  dbInstance = getFirestore(app);
+}
+
+export const db = dbInstance;
 console.log("DB instance", db);
 export const storage = getStorage(app);
