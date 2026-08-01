@@ -25,6 +25,23 @@ export function CameraCapture({
     }
   }, [onVideoRefReady]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      if (stream) {
+        video.srcObject = stream;
+        // Ensure playsinline and muted are set
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        video.play().catch((err) => {
+          console.warn("Video stream play failed:", err);
+        });
+      } else {
+        video.srcObject = null;
+      }
+    }
+  }, [stream]);
+
   return (
     <div className="w-full space-y-3">
       <div className="relative rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800 shadow-inner">

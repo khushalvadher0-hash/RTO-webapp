@@ -112,10 +112,18 @@ export function useCamera() {
 
       if (isMobile) {
         constraintsList.push({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        constraintsList.push({
           video: { facingMode: "environment" },
           audio: false,
         });
       } else {
+        constraintsList.push({
+          video: { facingMode: { ideal: "user" } },
+          audio: false,
+        });
         constraintsList.push({
           video: { facingMode: "user" },
           audio: false,
