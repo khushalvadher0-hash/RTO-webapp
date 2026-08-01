@@ -10,6 +10,7 @@ interface CameraOdometerModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  suggestedValue?: number;
   onCapture: (photoUrl: string, detectedOdometer?: number) => void;
 }
 
@@ -17,6 +18,7 @@ export function CameraOdometerModal({
   isOpen,
   onClose,
   title,
+  suggestedValue,
   onCapture,
 }: CameraOdometerModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -97,7 +99,7 @@ export function CameraOdometerModal({
     stopCamera();
 
     // Run OCR pipeline
-    const { digits, confidence } = await processImage(canvas, compressedDataUrl);
+    const { digits, confidence } = await processImage(canvas, compressedDataUrl, suggestedValue);
     setDetectedDigits(digits);
     setOcrConfidence(confidence);
 
@@ -131,7 +133,7 @@ export function CameraOdometerModal({
         const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0);
-          const { digits, confidence } = await processImage(canvas, dataUrl);
+          const { digits, confidence } = await processImage(canvas, dataUrl, suggestedValue);
           setDetectedDigits(digits);
           setOcrConfidence(confidence);
         }

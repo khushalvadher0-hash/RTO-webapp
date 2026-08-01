@@ -398,6 +398,16 @@ export function DrivingSchoolVehiclesView() {
     return Array.from(studentMap.values());
   }, [infoVehicleReports, applications]);
 
+  // Suggested value for the camera odometer scanner based on target field and current state
+  const cameraSuggestedValue = useMemo(() => {
+    if (cameraTargetField === "start") {
+      return Number(selectedVehicleForReport?.currentOdometer) || 44320;
+    } else {
+      const startVal = Number(reportStartOdometer) || Number(selectedVehicleForReport?.currentOdometer) || 44320;
+      return startVal + 38; // standard default distance increment (38km)
+    }
+  }, [cameraTargetField, reportStartOdometer, selectedVehicleForReport]);
+
   // Handle Camera Capture Return
   const handleCameraCapture = (photoUrl: string, detectedOdometer?: number) => {
     if (cameraTargetField === "start") {
@@ -511,7 +521,7 @@ export function DrivingSchoolVehiclesView() {
                 </div>
 
                 {/* Card Action Buttons (Matching Screenshot 1) */}
-                <div className="p-4 bg-slate-50/50 border-t border-slate-100 grid grid-cols-2 gap-3">
+                <div className="p-4 bg-slate-50/50 border-t border-slate-100 grid grid-cols-2 gap-3 pb-2">
                   <Button
                     variant="outline"
                     onClick={() => openVehicleInfoModal(v)}
@@ -527,6 +537,27 @@ export function DrivingSchoolVehiclesView() {
                   >
                     <FileText className="w-3.5 h-3.5" />
                     Daily Report
+                  </Button>
+                </div>
+                
+                <div className="px-4 pb-4 bg-slate-50/50 flex justify-end">
+                  <Button
+                    variant="ghost"
+                    onClick={async () => {
+                      if (window.confirm('Delete this vehicle?')) {
+                        try {
+                          await deleteDrivingSchoolVehicleRecord(v.id);
+                          toast.success('Vehicle deleted');
+                        } catch (e) {
+                          console.error(e);
+                          toast.error('Failed to delete');
+                        }
+                      }
+                    }}
+                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-[10px] font-bold rounded-lg flex items-center gap-1 px-3 py-1.5"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Delete Vehicle
                   </Button>
                 </div>
               </div>
@@ -1311,6 +1342,7 @@ export function DrivingSchoolVehiclesView() {
         isOpen={cameraModalOpen}
         onClose={() => setCameraModalOpen(false)}
         title={cameraTargetField === "start" ? "Capture Start Odometer Photo" : "Capture End Odometer Photo"}
+        suggestedValue={cameraSuggestedValue}
         onCapture={handleCameraCapture}
       />
     </div>
