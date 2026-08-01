@@ -575,6 +575,7 @@ export async function saveApplicationAndVehicle(
 
     const updatePayload = removeUndefined({
       ...appData,
+      applicationStatus: "Pending",
       vehicleId: cleanVehicleNo,
       updatedAt: now,
       updatedBy: session?.name || "System",
@@ -648,37 +649,62 @@ export async function saveApplicationAndVehicle(
       registrationRenewalExpiryDate: appData.registrationRenewalExpiryDate || "",
       totalCharges: totAmt,
       advancePaid: advAmt,
+      status: "Assigned",
+      taskStatus: "Assigned",
+      done: false,
       updatedAt: now,
     });
 
     const taskQueries = [
       query(collection(db, "registry_tasks"), where("applicationDocId", "==", finalAppId)),
-      query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr)),
+      query(collection(db, "registry_tasks"), where("recordId", "==", finalAppId)),
     ];
+    if (generatedAppIdStr && generatedAppIdStr.trim() !== "" && generatedAppIdStr !== "undefined" && generatedAppIdStr !== "null") {
+      taskQueries.push(query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr)));
+    }
 
     const tasksToSyncMap = new Map();
     for (const q of taskQueries) {
       const snap = await getDocs(q);
-      snap.docs.forEach((d) => tasksToSyncMap.set(d.id, d));
+      snap.docs.forEach((d) => tasksToSyncMap.set(d.id, d.ref));
     }
 
-    for (const tDoc of tasksToSyncMap.values()) {
-      await setDoc(tDoc.ref, syncFields, { merge: true });
+    const taskDirect1 = doc(db, "registry_tasks", finalAppId);
+    const taskDirect1Snap = await getDoc(taskDirect1);
+    if (taskDirect1Snap.exists()) tasksToSyncMap.set(finalAppId, taskDirect1);
+
+    const taskDirect2 = doc(db, "registry_tasks", `task-app-${finalAppId}`);
+    const taskDirect2Snap = await getDoc(taskDirect2);
+    if (taskDirect2Snap.exists()) tasksToSyncMap.set(`task-app-${finalAppId}`, taskDirect2);
+
+    for (const tRef of tasksToSyncMap.values()) {
+      await setDoc(tRef, syncFields, { merge: true });
     }
 
     const serviceQueries = [
       query(collection(db, "registry_services_v2"), where("applicationDocId", "==", finalAppId)),
-      query(collection(db, "registry_services_v2"), where("applicationId", "==", generatedAppIdStr)),
+      query(collection(db, "registry_services_v2"), where("recordId", "==", finalAppId)),
     ];
+    if (generatedAppIdStr && generatedAppIdStr.trim() !== "" && generatedAppIdStr !== "undefined" && generatedAppIdStr !== "null") {
+      serviceQueries.push(query(collection(db, "registry_services_v2"), where("applicationId", "==", generatedAppIdStr)));
+    }
 
     const servicesToSyncMap = new Map();
     for (const q of serviceQueries) {
       const snap = await getDocs(q);
-      snap.docs.forEach((d) => servicesToSyncMap.set(d.id, d));
+      snap.docs.forEach((d) => servicesToSyncMap.set(d.id, d.ref));
     }
 
-    for (const sDoc of servicesToSyncMap.values()) {
-      await setDoc(sDoc.ref, syncFields, { merge: true });
+    const srvDirect1 = doc(db, "registry_services_v2", finalAppId);
+    const srvDirect1Snap = await getDoc(srvDirect1);
+    if (srvDirect1Snap.exists()) servicesToSyncMap.set(finalAppId, srvDirect1);
+
+    const srvDirect2 = doc(db, "registry_services_v2", `task-app-${finalAppId}`);
+    const srvDirect2Snap = await getDoc(srvDirect2);
+    if (srvDirect2Snap.exists()) servicesToSyncMap.set(`task-app-${finalAppId}`, srvDirect2);
+
+    for (const sRef of servicesToSyncMap.values()) {
+      await setDoc(sRef, syncFields, { merge: true });
     }
   } catch (err) {
     console.error("Error syncing tasks and services for application:", err);
@@ -722,7 +748,7 @@ export async function deleteApplication(id: string): Promise<void> {
       const s2 = await getDocs(q2);
       s2.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
     }
-    if (generatedAppIdStr) {
+    if (generatedAppIdStr && generatedAppIdStr.trim() !== "" && generatedAppIdStr !== "undefined" && generatedAppIdStr !== "null") {
       const q3 = query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr));
       const s3 = await getDocs(q3);
       s3.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
@@ -751,7 +777,7 @@ export async function deleteApplication(id: string): Promise<void> {
       const s2 = await getDocs(q2);
       s2.docs.forEach((d) => serviceDocsToDelete.set(d.id, d.ref));
     }
-    if (generatedAppIdStr) {
+    if (generatedAppIdStr && generatedAppIdStr.trim() !== "" && generatedAppIdStr !== "undefined" && generatedAppIdStr !== "null") {
       const q3 = query(collection(db, "registry_services_v2"), where("applicationId", "==", generatedAppIdStr));
       const s3 = await getDocs(q3);
       s3.docs.forEach((d) => serviceDocsToDelete.set(d.id, d.ref));

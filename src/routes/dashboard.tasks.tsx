@@ -491,6 +491,14 @@ function TasksPage() {
         );
       });
 
+      if (s.id?.startsWith("task-app-")) {
+        return null;
+      }
+
+      if (!s.title && !s.serviceType && !s.serviceName) {
+        return null;
+      }
+
       // If task is linked to an application but the application has been deleted, exclude it
       const isLinkedToApp = !!(s.applicationId || s.id?.startsWith("task-app-") || s.recordId?.startsWith("task-app-") || s.applicationDocId?.startsWith("task-app-"));
       if (isLinkedToApp && !linkedApp) {
@@ -622,7 +630,7 @@ function TasksPage() {
     });
 
     // 2. Add manual tasks & service tasks, merging into existing application task if Application ID matches
-    [...manualTasksMapped, ...serviceTasks].forEach((item: any) => {
+    [...manualTasksMapped.filter(Boolean), ...serviceTasks.filter(Boolean)].forEach((item: any) => {
       const keys = getAppKeys(item);
       const existingKey = keys.find((k) => map.has(k));
 
@@ -650,9 +658,9 @@ function TasksPage() {
       }
     });
 
-    // Return unique tasks by deduplicating array values and filtering out completed ones
+    // Return all unique tasks (even completed ones)
     const uniqueValues = Array.from(new Set(map.values()));
-    return uniqueValues.filter((t) => t.status !== "Completed" && !t.done);
+    return uniqueValues;
   }, [tasks, v2Services, vehicles, clients, leads, applications]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
@@ -980,21 +988,23 @@ function TasksPage() {
 
       // Sync to registry_services_v2 collection if exists or create service record
       try {
-        const serviceRef = doc(db, "registry_services_v2", completeModalTask.id);
-        await setDoc(
-          serviceRef,
-          removeUndefined({
-            id: completeModalTask.id,
-            status: "Completed",
-            taskStatus: "Completed",
-            appointmentDate: completeAppointmentDate,
-            rtoExpense: expNum,
-            remarks: completeRemarks.trim(),
-            notes: completeRemarks.trim(),
-            updatedAt: new Date().toISOString(),
-          }),
-          { merge: true }
-        );
+        if (!completeModalTask.id.startsWith("task-app-")) {
+          const serviceRef = doc(db, "registry_services_v2", completeModalTask.id);
+          await setDoc(
+            serviceRef,
+            removeUndefined({
+              id: completeModalTask.id,
+              status: "Completed",
+              taskStatus: "Completed",
+              appointmentDate: completeAppointmentDate,
+              rtoExpense: expNum,
+              remarks: completeRemarks.trim(),
+              notes: completeRemarks.trim(),
+              updatedAt: new Date().toISOString(),
+            }),
+            { merge: true }
+          );
+        }
       } catch (svcErr) {
         console.warn("Service doc sync notice:", svcErr);
       }
@@ -2153,15 +2163,6 @@ function TaskTable({
                         >
                           <MessageSquare className="size-3.5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onDelete(t)}
-                          className="text-red-500 hover:bg-red-50"
-                          title="Delete Task"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -2363,9 +2364,6 @@ function TaskCards({
                     <MessageSquare className="size-3.5" />
                   </Button>
                 </div>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50" onClick={() => onDelete(t)} title="Delete Task">
-                  <Trash2 className="size-3.5" />
-                </Button>
               </div>
             </div>
           );

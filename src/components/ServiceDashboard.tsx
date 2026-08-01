@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getSession } from "@/lib/auth";
 import { collection, onSnapshot, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { isTaskAssignedToUser } from "@/lib/tasks";
 import {
   getServiceClientsAll,
   getServiceStats,
@@ -233,11 +234,7 @@ export function ServiceDashboard({
       // Permission filtering for Completed Services
       const allowed = uniqueCompleted.filter((t: any) => {
         if (isAdmin) return true;
-        const taskAssignee = t.assignedEmployeeName || t.assignee || t.assignedEmployeeId || t.assignedEmployeeUid || "";
-        return (
-          taskAssignee.toLowerCase() === userName.toLowerCase() ||
-          taskAssignee.toLowerCase() === userUid.toLowerCase()
-        );
+        return isTaskAssignedToUser(t, session);
       });
 
       setCompletedTasks(allowed);
@@ -263,8 +260,30 @@ export function ServiceDashboard({
       completedList.forEach((item: any) => {
         const targetAppId = item.applicationDocId || item.applicationId || item.recordId || item.clientId || item.id.replace("task-app-", "");
         let app: any = appsMap.get(targetAppId);
-        if (!app && item.applicationId) {
-          app = apps.find((a: any) => a.applicationId === item.applicationId || a.id === item.applicationId);
+
+        const cleanVeh = item.vehicleNumber || item.vehicleId || "";
+        const cleanVehNo = cleanVeh ? cleanVeh.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+
+        if (!app) {
+          app = apps.find((a: any) => {
+            const aAppId = a.applicationId ? a.applicationId.trim().toUpperCase() : "";
+            const tAppId = item.applicationId ? item.applicationId.trim().toUpperCase() : "";
+            const aVeh = a.vehicleNumber ? a.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "") : "";
+            
+            return (
+              (tAppId && aAppId === tAppId) ||
+              a.id === item.id ||
+              a.id === item.recordId ||
+              a.id === item.applicationDocId ||
+              (item.id && item.id.replace("task-app-", "") === a.id) ||
+              (cleanVehNo && aVeh === cleanVehNo)
+            );
+          });
+        }
+
+        // Filter out completed tasks if their parent application has been deleted or is missing
+        if (!app || app.isDeleted) {
+          return;
         }
 
         const acc = accMapData.get(targetAppId) || accMapData.get(item.applicationId || "") || (app ? accMapData.get(app.id) || accMapData.get(app.applicationId) : null);
@@ -278,7 +297,7 @@ export function ServiceDashboard({
         const v = app?.vehicleDetails || app?.vehicleMaster || app || {};
         const enriched = {
           ...item,
-          applicationId: app?.applicationId || item.applicationId || "",
+          applicationId: item.applicationId || app?.applicationId || "",
           vehicleNumber: app?.vehicleNumber || item.vehicleNumber || item.vehicleId || "",
           clientName: app?.ownerName || item.clientName || item.ownerName || "",
           mobileNumber: app?.mobileNumber || item.mobileNumber || item.ownerPhone || item.phone || "",
@@ -308,13 +327,10 @@ export function ServiceDashboard({
       const uniqueCompleted = Array.from(uniqueMap.values());
 
       // Permission filtering for Completed Services
+      // Permission filtering for Completed Services
       const allowed = uniqueCompleted.filter((t: any) => {
         if (isAdmin) return true;
-        const taskAssignee = t.assignedEmployeeName || t.assignee || t.assignedEmployeeId || t.assignedEmployeeUid || "";
-        return (
-          taskAssignee.toLowerCase() === userName.toLowerCase() ||
-          taskAssignee.toLowerCase() === userUid.toLowerCase()
-        );
+        return isTaskAssignedToUser(t, session);
       });
 
       setCompletedTasks(allowed);
@@ -371,11 +387,13 @@ export function ServiceDashboard({
     if (activeSubModule === "driving_school") return [];
     if (activeSubModule === "licence") {
       list = list.filter((t: any) => {
-        return t.subModule === "licence" || !!t.licenseDetails || (t.applicationType || "").toLowerCase() === "licence";
+        if (t.subModule) return t.subModule === "licence";
+        return (t.applicationType || "").toLowerCase() === "licence";
       });
     } else {
       list = list.filter((t: any) => {
-        return t.subModule !== "licence" && !t.licenseDetails && (t.applicationType || "").toLowerCase() !== "licence";
+        if (t.subModule) return t.subModule === "services";
+        return (t.applicationType || "").toLowerCase() !== "licence";
       });
     }
 
