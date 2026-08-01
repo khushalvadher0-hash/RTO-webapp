@@ -111,49 +111,11 @@ export function useCamera() {
       const constraintsList: MediaStreamConstraints[] = [];
 
       if (isMobile) {
-        // Attempt enumerating devices to locate rear camera ID directly
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const videoInputs = devices.filter((d) => d.kind === "videoinput");
-          const rearDevice = videoInputs.find((d) =>
-            /back|rear|environment|0|main/i.test(d.label || "")
-          );
-          if (rearDevice && rearDevice.deviceId) {
-            constraintsList.push({
-              video: { deviceId: { exact: rearDevice.deviceId } },
-              audio: false,
-            });
-            constraintsList.push({
-              video: { deviceId: rearDevice.deviceId },
-              audio: false,
-            });
-          }
-        } catch (e) {
-          console.warn("enumerateDevices check error:", e);
-        }
-
-        // Mobile Constraint 1: Exact environment facingMode
-        constraintsList.push({
-          video: { facingMode: { exact: "environment" } },
-          audio: false,
-        });
-        // Mobile Constraint 2: String environment facingMode
         constraintsList.push({
           video: { facingMode: "environment" },
           audio: false,
         });
-        // Mobile Constraint 3: Ideal environment facingMode
-        constraintsList.push({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false,
-        });
-        // Mobile Fallback: User facingMode
-        constraintsList.push({
-          video: { facingMode: "user" },
-          audio: false,
-        });
       } else {
-        // Desktop / Laptop: Prefer user facingMode
         constraintsList.push({
           video: { facingMode: "user" },
           audio: false,
