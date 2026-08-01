@@ -194,75 +194,20 @@ export function useCamera() {
       if (videoElement) {
         try {
           videoElement.srcObject = activeStream;
-          await videoElement.play();
-
-          // Wait for metadata
-          await new Promise<void>((resolve) => {
-            if (videoElement.readyState >= 1) {
-              resolve();
-            } else {
-              videoElement.onloadedmetadata = () => resolve();
-            }
-          });
-
-          // Check for 0x0 video dimensions after short delay
-          setTimeout(() => {
-            if (videoElement && (videoElement.videoWidth === 0 || videoElement.videoHeight === 0)) {
-              console.warn("Video dimensions 0x0 detected, falling back to basic video: true");
-              // Retrying with basic video: true
-              navigator.mediaDevices
-                .getUserMedia({ video: true, audio: false })
-                .then((fallbackStream) => {
-                  stopCamera();
-                  streamRef.current = fallbackStream;
-                  videoElement.srcObject = fallbackStream;
-                  videoElement.play();
-                  setState({
-                    stream: fallbackStream,
-                    isLoading: false,
-                    loadingMessage: null,
-                    error: null,
-                    isPlaying: true,
-                  });
-                })
-                .catch(() => {
-                  setState({
-                    stream: null,
-                    isLoading: false,
-                    loadingMessage: null,
-                    error: "Unable to render video stream. Please upload an image.",
-                    isPlaying: false,
-                  });
-                });
-            }
-          }, 1500);
-
-          setState({
-            stream: activeStream,
-            isLoading: false,
-            loadingMessage: null,
-            error: null,
-            isPlaying: true,
-          });
+          videoElement.setAttribute("playsinline", "true");
+          videoElement.play().catch((playErr) => console.warn("Video play exception:", playErr));
         } catch (playErr) {
-          console.error("Error playing video stream:", playErr);
-          setState({
-            stream: activeStream,
-            isLoading: false,
-            loadingMessage: null,
-            error: null,
-            isPlaying: true,
-          });
+          console.warn("Video srcObject error:", playErr);
         }
-      } else {
-        setState({
-          stream: activeStream,
-          isLoading: false,
-          loadingMessage: null,
-          error: null,
-          isPlaying: true,
-        });
       }
+
+      setState({
+        stream: activeStream,
+        isLoading: false,
+        loadingMessage: null,
+        error: null,
+        isPlaying: true,
+      });
     },
     [stopCamera]
   );

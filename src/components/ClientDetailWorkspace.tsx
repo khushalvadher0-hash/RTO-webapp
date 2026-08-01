@@ -1439,6 +1439,11 @@ export function ClientDetailWorkspace({
                                       <Badge variant="outline" className="text-[10px]">
                                         {s.taskStatus}
                                       </Badge>
+                                      {(s as any).appointmentDate && (
+                                        <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
+                                          Appt: {new Date((s as any).appointmentDate).toLocaleDateString("en-IN")}
+                                        </Badge>
+                                      )}
                                       {s.dueDate && (
                                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                                           <Calendar className="size-3" />
@@ -1450,10 +1455,13 @@ export function ClientDetailWorkspace({
                                           App ID: {s.applicationId}
                                         </Badge>
                                       )}
+                                      <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
+                                        Staff: {s.assignedStaff || (s as any).assignedEmployeeName || "Unassigned"}
+                                      </Badge>
                                     </div>
-                                    {s.notes && (
+                                    {(s.notes || (s as any).remarks) && (
                                       <p className="text-xs text-muted-foreground mt-1.5 bg-muted/20 p-2 rounded border leading-relaxed">
-                                        {s.notes}
+                                        <strong className="text-slate-700">Remarks:</strong> {s.notes || (s as any).remarks}
                                       </p>
                                     )}
                                   </div>
@@ -1462,10 +1470,18 @@ export function ClientDetailWorkspace({
                                   <div className="flex items-center gap-4 text-xs font-mono">
                                     <div className="text-right">
                                       <span className="text-[9px] text-muted-foreground block uppercase font-bold">
-                                        Amt
+                                        Charges
                                       </span>
                                       <span className="font-bold text-foreground">
-                                        ₹{s.serviceAmount}
+                                        ₹{s.serviceAmount || 0}
+                                      </span>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="text-[9px] text-purple-700 block uppercase font-bold">
+                                        RTO Exp
+                                      </span>
+                                      <span className="font-bold text-purple-600">
+                                        ₹{(s as any).rtoExpense || 0}
                                       </span>
                                     </div>
                                     <div className="text-right">
@@ -1473,7 +1489,7 @@ export function ClientDetailWorkspace({
                                         Rec
                                       </span>
                                       <span className="font-bold text-green-600">
-                                        ₹{s.amountReceived}
+                                        ₹{s.amountReceived || 0}
                                       </span>
                                     </div>
                                     <div className="text-right">
@@ -1481,7 +1497,7 @@ export function ClientDetailWorkspace({
                                         Pend
                                       </span>
                                       <span className="font-bold text-red-600">
-                                        ₹{s.pendingAmount}
+                                        ₹{s.pendingAmount || 0}
                                       </span>
                                     </div>
                                     <div className="flex gap-1 ml-2">

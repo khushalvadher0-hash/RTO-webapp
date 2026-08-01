@@ -571,38 +571,58 @@ function TasksPage() {
     // Map strictly by Application ID or Task ID to guarantee 1 task row per Application ID
     const map = new Map<string, Task>();
 
+    const getAppKeys = (item: any): string[] => {
+      const keys: string[] = [];
+      if (item.applicationId) keys.push(`app-${item.applicationId}`);
+      if (item.applicationDocId) keys.push(`app-doc-${item.applicationDocId}`);
+      if (item.id && typeof item.id === "string" && item.id.startsWith("task-app-")) {
+        keys.push(`app-doc-${item.id.replace("task-app-", "")}`);
+      }
+      if (item.recordId && typeof item.recordId === "string" && item.recordId.startsWith("task-app-")) {
+        keys.push(`app-doc-${item.recordId.replace("task-app-", "")}`);
+      }
+      return keys;
+    };
+
     // 1. First add application-generated tasks (primary single source of truth for application tasks)
     activeAppTasksOnly.forEach((appTask: any) => {
-      const appKey = appTask.applicationId || appTask.recordId;
-      if (appKey) {
-        map.set(`app-${appKey}`, appTask);
-      } else {
-        map.set(appTask.id, appTask);
-      }
+      const keys = getAppKeys(appTask);
+      const primaryKey = keys[0] || appTask.id;
+      keys.forEach((k) => map.set(k, appTask));
+      if (!keys.length) map.set(primaryKey, appTask);
     });
 
     // 2. Add manual tasks & service tasks, merging into existing application task if Application ID matches
     [...activeTasksOnly, ...activeServiceTasksOnly].forEach((item: any) => {
-      const appKey = item.applicationId || item.applicationDocId;
-      const mapKey = appKey ? `app-${appKey}` : item.taskId || item.id;
+      const keys = getAppKeys(item);
+      const existingKey = keys.find((k) => map.has(k));
 
-      if (map.has(mapKey)) {
+      if (existingKey) {
         // Merge attributes into existing application task
-        const existing = map.get(mapKey)!;
-        map.set(mapKey, {
+        const existing = map.get(existingKey)!;
+        const merged = {
           ...existing,
-          status: item.status !== "Assigned" ? item.status : existing.status,
+          ...item,
+          status: item.status !== undefined ? item.status : existing.status,
           assignee: item.assignee || existing.assignee,
           assignedEmployeeName: item.assignedEmployeeName || existing.assignedEmployeeName,
           remarks: item.remarks || existing.remarks,
           appointmentDate: item.appointmentDate || existing.appointmentDate,
-        });
-      } else if (!appKey) {
-        map.set(mapKey, item);
+          applicationId: existing.applicationId || item.applicationId,
+          vehicleNumber: existing.vehicleNumber || item.vehicleNumber,
+          clientName: existing.clientName || item.clientName,
+        };
+        keys.forEach((k) => map.set(k, merged));
+      } else {
+        const primaryKey = keys[0] || item.taskId || item.id;
+        keys.forEach((k) => map.set(k, item));
+        if (!keys.length) map.set(primaryKey, item);
       }
     });
 
-    return Array.from(map.values());
+    // Return unique tasks by deduplicating array values
+    const uniqueValues = Array.from(new Set(map.values()));
+    return uniqueValues;
   }, [tasks, v2Services, vehicles, clients, leads, applications]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
@@ -3281,8 +3301,14 @@ function TaskDetailsSheet({
             </div>
           </CollapsibleSection>
 
-          {/* Task Step Detail (For License Tasks) */}
-          {(activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence" || (activeTask as any).licenseDetails || (activeTask.serviceName || "").toLowerCase().includes("license") || (activeTask.serviceName || "").toLowerCase().includes("licence") || (activeTask.title || "").toLowerCase().includes("license") || (activeTask.title || "").toLowerCase().includes("licence")) && (
+          {/* Task Step Detail (Only for License SubModule Tasks with active License step details) */}
+          {((activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence") &&
+            (activeTask as any).licenseDetails &&
+            ((activeTask as any).licenseDetails?.newLearningLicence?.enabled ||
+              (activeTask as any).licenseDetails?.dlNewLlEndorsement?.enabled ||
+              (activeTask as any).licenseDetails?.llRenewClass?.enabled ||
+              (activeTask as any).licenseDetails?.dlRenewRetest?.enabled ||
+              (activeTask as any).licenseDetails?.changeDobDl?.enabled)) && (
             <CollapsibleSection title="Task Step Detail (License Workflow)" defaultOpen={true}>
               <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs">
                 {(() => {

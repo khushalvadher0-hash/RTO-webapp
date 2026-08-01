@@ -69,10 +69,6 @@ export function getAppTypeBadgeColor(appType?: string) {
 
 const SERVICE_GROUPS = [
   {
-    category: "LICENSE",
-    items: ["License New", "License Renew", "License Endorsement"],
-  },
-  {
     category: "INSURANCE",
     items: ["Insurance"],
   },
@@ -190,10 +186,22 @@ function ApplicationsPage() {
 
   const filteredApps = applications.filter((app) => {
     if (activeSubModule === "driving_school") return false;
+
+    const isLicenceApp =
+      app.subModule === "licence" ||
+      app.applicationType === "Licence" ||
+      (app.licenseDetails &&
+        (app.licenseDetails.newLearningLicence?.enabled ||
+          app.licenseDetails.dlNewLlEndorsement?.enabled ||
+          app.licenseDetails.llRenewClass?.enabled ||
+          app.licenseDetails.dlRenewRetest?.enabled ||
+          (app.licenseDetails.generalLicenceServices?.selectedServices &&
+            app.licenseDetails.generalLicenceServices.selectedServices.length > 0)));
+
     if (activeSubModule === "licence") {
-      if (app.subModule !== "licence" && !app.licenseDetails) return false;
-    } else {
-      if (app.subModule === "licence") return false;
+      if (!isLicenceApp) return false;
+    } else if (activeSubModule === "services") {
+      if (isLicenceApp) return false;
     }
 
     const term = searchTerm.toLowerCase();
@@ -386,24 +394,22 @@ function ApplicationsPage() {
                   </>
                 ) : (
                   <>
-                    <th className="py-3.5 px-4">Vehicle Number</th>
-                    <th className="py-3.5 px-4">Make & Model</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Vehicle Number</th>
                     <th className="py-3.5 px-4">Owner Name</th>
-                    <th className="py-3.5 px-4">Mobile</th>
-                    <th className="py-3.5 px-4">Service(s)</th>
-                    <th className="py-3.5 px-4">Employee</th>
-                    <th className="py-3.5 px-4">Status</th>
-                    <th className="py-3.5 px-4">Payment Status</th>
-                    <th className="py-3.5 px-4">Total Amount</th>
-                    <th className="py-3.5 px-4">Advance Paid</th>
-                    <th className="py-3.5 px-4">Pending</th>
-                    <th className="py-3.5 px-4">Invoice No</th>
-                    <th className="py-3.5 px-4">Insurance Expiry</th>
-                    <th className="py-3.5 px-4">Fitness Expiry</th>
-                    <th className="py-3.5 px-4">Permit Expiry</th>
-                    <th className="py-3.5 px-4">Tax Expiry</th>
+                    <th className="py-3.5 px-4">Phone Number</th>
+                    <th className="py-3.5 px-4">Maker Name</th>
+                    <th className="py-3.5 px-4">Model Name</th>
                     <th className="py-3.5 px-4">PUC Expiry</th>
-                    <th className="py-3.5 px-4">Reg Validity</th>
+                    <th className="py-3.5 px-4">Tax Expiry</th>
+                    <th className="py-3.5 px-4">Fitness Expiry</th>
+                    <th className="py-3.5 px-4">Insurance Expiry</th>
+                    <th className="py-3.5 px-4">National Permit Expiry</th>
+                    <th className="py-3.5 px-4">Gujarat Permit Expiry</th>
+                    <th className="py-3.5 px-4">NP Authorization Expiry</th>
+                    <th className="py-3.5 px-4">Registration Renewal Expiry</th>
+                    <th className="py-3.5 px-4 text-center">Total Services</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Charges</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Paid</th>
                   </>
                 )}
                 <th className="py-3.5 px-4 text-center">Actions</th>
@@ -663,21 +669,19 @@ function ApplicationsPage() {
                   }
 
                   const v = app.vehicleDetails || {};
-                  const insExpiry = v.insuranceDetails?.expiryDate || "—";
-                  const fitExpiry = v.fitnessDetails?.expiryDate || "—";
-                  const permitExpiry = v.permitDetails?.expiryDate || "—";
-                  const taxExpiry = v.taxDetails?.isLumpsum
-                    ? "Lumpsum"
-                    : v.taxDetails?.expiryDate || "—";
-                  const pucExpiry = v.pucExpiryDate || "—";
-                  const regValidity = v.registrationDetails?.registrationValidity || "—";
+                  const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
+                  const regTotalPay = acc?.totalCharges ?? acc?.totalPayment ?? app.amount ?? 0;
+                  const regAdvPay = acc?.advancePaid ?? acc?.advancePayment ?? app.totalPaid ?? 0;
 
-                  const regAcc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
-                  const regTotalPay = regAcc?.totalPayment ?? app.amount ?? 0;
-                  const regAdvPay = regAcc?.advancePayment ?? app.totalPaid ?? 0;
-                  const regRemPay = regAcc?.remainingPayment ?? (typeof app.pendingAmount === "number" ? app.pendingAmount : Math.max(0, regTotalPay - regAdvPay));
-                  const regRawStatus = regAcc?.paymentStatus ?? app.paymentStatus ?? (regRemPay <= 0 ? "Paid" : regAdvPay > 0 ? "Partially Paid" : "Pending");
-                  const regPStatus = regRawStatus === "Partially Paid" ? "Partial" : regRawStatus;
+                  const srvs = app.services || [];
+                  const pucExp = srvs.includes("PUC") ? (app.pucExpiryDate || v.pucExpiryDate || "") : "";
+                  const taxExp = srvs.includes("Tax") ? (app.taxExpiryDate || v.taxDetails?.expiryDate || "") : "";
+                  const fitExp = srvs.includes("Fitness") ? (app.fitnessExpiryDate || v.fitnessDetails?.expiryDate || "") : "";
+                  const insExp = srvs.includes("Insurance") ? (app.insuranceExpiryDate || v.insuranceDetails?.expiryDate || "") : "";
+                  const natPermitExp = srvs.includes("Permit") ? (app.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate || "") : "";
+                  const gujPermitExp = srvs.includes("Permit") ? (app.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "") : "";
+                  const npAuthExp = srvs.includes("Permit") ? (app.npAuthExpiryDate || v.permitDetails?.nationalAuthExpiryDate || "") : "";
+                  const regValidity = srvs.includes("Registration Renewal") ? (app.registrationRenewalExpiryDate || v.registrationDetails?.registrationValidity || "") : "";
 
                   return (
                     <tr
@@ -685,104 +689,38 @@ function ApplicationsPage() {
                       onClick={() => setViewingApp(app)}
                       className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                     >
-                      <td className="py-3.5 px-4 text-center text-slate-400 font-mono">
-                        {index + 1}
-                      </td>
                       <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
                         {app.vehicleNumber}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-900 font-sans">
-                          {v.makerName || v.modelName
-                            ? `${v.makerName || ""} ${v.modelName || ""}`.trim()
-                            : "—"}
-                        </div>
-                        {(v.fuelType || v.vehicleClass || v.colour) && (
-                          <div className="text-[10px] text-slate-500 font-normal">
-                            {[v.fuelType, v.vehicleClass, v.colour].filter(Boolean).join(" • ")}
-                          </div>
-                        )}
+                      <td className="py-3.5 px-4 font-bold text-slate-800">
+                        {app.ownerName}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <div>{app.ownerName}</div>
-                        {(v.coName || v.groupName) && (
-                          <div className="text-[10px] text-slate-400">
-                            {[v.coName ? `C/O: ${v.coName}` : "", v.groupName ? `Grp: ${v.groupName}` : ""]
-                              .filter(Boolean)
-                              .join(" • ")}
-                          </div>
-                        )}
+                      <td className="py-3.5 px-4 font-mono text-slate-700">
+                        {app.mobileNumber}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-500">{app.mobileNumber}</td>
-                      <td className="py-3.5 px-4 max-w-[200px]">
-                        <div className="flex flex-wrap gap-1">
-                          {app.services?.map((srv, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-[10px] font-medium"
-                            >
-                              {srv}
-                            </span>
-                          ))}
-                        </div>
+                      <td className="py-3.5 px-4 text-slate-700">
+                        {v.makerName || "—"}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600">
-                        {app.assignedEmployeeName || "Unassigned"}
+                      <td className="py-3.5 px-4 text-slate-700">
+                        {v.modelName || "—"}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={cn(
-                            "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            app.applicationStatus === "Approved" &&
-                              "bg-emerald-50 text-emerald-700 border border-emerald-200",
-                            app.applicationStatus === "Submitted" &&
-                              "bg-blue-50 text-blue-700 border border-blue-200",
-                            app.applicationStatus === "In Review" &&
-                              "bg-amber-50 text-amber-700 border border-amber-200",
-                            app.applicationStatus === "Rejected" &&
-                              "bg-rose-50 text-rose-700 border border-rose-200",
-                            app.applicationStatus === "On Hold" &&
-                              "bg-purple-50 text-purple-700 border border-purple-200",
-                            app.applicationStatus === "Draft" &&
-                              "bg-slate-100 text-slate-700 border border-slate-200"
-                          )}
-                        >
-                          {app.applicationStatus}
-                        </span>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{pucExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{taxExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{fitExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{insExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{natPermitExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{gujPermitExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{npAuthExp}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{regValidity}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">
+                        {srvs.length}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={cn(
-                            "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            regPStatus === "Paid" &&
-                              "bg-emerald-50 text-emerald-700 border border-emerald-200",
-                            regPStatus === "Pending" &&
-                              "bg-amber-50 text-amber-700 border border-amber-200",
-                            regPStatus === "Partial" &&
-                              "bg-blue-50 text-blue-700 border border-blue-200"
-                          )}
-                        >
-                          {regPStatus}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-900">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
                         ₹{regTotalPay.toLocaleString("en-IN")}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-emerald-700">
+                      <td className="py-3.5 px-4 font-bold text-emerald-700 font-mono">
                         ₹{regAdvPay.toLocaleString("en-IN")}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-amber-700">
-                        ₹{regRemPay.toLocaleString("en-IN")}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-xs font-semibold text-blue-600">
-                        {app.invoiceNumber || "—"}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{insExpiry}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{fitExpiry}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{permitExpiry}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{taxExpiry}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{pucExpiry}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{regValidity}</td>
                       <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           <button

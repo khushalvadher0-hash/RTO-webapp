@@ -9,6 +9,7 @@ import {
   getDocs,
   getDoc,
   deleteDoc,
+  runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { removeUndefined } from "./records";
@@ -24,8 +25,17 @@ export interface AccountingRecord {
   applicationDocId?: string;
   clientId?: string;
   clientName?: string;
+  ownerName?: string;
   mobileNumber?: string;
   vehicleNumber?: string;
+  employee?: string;
+  assignedEmployeeName?: string;
+  serviceCount?: number;
+  selectedServices?: string[] | string;
+  totalCharges?: number;
+  advancePaid?: number;
+  outstanding?: number;
+  rtoExpense?: number;
   totalPayment: number;
   advancePayment: number;
   remainingPayment: number;
@@ -287,6 +297,33 @@ export interface ApplicationRecord {
   applicationType?: string;
   trackExpiry?: TrackExpirySettings;
   vehicleDetails: VehicleMaster;
+  // Special Services fields
+  pucExpiryDate?: string;
+  pucCharges?: number;
+  pucRemarks?: string;
+  insuranceCompany?: string;
+  insurancePolicyNumber?: string;
+  insuranceExpiryDate?: string;
+  insuranceCharges?: number;
+  insuranceRemarks?: string;
+  taxExpiryDate?: string;
+  taxCharges?: number;
+  taxRemarks?: string;
+  fitnessExpiryDate?: string;
+  fitnessCharges?: number;
+  fitnessRemarks?: string;
+  permitType?: "National" | "Gujarat" | string;
+  npAuth?: boolean;
+  permitExpiryDate?: string;
+  permitCharges?: number;
+  permitRemarks?: string;
+  nationalPermitExpiryDate?: string;
+  gujaratPermitExpiryDate?: string;
+  npAuthExpiryDate?: string;
+  registrationRenewalExpiryDate?: string;
+  registrationRenewalCharges?: number;
+  registrationRenewalRemarks?: string;
+  specialServicesDetails?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
@@ -359,42 +396,177 @@ export async function saveApplicationAndVehicle(
     vehicleNumberClean: cleanVehicleNo,
     ownerName: appData.ownerName,
     phone: appData.mobileNumber,
+    pucExpiryDate: appData.pucExpiryDate || appData.vehicleDetails?.pucExpiryDate || "",
+    insuranceDetails: appData.insuranceCompany || appData.insuranceExpiryDate ? {
+      company: appData.insuranceCompany || "",
+      policyNumber: appData.insurancePolicyNumber || "",
+      expiryDate: appData.insuranceExpiryDate || "",
+      amount: appData.insuranceCharges || 0,
+      remarks: appData.insuranceRemarks || "",
+    } : appData.vehicleDetails?.insuranceDetails,
+    taxDetails: appData.taxExpiryDate ? {
+      expiryDate: appData.taxExpiryDate || "",
+      amount: appData.taxCharges || 0,
+      remarks: appData.taxRemarks || "",
+    } : appData.vehicleDetails?.taxDetails,
+    fitnessDetails: appData.fitnessExpiryDate ? {
+      expiryDate: appData.fitnessExpiryDate || "",
+      amount: appData.fitnessCharges || 0,
+      remarks: appData.fitnessRemarks || "",
+    } : appData.vehicleDetails?.fitnessDetails,
+    permitDetails: appData.permitExpiryDate || appData.permitType ? {
+      permitType: appData.permitType || "",
+      expiryDate: appData.permitExpiryDate || "",
+      nationalPermitExpiryDate: appData.nationalPermitExpiryDate || "",
+      gujaratPermitExpiryDate: appData.gujaratPermitExpiryDate || "",
+      nationalAuthExpiryDate: appData.npAuthExpiryDate || "",
+      remarks: appData.permitRemarks || "",
+    } : appData.vehicleDetails?.permitDetails,
+    registrationDetails: appData.registrationRenewalExpiryDate ? {
+      registrationValidity: appData.registrationRenewalExpiryDate,
+    } : appData.vehicleDetails?.registrationDetails,
     trackExpiry: appData.trackExpiry || appData.vehicleDetails?.trackExpiry,
     updatedAt: now,
     updatedBy: session?.name || "System",
   });
 
-  const existingVehicleSnap = await getDoc(vehicleRef);
-  if (!existingVehicleSnap.exists()) {
-    vehiclePayload.createdAt = now;
-  }
-  await setDoc(vehicleRef, vehiclePayload, { merge: true });
+  const totAmt = Number(appData.amount) || 0;
+  const advAmt = Number(appData.totalPaid) || 0;
+  const remAmt = typeof appData.pendingAmount === "number" ? appData.pendingAmount : Math.max(0, totAmt - advAmt);
+  const pStatus: "Paid" | "Partially Paid" | "Pending" = remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partially Paid" : "Pending";
+  const servicesList = appData.services || [];
+  const joinedServices = servicesList.join(", ");
 
   let finalAppId = existingAppId;
-  let docRef;
-
   let generatedAppIdStr = "";
+
   if (!finalAppId) {
+    // ─── NEW APPLICATION: ATOMIC FIRESTORE TRANSACTION ─────────────────
     const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const generatedId = `APL-2026-${randomNum}`;
-    docRef = doc(collection(db, APPLICATIONS_COL));
-    finalAppId = docRef.id;
-    generatedAppIdStr = generatedId;
+    generatedAppIdStr = `APL-2026-${randomNum}`;
+
+    const newAppRef = doc(collection(db, APPLICATIONS_COL));
+    finalAppId = newAppRef.id;
+
+    const newTaskRef = doc(collection(db, "registry_tasks"));
+    const newAccountingRef = doc(db, ACCOUNTING_COL, finalAppId);
 
     const newAppPayload = removeUndefined({
       ...appData,
       id: finalAppId,
-      applicationId: generatedId,
+      applicationId: generatedAppIdStr,
       vehicleId: cleanVehicleNo,
       createdAt: now,
       updatedAt: now,
       createdBy: session?.name || "System",
     });
 
-    await setDoc(docRef, newAppPayload);
+    const serviceCards = servicesList.map((srv) => ({
+      id: `card-${Math.random().toString(36).substring(2, 9)}`,
+      taskName: `${srv} - ${appData.vehicleNumber}`,
+      serviceName: srv,
+      description: `Processing ${srv} for vehicle ${appData.vehicleNumber}`,
+      templateId: "",
+    }));
+
+    const newTaskPayload = removeUndefined({
+      id: newTaskRef.id,
+      taskId: newTaskRef.id,
+      title: `${joinedServices || "Application Services"} - ${appData.vehicleNumber}`,
+      serviceName: joinedServices,
+      serviceType: joinedServices,
+      services: servicesList,
+      serviceCards: serviceCards,
+      applicationDocId: finalAppId,
+      applicationId: generatedAppIdStr,
+      applicationType: appData.applicationType || "Home",
+      vehicleId: cleanVehicleNo,
+      vehicleNumber: appData.vehicleNumber,
+      ownerName: appData.ownerName,
+      ownerPhone: appData.mobileNumber,
+      clientName: appData.ownerName || "",
+      mobileNumber: appData.mobileNumber || "",
+      phone: appData.mobileNumber || "",
+      assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+      assignee: appData.assignedEmployeeName || "Unassigned",
+      assignedEmployeeId: appData.assignedEmployeeId || "",
+      assignedEmployeeUid: appData.assignedEmployeeId || "",
+      reference: `${generatedAppIdStr} - ${appData.vehicleNumber}`,
+      trackExpiry: appData.trackExpiry || appData.vehicleDetails?.trackExpiry,
+      remarks: appData.remarks || "",
+      dueDate: appData.dueDate || "",
+      priority: appData.priority || "Medium",
+      documents: appData.documents || {},
+      subModule: appData.subModule,
+      licenseDetails: appData.licenseDetails,
+      issueDate: now,
+      createdDate: now,
+      createdAt: now,
+      createdBy: session?.name || "System",
+      manual: false,
+      status: appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned",
+      done: false,
+      associationType: "application",
+      bucket: "applications",
+      // Expiry details
+      pucExpiryDate: appData.pucExpiryDate || "",
+      taxExpiryDate: appData.taxExpiryDate || "",
+      fitnessExpiryDate: appData.fitnessExpiryDate || "",
+      insuranceExpiryDate: appData.insuranceExpiryDate || "",
+      nationalPermitExpiryDate: appData.nationalPermitExpiryDate || "",
+      gujaratPermitExpiryDate: appData.gujaratPermitExpiryDate || "",
+      npAuthExpiryDate: appData.npAuthExpiryDate || "",
+      registrationRenewalExpiryDate: appData.registrationRenewalExpiryDate || "",
+      totalCharges: totAmt,
+      advancePaid: advAmt,
+      rtoExpense: 0,
+      updatedAt: now,
+    });
+
+    const newAccountingPayload = removeUndefined({
+      id: finalAppId,
+      applicationId: generatedAppIdStr,
+      applicationDocId: finalAppId,
+      clientId: finalAppId,
+      clientName: appData.ownerName || "",
+      ownerName: appData.ownerName || "",
+      mobileNumber: appData.mobileNumber || "",
+      vehicleNumber: appData.vehicleNumber || "",
+      employee: appData.assignedEmployeeName || "Unassigned",
+      assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+      serviceCount: servicesList.length,
+      selectedServices: servicesList,
+      totalCharges: totAmt,
+      advancePaid: advAmt,
+      outstanding: remAmt,
+      rtoExpense: 0,
+      totalPayment: totAmt,
+      advancePayment: advAmt,
+      remainingPayment: remAmt,
+      paymentStatus: pStatus,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Execute ATOMIC Firestore transaction
+    await runTransaction(db, async (transaction) => {
+      const vehSnap = await transaction.get(vehicleRef);
+      if (!vehSnap.exists()) {
+        vehiclePayload.createdAt = now;
+        transaction.set(vehicleRef, vehiclePayload);
+      } else {
+        transaction.set(vehicleRef, vehiclePayload, { merge: true });
+      }
+
+      transaction.set(newAppRef, newAppPayload);
+      transaction.set(newTaskRef, newTaskPayload);
+      transaction.set(newAccountingRef, newAccountingPayload);
+    });
+
   } else {
-    docRef = doc(db, APPLICATIONS_COL, finalAppId);
-    const existingSnap = await getDoc(docRef);
+    // ─── UPDATE EXISTING APPLICATION ────────────────────────────────────
+    const appRef = doc(db, APPLICATIONS_COL, finalAppId);
+    const existingSnap = await getDoc(appRef);
     if (existingSnap.exists()) {
       generatedAppIdStr = existingSnap.data()?.applicationId || finalAppId;
     } else {
@@ -408,15 +580,8 @@ export async function saveApplicationAndVehicle(
       updatedBy: session?.name || "System",
     });
 
-    await setDoc(docRef, updatePayload, { merge: true });
-  }
-
-  // ─── CREATE / SYNC ACCOUNTING RECORD FOR THIS APPLICATION ───────────────
-  try {
-    const totAmt = Number(appData.amount) || 0;
-    const advAmt = Number(appData.totalPaid) || 0;
-    const remAmt = typeof appData.pendingAmount === "number" ? appData.pendingAmount : Math.max(0, totAmt - advAmt);
-    const pStatus: "Paid" | "Partially Paid" | "Pending" = remAmt <= 0 ? "Paid" : advAmt > 0 ? "Partially Paid" : "Pending";
+    await setDoc(vehicleRef, vehiclePayload, { merge: true });
+    await setDoc(appRef, updatePayload, { merge: true });
 
     await saveAccountingRecord({
       id: finalAppId,
@@ -424,8 +589,17 @@ export async function saveApplicationAndVehicle(
       applicationDocId: finalAppId,
       clientId: finalAppId,
       clientName: appData.ownerName || "",
+      ownerName: appData.ownerName || "",
       mobileNumber: appData.mobileNumber || "",
       vehicleNumber: appData.vehicleNumber || "",
+      employee: appData.assignedEmployeeName || "Unassigned",
+      assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+      serviceCount: servicesList.length,
+      selectedServices: servicesList,
+      totalCharges: totAmt,
+      advancePaid: advAmt,
+      outstanding: remAmt,
+      rtoExpense: 0,
       totalPayment: totAmt,
       advancePayment: advAmt,
       remainingPayment: remAmt,
@@ -433,15 +607,10 @@ export async function saveApplicationAndVehicle(
       createdAt: now,
       updatedAt: now,
     });
-  } catch (accErr) {
-    console.error("Error creating/updating accounting record:", accErr);
   }
 
-  // ─── AUTOMATIC TASK & SERVICES SYNC FOR APPLICATION SERVICES ──────────
+  // ─── SYNC TASKS & SERVICES FOR UPDATES ──────────────────────────────
   try {
-    const servicesList = appData.services || [];
-    const joinedServices = servicesList.join(", ");
-
     const syncFields = removeUndefined({
       title: `${joinedServices || "Application Services"} - ${appData.vehicleNumber}`,
       serviceName: joinedServices,
@@ -465,15 +634,23 @@ export async function saveApplicationAndVehicle(
       trackExpiry: appData.trackExpiry || appData.vehicleDetails?.trackExpiry,
       remarks: appData.remarks || "",
       dueDate: appData.dueDate || "",
-      reminder: appData.reminder || "",
       priority: appData.priority || "Medium",
       documents: appData.documents || {},
       subModule: appData.subModule,
       licenseDetails: appData.licenseDetails,
+      pucExpiryDate: appData.pucExpiryDate || "",
+      taxExpiryDate: appData.taxExpiryDate || "",
+      fitnessExpiryDate: appData.fitnessExpiryDate || "",
+      insuranceExpiryDate: appData.insuranceExpiryDate || "",
+      nationalPermitExpiryDate: appData.nationalPermitExpiryDate || "",
+      gujaratPermitExpiryDate: appData.gujaratPermitExpiryDate || "",
+      npAuthExpiryDate: appData.npAuthExpiryDate || "",
+      registrationRenewalExpiryDate: appData.registrationRenewalExpiryDate || "",
+      totalCharges: totAmt,
+      advancePaid: advAmt,
       updatedAt: now,
     });
 
-    // 1. Sync tasks in registry_tasks
     const taskQueries = [
       query(collection(db, "registry_tasks"), where("applicationDocId", "==", finalAppId)),
       query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr)),
@@ -485,32 +662,10 @@ export async function saveApplicationAndVehicle(
       snap.docs.forEach((d) => tasksToSyncMap.set(d.id, d));
     }
 
-    if (tasksToSyncMap.size === 0) {
-      // Create new task if no task exists
-      const newTaskRef = doc(collection(db, "registry_tasks"));
-      await setDoc(newTaskRef, {
-        id: newTaskRef.id,
-        taskId: newTaskRef.id,
-        ...syncFields,
-        issueDate: (appData as any).createdAt || now,
-        createdDate: now,
-        createdAt: now,
-        createdBy: session?.name || "System",
-        manual: false,
-        status: appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned",
-        priority: appData.priority || "Medium",
-        done: false,
-        associationType: "application",
-        bucket: "applications",
-      });
-    } else {
-      // Update existing tasks in registry_tasks
-      for (const tDoc of tasksToSyncMap.values()) {
-        await setDoc(tDoc.ref, syncFields, { merge: true });
-      }
+    for (const tDoc of tasksToSyncMap.values()) {
+      await setDoc(tDoc.ref, syncFields, { merge: true });
     }
 
-    // 2. Sync service records in registry_services_v2 (if application reached service level)
     const serviceQueries = [
       query(collection(db, "registry_services_v2"), where("applicationDocId", "==", finalAppId)),
       query(collection(db, "registry_services_v2"), where("applicationId", "==", generatedAppIdStr)),

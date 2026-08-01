@@ -528,17 +528,25 @@ export function ServiceDashboard({
                   ) : (
                     <>
                       <th className="p-3">APPOINTMENT DATE</th>
-                      <th className="p-3">DAYS</th>
-                      <th className="p-3">DAYS AFTER APPOINTMENT</th>
+                      <th className="p-3 text-center">DAYS</th>
+                      <th className="p-3 text-center">DAYS AFTER APPOINTMENT</th>
                       <th className="p-3">VEHICLE NUMBER</th>
-                      <th className="p-3">SERVICE</th>
-                      <th className="p-3">CLIENT NAME</th>
-                      <th className="p-3">NUMBER</th>
-                      <th className="p-3">APPLICATION NUMBER</th>
-                      <th className="p-3">REFERENCE</th>
+                      <th className="p-3">OWNER NAME</th>
+                      <th className="p-3 text-center">TOTAL SERVICES</th>
                       <th className="p-3">ASSIGNED EMPLOYEE</th>
-                      <th className="p-3">RTO EXPENSE</th>
-                      <th className="p-3">STATUS</th>
+                      <th className="p-3">TASK STATUS</th>
+                      <th className="p-3">PUC EXPIRY</th>
+                      <th className="p-3">TAX EXPIRY</th>
+                      <th className="p-3">FITNESS EXPIRY</th>
+                      <th className="p-3">INSURANCE EXPIRY</th>
+                      <th className="p-3">NATIONAL PERMIT</th>
+                      <th className="p-3">GUJARAT PERMIT</th>
+                      <th className="p-3">NP AUTHORIZATION</th>
+                      <th className="p-3">REGISTRATION RENEWAL</th>
+                      <th className="p-3 font-bold text-slate-900">TOTAL CHARGES</th>
+                      <th className="p-3 font-bold text-emerald-700">ADVANCE PAID</th>
+                      <th className="p-3">APPLICATION NUMBER</th>
+                      <th className="p-3">APPLICATION TYPE</th>
                     </>
                   )}
                   <th className="p-3 text-center">ACTION</th>
@@ -553,24 +561,31 @@ export function ServiceDashboard({
                   </tr>
                 ) : (
                   filteredCompletedTasks.map((t: any, idx: number) => {
-                    // Days calculation: Appointment Date - Application Issue Date
+                    // Days calculation: Appointment Date - Task Creation Date
                     const apptDate = t.appointmentDate ? new Date(t.appointmentDate) : null;
-                    const issueDate = t.issueDate || t.createdDate || t.createdAt ? new Date(t.issueDate || t.createdDate || t.createdAt) : null;
+                    const createDate = t.createdDate || t.createdAt || t.issueDate ? new Date(t.createdDate || t.createdAt || t.issueDate) : null;
 
-                    let daysTaken = "—";
-                    if (apptDate && issueDate && !isNaN(apptDate.getTime()) && !isNaN(issueDate.getTime())) {
-                      const diffTime = apptDate.getTime() - issueDate.getTime();
+                    let daysDiffStr = "—";
+                    if (apptDate && createDate && !isNaN(apptDate.getTime()) && !isNaN(createDate.getTime())) {
+                      const diffTime = apptDate.getTime() - createDate.getTime();
                       const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-                      daysTaken = `${diffDays} Days`;
+                      daysDiffStr = `${diffDays}`;
                     }
 
-                    // Days After Appointment calculation: Today's Date - Appointment Date
-                    let daysAfterAppt = "—";
+                    // Days After Appointment calculation: Current Date - Appointment Date (0 if future, actual days if past)
+                    let daysAfterApptStr = "0";
                     if (apptDate && !isNaN(apptDate.getTime())) {
                       const today = new Date();
-                      const diffTime = today.getTime() - apptDate.getTime();
-                      const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
-                      daysAfterAppt = `${diffDays} Days After Appointment`;
+                      today.setHours(0, 0, 0, 0);
+                      const apptDateOnly = new Date(apptDate);
+                      apptDateOnly.setHours(0, 0, 0, 0);
+                      if (today.getTime() <= apptDateOnly.getTime()) {
+                        daysAfterApptStr = "0";
+                      } else {
+                        const diffTime = today.getTime() - apptDateOnly.getTime();
+                        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        daysAfterApptStr = `${diffDays}`;
+                      }
                     }
 
                     if (activeSubModule === "licence") {
@@ -614,8 +629,8 @@ export function ServiceDashboard({
                           <td className="p-3 font-mono font-semibold text-slate-900">
                             {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
                           </td>
-                          <td className="p-3 font-semibold text-indigo-600">{daysTaken}</td>
-                          <td className="p-3 font-semibold text-amber-600">{daysAfterAppt}</td>
+                          <td className="p-3 font-semibold text-indigo-600 text-center">{daysDiffStr}</td>
+                          <td className="p-3 font-semibold text-amber-600 text-center">{daysAfterApptStr}</td>
                           {licServices.map((srv) => (
                             <td key={srv} className="p-3 font-mono text-slate-600">
                               {getExpiryForService(srv)}
@@ -687,31 +702,41 @@ export function ServiceDashboard({
                       );
                     }
 
+                    const srvCount = t.services?.length || (t.serviceName ? t.serviceName.split(",").length : 1);
+
                     return (
                       <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                         <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
                         <td className="p-3 font-mono font-semibold text-slate-900">
                           {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
                         </td>
-                        <td className="p-3 font-semibold text-indigo-600">{daysTaken}</td>
-                        <td className="p-3 font-semibold text-amber-600">{daysAfterAppt}</td>
+                        <td className="p-3 font-semibold text-indigo-600 text-center">{daysDiffStr}</td>
+                        <td className="p-3 font-semibold text-amber-600 text-center">{daysAfterApptStr}</td>
                         <td className="p-3 font-mono font-bold text-slate-900">{t.vehicleNumber || t.vehicleId || "—"}</td>
-                        <td className="p-3 font-semibold text-slate-800">{t.serviceName || t.serviceType || "—"}</td>
-                        <td className="p-3 text-blue-600 font-bold">{t.clientName || "—"}</td>
-                        <td className="p-3 font-mono text-slate-500">{t.mobileNumber || t.phone || "—"}</td>
-                        <td className="p-3 font-mono font-semibold text-slate-800">{t.applicationId || "—"}</td>
-                        <td className="p-3 text-slate-600 whitespace-nowrap" title={t.reference || t.title}>
-                          {t.reference || t.title || "—"}
-                        </td>
-                        <td className="p-3 font-medium text-slate-700">{t.assignedEmployeeName || t.assignee || "Unassigned"}</td>
-                        <td className="p-3 font-mono font-bold text-emerald-700">
-                          {t.rtoExpense ? `₹${t.rtoExpense}` : "₹0"}
-                        </td>
+                        <td className="p-3 font-semibold text-slate-800">{t.clientName || t.ownerName || "—"}</td>
+                        <td className="p-3 text-center font-bold text-slate-800">{srvCount}</td>
+                        <td className="p-3 text-slate-700">{t.assignedEmployeeName || t.assignee || "Unassigned"}</td>
                         <td className="p-3">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Completed
+                            {t.status || t.taskStatus || "Completed"}
                           </span>
                         </td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.pucExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.taxExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.fitnessExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.insuranceExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.nationalPermitExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.gujaratPermitExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.npAuthExpiryDate || ""}</td>
+                        <td className="p-3 font-mono text-xs text-slate-600">{t.registrationRenewalExpiryDate || ""}</td>
+                        <td className="p-3 font-bold text-slate-900 font-mono">
+                          ₹{Number(t.amount || t.totalAmount || 0).toLocaleString("en-IN")}
+                        </td>
+                        <td className="p-3 font-bold text-emerald-700 font-mono">
+                          ₹{Number(t.totalPaid || t.advanceAmount || 0).toLocaleString("en-IN")}
+                        </td>
+                        <td className="p-3 font-mono text-xs font-semibold text-blue-600">{t.applicationId || "—"}</td>
+                        <td className="p-3 text-xs font-semibold">{t.applicationType || "Home"}</td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button
@@ -742,7 +767,7 @@ export function ServiceDashboard({
                                 }
                               }}
                               title="View Client Workspace"
-                              >
+                            >
                               <Eye className="size-3.5 text-blue-600" />
                             </Button>
                           </div>

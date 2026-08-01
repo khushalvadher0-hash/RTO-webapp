@@ -47,7 +47,7 @@ import jsPDF from "jspdf";
 import { subscribeToAllInvoices, type Invoice } from "@/lib/billing";
 import { subscribeToRecords, type RegistryRecord } from "@/lib/records";
 import { verifyAdminPin } from "@/lib/adminSecurity";
-import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, getDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, getDoc, setDoc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { InvoiceViewer } from "@/components/InvoiceViewer";
 import { generateInvoicePDF } from "@/lib/pdfGenerator";

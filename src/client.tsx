@@ -17,6 +17,19 @@ import "@/styles.css";
 // Get the router instance
 const router = getRouter();
 
+// Disable wheel scrolling value changes on input[type=number]
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "wheel",
+    () => {
+      if (document.activeElement instanceof HTMLInputElement && document.activeElement.type === "number") {
+        document.activeElement.blur();
+      }
+    },
+    { passive: true }
+  );
+}
+
 // Render the app to the DOM
 const rootElement = document.getElementById("root");
 if (!rootElement) {

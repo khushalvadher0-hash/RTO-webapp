@@ -144,6 +144,8 @@ export interface Task {
   rtoExpense?: number;
   issueDate?: string;
   reference?: string;
+  vehicleNumber?: string;
+  applicationDocId?: string;
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -934,15 +936,44 @@ export async function updateTask(
 
     // Check if it's an application task ID (e.g. task-app-...)
     if (taskId.startsWith("task-app-")) {
+      const appDocId = taskId.replace(/^task-app-/, "");
+      const appRef = doc(db, "registry_applications_v1", appDocId);
+      const appSnap = await getDoc(appRef);
+      const appData = appSnap.exists() ? (appSnap.data() as any) : {};
+
+      const appStatus = patch.status === "Completed" ? "Approved" : patch.status === "On Hold" ? "On Hold" : patch.status;
+      if (appSnap.exists() && patch.status) {
+        try {
+          await updateDoc(appRef, {
+            applicationStatus: appStatus,
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.warn("App doc status update notice:", e);
+        }
+      }
+
+      const existingTaskSnap = await getDoc(doc(db, COL, taskId));
+      const existingTaskData = existingTaskSnap.exists() ? (existingTaskSnap.data() as any) : {};
+
       const cleanUpdates = removeUndefined({
+        ...appData,
+        ...existingTaskData,
         id: taskId,
         taskId: taskId,
+        applicationId: appData.applicationId || existingTaskData.applicationId || (patch as any).applicationId,
+        applicationDocId: appDocId,
+        recordId: appDocId,
+        clientId: appDocId,
+        vehicleNumber: appData.vehicleNumber || existingTaskData.vehicleNumber || (patch as any).vehicleNumber,
+        clientName: appData.ownerName || appData.clientName || existingTaskData.clientName,
+        mobileNumber: appData.mobileNumber || existingTaskData.mobileNumber,
+        reference: appData.reference || appData.applicationId || existingTaskData.reference,
         ...patch,
         lastUpdatedBy: actor,
         lastUpdatedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
       });
-      await setDoc(doc(db, COL, taskId), cleanUpdates);
+      await setDoc(doc(db, COL, taskId), cleanUpdates, { merge: true });
       console.log("✅ Application task doc created and updated in registry_tasks:", taskId);
       invalidateCache();
       return;

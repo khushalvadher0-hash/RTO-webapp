@@ -184,28 +184,30 @@ export function subscribeAllDailyReports(
 
 // 4. Save / Update Vehicle
 export async function saveDrivingSchoolVehicleRecord(
-  vehicleData: Omit<DrivingSchoolVehicle, "id" | "createdAt" | "updatedAt">,
+  vehicleData: Partial<DrivingSchoolVehicle>,
   existingId?: string
 ): Promise<string> {
   const session = getSession();
   const now = new Date().toISOString();
 
-  let finalId = existingId;
+  const finalId = existingId || vehicleData.id;
+  const isUpdate = !!finalId;
+  let targetId = finalId;
   let docRef;
 
-  if (!finalId) {
+  if (!isUpdate || !targetId) {
     docRef = doc(collection(db, DRIVING_SCHOOL_VEHICLES_COL));
-    finalId = docRef.id;
+    targetId = docRef.id;
   } else {
-    docRef = doc(db, DRIVING_SCHOOL_VEHICLES_COL, finalId);
+    docRef = doc(db, DRIVING_SCHOOL_VEHICLES_COL, targetId);
   }
 
   // Upload vehicle photo if base64/File
   let vehiclePhotoUrl = vehicleData.vehiclePhoto || "";
-  if (vehiclePhotoUrl && (vehiclePhotoUrl.startsWith("data:") || vehiclePhotoUrl instanceof File)) {
+  if (vehiclePhotoUrl && (vehiclePhotoUrl.startsWith("data:") || (vehiclePhotoUrl as any) instanceof File)) {
     vehiclePhotoUrl = await uploadImageToStorage(
       vehiclePhotoUrl,
-      `vehicles/${finalId}/photo_${Date.now()}.jpg`
+      `vehicles/${targetId}/photo_${Date.now()}.jpg`
     );
   }
 
@@ -217,7 +219,7 @@ export async function saveDrivingSchoolVehicleRecord(
       if (typeof val === "string" && (val.startsWith("data:") || (val as any) instanceof File)) {
         processedDocs[key] = await uploadImageToStorage(
           val,
-          `vehicles/${finalId}/documents/${key}_${Date.now()}.jpg`
+          `vehicles/${targetId}/documents/${key}_${Date.now()}.jpg`
         );
       } else if (typeof val === "string" && (val.startsWith("http://") || val.startsWith("https://"))) {
         processedDocs[key] = val;
@@ -225,10 +227,10 @@ export async function saveDrivingSchoolVehicleRecord(
     }
   }
 
-  if (!existingId) {
+  if (!isUpdate) {
     const payload = removeUndefined({
       ...vehicleData,
-      id: finalId,
+      id: targetId,
       vehiclePhoto: vehiclePhotoUrl,
       documents: processedDocs,
       status: vehicleData.status || "Available",
@@ -242,6 +244,7 @@ export async function saveDrivingSchoolVehicleRecord(
   } else {
     const payload = removeUndefined({
       ...vehicleData,
+      id: targetId,
       vehiclePhoto: vehiclePhotoUrl,
       documents: processedDocs,
       currentOdometer: Number(vehicleData.currentOdometer) || 0,
@@ -252,7 +255,7 @@ export async function saveDrivingSchoolVehicleRecord(
     await setDoc(docRef, payload, { merge: true });
   }
 
-  return finalId;
+  return targetId;
 }
 
 // 5. Delete Vehicle

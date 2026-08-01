@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Pencil,
   Trash2,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -309,6 +310,44 @@ export function DrivingSchoolVehiclesView() {
       setInfoVehicleReports(reports);
     });
     return unsub;
+  };
+
+  const [uploadingDocKey, setUploadingDocKey] = useState<string | null>(null);
+
+  const handleUploadVehicleDocument = async (docKey: string, file: File) => {
+    if (!selectedVehicleForInfo) return;
+    setUploadingDocKey(docKey);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataUrl = e.target?.result as string;
+        const updatedDocs = {
+          ...(selectedVehicleForInfo.documents || {}),
+          [docKey]: dataUrl,
+        };
+
+        await saveDrivingSchoolVehicleRecord(
+          {
+            ...selectedVehicleForInfo,
+            documents: updatedDocs,
+          },
+          selectedVehicleForInfo.id
+        );
+
+        setSelectedVehicleForInfo({
+          ...selectedVehicleForInfo,
+          documents: updatedDocs,
+        });
+
+        toast.success("Document uploaded & saved successfully!");
+        setUploadingDocKey(null);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.error("Document upload failed:", err);
+      toast.error("Failed to upload document");
+      setUploadingDocKey(null);
+    }
   };
 
   // Calculate Vehicle Statistics for Info Modal
@@ -888,7 +927,10 @@ export function DrivingSchoolVehiclesView() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Documents Cards Grid */}
               <div className="p-4 bg-slate-50/60 rounded-2xl border border-slate-200/80 space-y-3">
-                <h4 className="text-xs font-bold text-slate-900">Vehicle Documents</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-900">Vehicle Documents</h4>
+                  <span className="text-[10px] text-slate-400">Click to upload/view</span>
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { name: "RC Book", key: "rc" },
@@ -900,23 +942,57 @@ export function DrivingSchoolVehiclesView() {
                   ].map((docItem) => {
                     const docUrl = selectedVehicleForInfo.documents?.[docItem.key];
                     const hasDoc = !!docUrl;
+                    const isUploading = uploadingDocKey === docItem.key;
 
                     return (
-                      <a
+                      <div
                         key={docItem.name}
-                        href={hasDoc ? docUrl : undefined}
-                        target="_blank"
-                        rel="noreferrer"
                         className={cn(
-                          "p-3 rounded-xl border text-center flex flex-col items-center justify-center gap-1 min-h-[70px] transition",
+                          "relative p-2 rounded-xl border text-center flex flex-col items-center justify-between gap-1.5 min-h-[85px] transition",
                           hasDoc
-                            ? "bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100 cursor-pointer"
-                            : "bg-white border-slate-200 text-slate-600 cursor-default"
+                            ? "bg-emerald-50/80 border-emerald-200 text-emerald-900 hover:bg-emerald-100/80"
+                            : "bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50/40"
                         )}
                       >
-                        <FileText className={cn("w-4 h-4", hasDoc ? "text-emerald-600" : "text-slate-400")} />
-                        <span className="text-[10px] font-bold leading-tight">{docItem.name}</span>
-                      </a>
+                        <FileText className={cn("w-5 h-5 mt-1", hasDoc ? "text-emerald-600" : "text-slate-400")} />
+                        <span className="text-[10px] font-bold leading-tight truncate max-w-full">
+                          {isUploading ? "Uploading..." : docItem.name}
+                        </span>
+
+                        <div className="flex items-center gap-1 w-full mt-1">
+                          {hasDoc && (
+                            <a
+                              href={docUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex-1 py-1 px-1 rounded text-[9px] font-bold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 flex items-center justify-center gap-0.5"
+                              title="View Document"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Eye className="w-3 h-3" /> View
+                            </a>
+                          )}
+                          <label className={cn(
+                            "flex-1 py-1 px-1 rounded text-[9px] font-bold cursor-pointer text-center flex items-center justify-center gap-0.5 transition-colors",
+                            hasDoc
+                              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                              : "bg-blue-600 text-white hover:bg-blue-700 w-full"
+                          )}>
+                            <Upload className="w-3 h-3" />
+                            {hasDoc ? "Replace" : "Upload"}
+                            <input
+                              type="file"
+                              accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleUploadVehicleDocument(docItem.key, f);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
