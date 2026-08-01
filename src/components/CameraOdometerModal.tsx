@@ -236,11 +236,6 @@ export function CameraOdometerModal({
                 )}
               </div>
             </div>
-          ) : isLoading ? (
-            <div className="w-full py-12 flex flex-col items-center justify-center space-y-3">
-              <Loader2 className="w-9 h-9 text-blue-600 animate-spin" />
-              <p className="text-xs font-semibold text-slate-600 animate-pulse">{loadingMessage}</p>
-            </div>
           ) : error ? (
             <div className="w-full py-8 text-center space-y-4 px-4">
               <div className="p-3.5 rounded-full bg-rose-50 text-rose-600 inline-block border border-rose-100">
@@ -270,17 +265,25 @@ export function CameraOdometerModal({
               </div>
             </div>
           ) : (
-            <CameraCapture
-              stream={stream}
-              isPlaying={isPlaying}
-              onVideoRefReady={handleVideoRefReady}
-              onCapture={handleTakeSnapshot}
-              onSwitchCamera={() => {
-                if (videoElementRef.current) {
-                  startCamera(videoElementRef.current);
-                }
-              }}
-            />
+            <div className="w-full relative">
+              <CameraCapture
+                stream={stream}
+                isPlaying={isPlaying}
+                onVideoRefReady={handleVideoRefReady}
+                onCapture={handleTakeSnapshot}
+                onSwitchCamera={() => {
+                  if (videoElementRef.current) {
+                    startCamera(videoElementRef.current);
+                  }
+                }}
+              />
+              {isLoading && (
+                <div className="absolute inset-0 bg-slate-950/80 rounded-xl flex flex-col items-center justify-center space-y-3 z-10 text-white min-h-[220px]">
+                  <Loader2 className="w-9 h-9 text-blue-400 animate-spin" />
+                  <p className="text-xs font-semibold animate-pulse">{loadingMessage}</p>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

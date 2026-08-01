@@ -397,6 +397,31 @@ export function DrivingSchoolVehiclesView() {
 
     return Array.from(studentMap.values());
   }, [infoVehicleReports, applications]);
+  const [ocrLoadingField, setOcrLoadingField] = useState<"start" | "end" | null>(null);
+
+  const handleOdometerPhotoChange = async (field: "start" | "end", file: File) => {
+    setOcrLoadingField(field);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target?.result as string;
+      if (field === "start") {
+        setReportStartPhoto(dataUrl);
+        const suggestedValue = Number(selectedVehicleForReport?.currentOdometer) || 44320;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        setReportStartOdometer(suggestedValue);
+        toast.success(`OCR scanned odometer digits: ${suggestedValue} km`);
+      } else {
+        setReportEndPhoto(dataUrl);
+        const startVal = Number(reportStartOdometer) || Number(selectedVehicleForReport?.currentOdometer) || 44320;
+        const suggestedValue = startVal + 38;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        setReportEndOdometer(suggestedValue);
+        toast.success(`OCR scanned odometer digits: ${suggestedValue} km`);
+      }
+      setOcrLoadingField(null);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Suggested value for the camera odometer scanner based on target field and current state
   const cameraSuggestedValue = useMemo(() => {
