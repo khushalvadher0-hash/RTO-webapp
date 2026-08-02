@@ -86,7 +86,7 @@ const SERVICE_GROUPS = [
     category: "HYPOTHECATION",
     items: [
       "Hypothecation Addition",
-      "Hypothecation Removal",
+      "Hypothecation Terminate",
       "Hypothecation Continuation",
       "No Objection Certificate",
     ],
