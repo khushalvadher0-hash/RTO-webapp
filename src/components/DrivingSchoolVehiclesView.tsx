@@ -817,6 +817,7 @@ export function DrivingSchoolVehiclesView() {
                       <option value="Petrol">Petrol</option>
                       <option value="Diesel">Diesel</option>
                       <option value="CNG">CNG</option>
+                      <option value="Petrol+CNG">Petrol+CNG</option>
                       <option value="Electric">Electric</option>
                     </select>
                   </div>
@@ -1224,6 +1225,7 @@ export function DrivingSchoolVehiclesView() {
                     <option value="Petrol">Petrol</option>
                     <option value="Diesel">Diesel</option>
                     <option value="CNG">CNG</option>
+                    <option value="Petrol+CNG">Petrol+CNG</option>
                     <option value="Electric">Electric</option>
                   </select>
                 </div>
