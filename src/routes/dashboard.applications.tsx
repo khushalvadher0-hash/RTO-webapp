@@ -924,6 +924,7 @@ function ApplicationsPage() {
         <ApplicationFormModal
           initialSubModule={activeSubModule}
           editingApp={editingApp}
+          applications={applications}
           onClose={() => {
             setIsModalOpen(false);
             setEditingApp(null);
@@ -940,10 +941,12 @@ function ApplicationsPage() {
 function ApplicationFormModal({
   initialSubModule = "services",
   editingApp,
+  applications = [],
   onClose,
 }: {
   initialSubModule?: SubModuleType;
   editingApp?: ApplicationRecord | null;
+  applications?: ApplicationRecord[];
   onClose: () => void;
 }) {
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>(
@@ -1183,6 +1186,70 @@ function ApplicationFormModal({
   const [createTaskAuto, setCreateTaskAuto] = useState(editingApp?.createTaskAuto ?? true);
   const [assignedEmployee, setAssignedEmployee] = useState(editingApp?.assignedEmployeeName || "");
   const [activeEmployees, setActiveEmployees] = useState<{ id: string; name: string }[]>([]);
+
+  // Unique suggestions collected from existing application records
+  const coNameSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.coName || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
+
+  const groupNameSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.groupName || app.groupName || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
+
+  const vehicleClassSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.vehicleClass || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
+
+  const makerNameSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.makerName || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
+
+  const modelNameSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.modelName || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
+
+  const colourSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.colour || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
+
+  const bodyTypeSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      applications
+        .map((app) => app.vehicleDetails?.bodyType || "")
+        .map((val) => val.trim())
+        .filter((val) => val.length > 0)
+    ));
+  }, [applications]);
 
   // Application Type State
   const [availableAppTypes, setAvailableAppTypes] = useState<string[]>(DEFAULT_APP_TYPES);
@@ -4143,6 +4210,7 @@ function ApplicationFormModal({
                   value={coName}
                   onChange={(e) => setCoName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="co-name-suggestions"
                 />
               </div>
 
@@ -4154,6 +4222,7 @@ function ApplicationFormModal({
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="group-name-suggestions"
                 />
               </div>
 
@@ -4222,6 +4291,7 @@ function ApplicationFormModal({
                   value={vehicleClass}
                   onChange={(e) => setVehicleClass(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="vehicle-class-suggestions"
                 />
               </div>
 
@@ -4233,6 +4303,7 @@ function ApplicationFormModal({
                   value={makerName}
                   onChange={(e) => setMakerName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="maker-name-suggestions"
                 />
               </div>
 
@@ -4244,6 +4315,7 @@ function ApplicationFormModal({
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="model-name-suggestions"
                 />
               </div>
 
@@ -4255,6 +4327,7 @@ function ApplicationFormModal({
                   value={colour}
                   onChange={(e) => setColour(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="colour-suggestions"
                 />
               </div>
 
@@ -4266,6 +4339,7 @@ function ApplicationFormModal({
                   value={bodyType}
                   onChange={(e) => setBodyType(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  list="body-type-suggestions"
                 />
               </div>
 
@@ -5009,6 +5083,42 @@ function ApplicationFormModal({
             </div>
           </div>
         )}
+
+        <datalist id="co-name-suggestions">
+          {coNameSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
+        <datalist id="group-name-suggestions">
+          {groupNameSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
+        <datalist id="vehicle-class-suggestions">
+          {vehicleClassSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
+        <datalist id="maker-name-suggestions">
+          {makerNameSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
+        <datalist id="model-name-suggestions">
+          {modelNameSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
+        <datalist id="colour-suggestions">
+          {colourSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
+        <datalist id="body-type-suggestions">
+          {bodyTypeSuggestions.map((val) => (
+            <option key={val} value={val} />
+          ))}
+        </datalist>
       </div>
     </div>
   );
