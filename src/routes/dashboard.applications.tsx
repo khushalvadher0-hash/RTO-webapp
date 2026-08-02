@@ -45,6 +45,7 @@ import {
 } from "@/lib/drivingSchool";
 import { fetchAllUsers } from "@/lib/userService";
 import { createInvoice } from "@/lib/billing";
+import { getInsuranceGstPercentage } from "@/lib/capitalize-settings";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -952,6 +953,8 @@ function ApplicationFormModal({
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>(
     editingApp?.subModule || initialSubModule
   );
+
+  const gstPercentage = getInsuranceGstPercentage();
 
   // Driving School State
   const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">("Male");
@@ -3940,7 +3943,7 @@ function ApplicationFormModal({
                       onChange={(e) => {
                         const val = Number(e.target.value);
                         setPremiumExclGst(val);
-                        const gst = Math.round(val * 0.18);
+                        const gst = Math.round(val * (gstPercentage / 100));
                         setGstAmount(gst);
                         const tot = val + gst;
                         setTotalPremium(tot);
@@ -3951,10 +3954,10 @@ function ApplicationFormModal({
                   </div>
 
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">GST @18% (INR)</label>
+                    <label className="font-semibold text-slate-700 block mb-1">GST @{gstPercentage}% (INR)</label>
                     <input
                       type="number"
-                      placeholder="180"
+                      placeholder={String(Math.round(1000 * (gstPercentage / 100)))}
                       value={gstAmount || ""}
                       onChange={(e) => {
                         const gst = Number(e.target.value);

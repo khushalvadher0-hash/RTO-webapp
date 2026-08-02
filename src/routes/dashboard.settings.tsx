@@ -21,10 +21,11 @@ interface Settings {
   officeName: string;
   branch: string;
   contact: string;
+  insuranceGstPercentage?: number;
 }
 
 const KEY = "registry-settings";
-const DEFAULTS: Settings = { officeName: "Registry Pro", branch: "Branch 042", contact: "" };
+const DEFAULTS: Settings = { officeName: "Registry Pro", branch: "Branch 042", contact: "", insuranceGstPercentage: 18 };
 
 const defaultPermissions = {
   createClients: false,
@@ -123,6 +124,16 @@ function SettingsPage() {
             value={s.contact}
             onChange={(e) => setS({ ...s, contact: e.target.value })}
             placeholder="9876543210"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Insurance GST Percentage (%)</Label>
+          <Input
+            type="number"
+            value={s.insuranceGstPercentage ?? 18}
+            onChange={(e) => setS({ ...s, insuranceGstPercentage: Number(e.target.value) })}
+            min="0"
+            max="100"
           />
         </div>
         <div className="flex items-center justify-between pt-3 border-t">

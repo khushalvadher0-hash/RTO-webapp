@@ -42,3 +42,17 @@ export const CAPITALIZE_FIELDS = [
   "co", // C/O (Care Of)
   "mo", // Mobile Operator
 ];
+
+export function getInsuranceGstPercentage(): number {
+  if (typeof window === "undefined") return 18;
+  try {
+    const raw = localStorage.getItem("registry-settings");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.insuranceGstPercentage === "number") {
+        return parsed.insuranceGstPercentage;
+      }
+    }
+  } catch {}
+  return 18;
+}
