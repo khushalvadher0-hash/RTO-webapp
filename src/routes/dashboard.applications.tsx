@@ -129,6 +129,15 @@ function ApplicationsPage() {
   const location = useLocation();
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
 
+  const [courseTypes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("driving_school_course_types");
+      return saved ? JSON.parse(saved) : ["15 Days", "21 Days", "26 Days", "45 Days", "60 Days"];
+    } catch {
+      return ["15 Days", "21 Days", "26 Days", "45 Days", "60 Days"];
+    }
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const sub = params.get("subModule");
@@ -194,6 +203,155 @@ function ApplicationsPage() {
       unsubDS();
     };
   }, []);
+
+  const handlePrintPDF = () => {
+    const tableEl = document.querySelector("table");
+    if (!tableEl) {
+      toast.error("No data available to print");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Failed to open print window");
+      return;
+    }
+
+    const clonedTable = tableEl.cloneNode(true) as HTMLTableElement;
+    
+    const headers = clonedTable.querySelectorAll("thead th");
+    const lastHeader = headers[headers.length - 1];
+    if (lastHeader && lastHeader.textContent?.toLowerCase().includes("action")) {
+      lastHeader.remove();
+    }
+    const rows = clonedTable.querySelectorAll("tbody tr");
+    rows.forEach((row) => {
+      const cells = row.querySelectorAll("td");
+      if (cells.length > 0) {
+        const lastCell = cells[cells.length - 1];
+        lastCell.remove();
+      }
+    });
+
+    const activeTabLabel = activeSubModule.toUpperCase();
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${activeTabLabel} Applications Report</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 24px;
+            color: #1e293b;
+            background-color: #ffffff;
+          }
+          .header {
+            margin-bottom: 24px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 16px;
+          }
+          .title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0 0 6px 0;
+            text-transform: uppercase;
+          }
+          .meta {
+            font-size: 11px;
+            color: #64748b;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+            text-align: left;
+          }
+          th {
+            background-color: #f8fafc;
+            color: #475569;
+            font-weight: 600;
+            padding: 8px 10px;
+            border-bottom: 2px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            font-weight: 500;
+          }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="title">${activeTabLabel} APPLICATIONS REPORT</h1>
+          <div class="meta">Generated on ${new Date().toLocaleString("en-IN")}</div>
+        </div>
+        ${clonedTable.outerHTML}
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  const handleExportExcel = () => {
+    const tableEl = document.querySelector("table");
+    if (!tableEl) {
+      toast.error("No data available to export");
+      return;
+    }
+
+    const headers: string[] = [];
+    const headerCols = tableEl.querySelectorAll("thead th");
+    headerCols.forEach((th, idx) => {
+      if (idx < headerCols.length - 1 || !th.textContent?.toLowerCase().includes("action")) {
+        headers.push(`"${th.textContent?.trim().replace(/"/g, '""') || ""}"`);
+      }
+    });
+
+    const rows: string[][] = [];
+    const bodyRows = tableEl.querySelectorAll("tbody tr");
+    bodyRows.forEach((tr) => {
+      const cells = tr.querySelectorAll("td");
+      const rowData: string[] = [];
+      cells.forEach((td, idx) => {
+        if (idx < cells.length - 1 || !headerCols[idx]?.textContent?.toLowerCase().includes("action")) {
+          let val = td.textContent?.trim() || "";
+          val = val.replace(/\s+/g, " ");
+          rowData.push(`"${val.replace(/"/g, '""')}"`);
+        }
+      });
+      if (rowData.length > 0) {
+        rows.push(rowData);
+      }
+    });
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${activeSubModule}_applications_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Excel file downloaded successfully!");
+  };
 
   const filteredApps = applications.filter((app) => {
     if (activeSubModule === "driving_school") return false;
@@ -271,6 +429,20 @@ function ApplicationsPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={handlePrintPDF}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm transition-all shadow-sm active:scale-[0.98]"
+          >
+            <Printer className="w-4 h-4 text-rose-500" />
+            Print / PDF
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm transition-all shadow-sm active:scale-[0.98]"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+            Excel
+          </button>
+          <button
             onClick={() => {
               setEditingApp(null);
               setIsModalOpen(true);
@@ -310,11 +482,11 @@ function ApplicationsPage() {
                 className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="all">All Courses</option>
-                <option value="15 Days">15 Days</option>
-                <option value="21 Days">21 Days</option>
-                <option value="26 Days">26 Days</option>
-                <option value="45 Days">45 Days</option>
-                <option value="60 Days">60 Days</option>
+                {courseTypes.map((course) => (
+                  <option key={course} value={course}>
+                    {course}
+                  </option>
+                ))}
               </select>
               <select
                 value={dsStatusFilter}
@@ -1161,6 +1333,14 @@ function ApplicationFormModal({
   const [showLicenseDocsSection, setShowLicenseDocsSection] = useState(true);
 
   // Driving School State
+  const [courseTypes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("driving_school_course_types");
+      return saved ? JSON.parse(saved) : ["15 Days", "21 Days", "26 Days", "45 Days", "60 Days"];
+    } catch {
+      return ["15 Days", "21 Days", "26 Days", "45 Days", "60 Days"];
+    }
+  });
   const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">((editingApp as any)?.gender || "Male");
   const [dsHasDrivingLicence, setDsHasDrivingLicence] = useState<boolean>((editingApp as any)?.hasDrivingLicence || false);
   const [dsDlNumber, setDsDlNumber] = useState<string>((editingApp as any)?.drivingLicenceNumber || "");
@@ -1170,7 +1350,7 @@ function ApplicationFormModal({
   const [dsCourseEndDate, setDsCourseEndDate] = useState<string>(
     (editingApp as any)?.courseEndDate || new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0]
   );
-  const [dsCourseType, setDsCourseType] = useState<string>((editingApp as any)?.courseType || "15 Days");
+  const [dsCourseType, setDsCourseType] = useState<string>((editingApp as any)?.courseType || courseTypes[0] || "15 Days");
   const [dsTotalCourseFees, setDsTotalCourseFees] = useState<number | string>((editingApp as any)?.totalCourseFees || 9500);
   const [dsAdvancePaid, setDsAdvancePaid] = useState<number | string>((editingApp as any)?.advancePaid || 4000);
 
@@ -4665,11 +4845,11 @@ function ApplicationFormModal({
                       onChange={(e) => setDsCourseType(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
                     >
-                      <option value="15 Days">15 Days</option>
-                      <option value="21 Days">21 Days</option>
-                      <option value="26 Days">26 Days</option>
-                      <option value="45 Days">45 Days</option>
-                      <option value="60 Days">60 Days</option>
+                      {courseTypes.map((course) => (
+                        <option key={course} value={course}>
+                          {course}
+                        </option>
+                      ))}
                     </select>
                   </div>
 

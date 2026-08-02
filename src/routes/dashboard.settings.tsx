@@ -47,6 +47,16 @@ function SettingsPage() {
   const [permsSaved, setPermsSaved] = useState(false);
   const [clearDataDialogOpen, setClearDataDialogOpen] = useState(false);
   const [changePinOpen, setChangePinOpen] = useState(false);
+  
+  const [courseTypes, setCourseTypes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("driving_school_course_types");
+      return saved ? JSON.parse(saved) : ["15 Days", "21 Days", "26 Days", "45 Days", "60 Days"];
+    } catch {
+      return ["15 Days", "21 Days", "26 Days", "45 Days", "60 Days"];
+    }
+  });
+  const [newCourseTypeInput, setNewCourseTypeInput] = useState("");
 
   const session = getSession();
   if (session?.role !== "admin") {
@@ -244,6 +254,57 @@ function SettingsPage() {
           </div>
         </div>
 
+      <div className="rounded-xl border bg-card p-6 space-y-4">
+        <h3 className="font-semibold text-slate-900">Driving School Course Types</h3>
+        <p className="text-sm text-muted-foreground">
+          Manage the available course options for Driving School applications.
+        </p>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {courseTypes.map((course) => (
+            <span
+              key={course}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border rounded-lg text-xs font-semibold text-slate-800"
+            >
+              {course}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = courseTypes.filter((c) => c !== course);
+                  setCourseTypes(next);
+                  localStorage.setItem("driving_school_course_types", JSON.stringify(next));
+                }}
+                className="text-slate-400 hover:text-rose-600 font-bold ml-1"
+                title="Remove course"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+
+        <div className="flex gap-2 max-w-md pt-2">
+          <Input
+            placeholder="Add new course (e.g. 30 Days)"
+            value={newCourseTypeInput}
+            onChange={(e) => setNewCourseTypeInput(e.target.value)}
+          />
+          <Button
+            type="button"
+            onClick={() => {
+              const cleaned = newCourseTypeInput.trim();
+              if (cleaned && !courseTypes.includes(cleaned)) {
+                const next = [...courseTypes, cleaned];
+                setCourseTypes(next);
+                localStorage.setItem("driving_school_course_types", JSON.stringify(next));
+                setNewCourseTypeInput("");
+              }
+            }}
+          >
+            Add
+          </Button>
+        </div>
+      </div>
 
       <div className="rounded-xl border border-destructive/30 bg-card p-6 space-y-3">
         <h3 className="font-semibold text-destructive">Danger zone</h3>
