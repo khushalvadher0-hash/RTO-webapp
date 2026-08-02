@@ -81,7 +81,7 @@ const GROUPS: NavGroup[] = [
       { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { to: "/dashboard/applications", label: "Applications", icon: FileText },
       { to: "/dashboard/tasks", label: "Tasks", icon: CheckSquare },
-      { to: "/dashboard/service/all", label: "RTO Services", icon: Zap },
+      { to: "/dashboard/service/all", label: "In RTO Services", icon: Zap },
       { to: "/dashboard/task-templates", label: "Task Templates", icon: FileText },
     ],
   },

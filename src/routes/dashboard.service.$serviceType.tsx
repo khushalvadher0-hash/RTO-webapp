@@ -12,7 +12,7 @@ function ServiceTypePage() {
   const normalizedParam = serviceType.toLowerCase();
 
   if (normalizedParam === "all") {
-    return <ServiceDashboard serviceType={"Insurance" as ServiceType} title="All RTO Services" description="All completed RTO services across all categories" />;
+    return <ServiceDashboard serviceType={"Insurance" as ServiceType} title="In RTO Services" description="All completed RTO services across all categories" />;
   }
 
   const mappedService = SERVICE_ROUTE_MAP[normalizedParam];

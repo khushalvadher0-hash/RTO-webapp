@@ -384,16 +384,22 @@ export function ServiceDashboard({
 
   const filteredCompletedTasks = useMemo(() => {
     let list = completedTasks;
-    if (activeSubModule === "driving_school") return [];
-    if (activeSubModule === "licence") {
+    if (activeSubModule === "driving_school") {
+      list = list.filter((t: any) => t.subModule === "driving_school");
+    } else if (activeSubModule === "licence") {
       list = list.filter((t: any) => {
         if (t.subModule) return t.subModule === "licence";
         return (t.applicationType || "").toLowerCase() === "licence";
       });
+    } else if (activeSubModule === "insurance") {
+      list = list.filter((t: any) => {
+        if (t.subModule) return t.subModule === "insurance";
+        return (t.applicationType || "").toLowerCase() === "insurance";
+      });
     } else {
       list = list.filter((t: any) => {
         if (t.subModule) return t.subModule === "services";
-        return (t.applicationType || "").toLowerCase() !== "licence";
+        return (t.applicationType || "").toLowerCase() !== "licence" && (t.applicationType || "").toLowerCase() !== "insurance" && (t.applicationType || "").toLowerCase() !== "driving_school";
       });
     }
 
