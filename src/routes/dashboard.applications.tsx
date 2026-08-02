@@ -939,6 +939,121 @@ function ApplicationsPage() {
   );
 }
 
+function InlineDocUpload({
+  label,
+  docName,
+  uploadedDocs,
+  setUploadedDocs,
+  setPreviewDoc,
+}: {
+  label: string;
+  docName: string;
+  uploadedDocs: Record<string, string>;
+  setUploadedDocs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  setPreviewDoc: (doc: { name: string; url: string } | null) => void;
+}) {
+  const docUrl = uploadedDocs[docName];
+  const isUploaded = !!docUrl;
+
+  const printDoc = (url: string, name: string) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Print ${name}</title>
+          <style>
+            body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+            img, iframe { max-width: 100%; max-height: 100%; object-fit: contain; }
+          </style>
+        </head>
+        <body>
+    `);
+    if (url.startsWith("data:application/pdf")) {
+      printWindow.document.write(`<iframe src="${url}" width="100%" height="100%" style="border: none;"></iframe>`);
+    } else {
+      printWindow.document.write(`<img src="${url}" onload="window.print(); window.close();" />`);
+    }
+    printWindow.document.write(`
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    if (url.startsWith("data:application/pdf")) {
+      setTimeout(() => {
+        printWindow.print();
+      }, 1000);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+      <div className="flex items-center gap-2 mt-1">
+        {isUploaded ? (
+          <div className="flex items-center justify-between w-full bg-emerald-50/60 border border-emerald-200 p-1.5 rounded-lg">
+            <span className="text-xs font-semibold text-emerald-800 truncate max-w-[120px]">{docName}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPreviewDoc({ name: docName, url: docUrl })}
+                className="text-[9px] font-bold text-blue-600 hover:bg-blue-100/50 px-1.5 py-0.5 rounded transition"
+              >
+                View
+              </button>
+              <button
+                type="button"
+                onClick={() => printDoc(docUrl, docName)}
+                className="text-[9px] font-bold text-emerald-600 hover:bg-emerald-100/50 px-1.5 py-0.5 rounded transition"
+              >
+                Print
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadedDocs((prev) => {
+                    const next = { ...prev };
+                    delete next[docName];
+                    return next;
+                  });
+                }}
+                className="text-[9px] font-bold text-rose-600 hover:bg-rose-100/50 px-1.5 py-0.5 rounded transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ) : (
+          <label className="flex items-center justify-center gap-1.5 w-full border border-dashed border-slate-300 hover:border-blue-400 p-1.5 rounded-lg cursor-pointer transition hover:bg-white text-slate-600">
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 15 * 1024 * 1024) {
+                  toast.error("File size must be under 15MB");
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                  const result = evt.target?.result as string;
+                  setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
+                  toast.success(`${docName} uploaded!`);
+                };
+                reader.readAsDataURL(file);
+              }}
+            />
+            <Upload className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[10px] font-bold">Upload Document</span>
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ApplicationFormModal({
   initialSubModule = "services",
   editingApp,
@@ -4497,6 +4612,22 @@ function ApplicationFormModal({
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
                   />
                 </div>
+                <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                  <InlineDocUpload
+                    label="Rc Document"
+                    docName="Tax RC Document"
+                    uploadedDocs={uploadedDocs}
+                    setUploadedDocs={setUploadedDocs}
+                    setPreviewDoc={setPreviewDoc}
+                  />
+                  <InlineDocUpload
+                    label="Tax Receipt Document"
+                    docName="Tax Receipt Document"
+                    uploadedDocs={uploadedDocs}
+                    setUploadedDocs={setUploadedDocs}
+                    setPreviewDoc={setPreviewDoc}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -4532,6 +4663,15 @@ function ApplicationFormModal({
                     value={fitnessExpiryDate}
                     onChange={(e) => setFitnessExpiryDate(e.target.value)}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div className="md:col-span-2 mt-2">
+                  <InlineDocUpload
+                    label="Fitness Document"
+                    docName="Fitness Document"
+                    uploadedDocs={uploadedDocs}
+                    setUploadedDocs={setUploadedDocs}
+                    setPreviewDoc={setPreviewDoc}
                   />
                 </div>
               </div>
@@ -4584,6 +4724,15 @@ function ApplicationFormModal({
                       />
                     </div>
                   </div>
+                  <div className="mt-2">
+                    <InlineDocUpload
+                      label="Gujarat Permit Doc"
+                      docName="Gujarat Permit Document"
+                      uploadedDocs={uploadedDocs}
+                      setUploadedDocs={setUploadedDocs}
+                      setPreviewDoc={setPreviewDoc}
+                    />
+                  </div>
                 </div>
 
                 {/* 2. National Permit (5 Yrs Gap) */}
@@ -4615,6 +4764,15 @@ function ApplicationFormModal({
                         className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
                       />
                     </div>
+                  </div>
+                  <div className="mt-2">
+                    <InlineDocUpload
+                      label="National Permit(Gujrat Permit) Doc"
+                      docName="National Permit(Gujrat Permit) Document"
+                      uploadedDocs={uploadedDocs}
+                      setUploadedDocs={setUploadedDocs}
+                      setPreviewDoc={setPreviewDoc}
+                    />
                   </div>
                 </div>
 
@@ -4649,6 +4807,15 @@ function ApplicationFormModal({
                         className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
                       />
                     </div>
+                  </div>
+                  <div className="mt-2">
+                    <InlineDocUpload
+                      label="National Permit Authorization Box"
+                      docName="National Permit Authorization Document"
+                      uploadedDocs={uploadedDocs}
+                      setUploadedDocs={setUploadedDocs}
+                      setPreviewDoc={setPreviewDoc}
+                    />
                   </div>
                 </div>
               </div>
@@ -4690,6 +4857,15 @@ function ApplicationFormModal({
                     value={registrationValidity}
                     onChange={(e) => setRegistrationValidity(e.target.value)}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div className="md:col-span-2 mt-2">
+                  <InlineDocUpload
+                    label="Rc Document"
+                    docName="Registration RC Document"
+                    uploadedDocs={uploadedDocs}
+                    setUploadedDocs={setUploadedDocs}
+                    setPreviewDoc={setPreviewDoc}
                   />
                 </div>
               </div>
