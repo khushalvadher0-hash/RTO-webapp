@@ -1231,6 +1231,22 @@ function ApplicationFormModal({
     editingApp?.trackExpiry?.fitness ?? editingApp?.vehicleDetails?.trackExpiry?.fitness ?? true
   );
 
+  const [showPucDetails, setShowPucDetails] = useState<boolean>(
+    !!editingApp?.pucExpiryDate || !!editingApp?.vehicleDetails?.pucExpiryDate
+  );
+  const [showTaxDetails, setShowTaxDetails] = useState<boolean>(
+    !!editingApp?.taxExpiryDate || !!editingApp?.vehicleDetails?.taxDetails?.expiryDate
+  );
+  const [showFitnessDetails, setShowFitnessDetails] = useState<boolean>(
+    !!editingApp?.fitnessExpiryDate || !!editingApp?.vehicleDetails?.fitnessDetails?.expiryDate
+  );
+  const [showPermitDetails, setShowPermitDetails] = useState<boolean>(
+    !!editingApp?.permitExpiryDate || !!editingApp?.vehicleDetails?.permitDetails?.expiryDate || !!editingApp?.vehicleDetails?.permitDetails?.gujaratPermitExpiryDate
+  );
+  const [showRegistrationDetails, setShowRegistrationDetails] = useState<boolean>(
+    !!editingApp?.registrationRenewalExpiryDate || !!editingApp?.vehicleDetails?.registrationDetails?.registrationValidity
+  );
+
   // Document Uploads State (Simulated upload status map for color backgrounds)
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, string>>(editingApp?.vehicleDetails?.documents || {});
   const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string } | null>(null);
@@ -1779,11 +1795,11 @@ function ApplicationFormModal({
           documents: uploadedDocs,
           applicationType: finalAppType,
           trackExpiry: {
-            puc: activeSubModule === "insurance" ? false : trackPuc,
-            tax: activeSubModule === "insurance" ? false : trackTax,
-            insurance: activeSubModule === "insurance" ? trackInsurance : trackInsurance,
-            permit: activeSubModule === "insurance" ? false : trackPermit,
-            fitness: activeSubModule === "insurance" ? false : trackFitness,
+            puc: activeSubModule === "insurance" ? false : (showPucDetails && !!pucExpiryDate),
+            tax: activeSubModule === "insurance" ? false : (showTaxDetails && (!!taxExpiryDate || taxAmount > 0)),
+            insurance: activeSubModule === "insurance" ? true : false,
+            permit: activeSubModule === "insurance" ? false : (showPermitDetails && (!!gujaratPermitIssueDate || !!nationalPermitIssueDate || !!nationalAuthIssueDate)),
+            fitness: activeSubModule === "insurance" ? false : (showFitnessDetails && !!fitnessExpiryDate),
           },
           vehicleDetails: vehicleDetails as any,
         },
@@ -4314,25 +4330,31 @@ function ApplicationFormModal({
                 />
               </div>
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="font-semibold text-slate-700 block">PUC EXPIRY DATE</label>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={trackPuc}
-                      onChange={(e) => setTrackPuc(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>Show on Dashboard</span>
-                  </label>
-                </div>
-                <input
-                  type="date"
-                  value={pucExpiryDate}
-                  onChange={(e) => setPucExpiryDate(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                />
+              <div className="md:col-span-3 border-t border-slate-100 pt-4 mt-2">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-900 uppercase">
+                  <input
+                    type="checkbox"
+                    checked={showPucDetails}
+                    onChange={(e) => setShowPucDetails(e.target.checked)}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  PUC Details
+                </label>
+                {showPucDetails && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <div className="mb-1">
+                        <label className="font-semibold text-slate-700 block">PUC EXPIRY DATE</label>
+                      </div>
+                      <input
+                        type="date"
+                        value={pucExpiryDate}
+                        onChange={(e) => setPucExpiryDate(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -4340,270 +4362,261 @@ function ApplicationFormModal({
           {/* 2. Tax Details Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <FileText className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Tax Details</h3>
-                  <p className="text-[11px] text-slate-400">Lumpsum or period-based tax</p>
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-slate-900 uppercase">
+                <input
+                  type="checkbox"
+                  checked={showTaxDetails}
+                  onChange={(e) => setShowTaxDetails(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                />
+                Tax Details
+              </label>
+              {showTaxDetails && (
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={isLumpsumTax}
+                      onChange={(e) => setIsLumpsumTax(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    Lumpsum Tax
+                  </label>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={trackTax}
-                    onChange={(e) => setTrackTax(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
-                  />
-                  <span>Show Expiry on Dashboard</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={isLumpsumTax}
-                    onChange={(e) => setIsLumpsumTax(e.target.checked)}
-                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                  />
-                  Lumpsum Tax
-                </label>
-              </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              {!isLumpsumTax && (
-                <>
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                    <input
-                      type="date"
-                      value={taxIssueDate}
-                      onChange={(e) => setTaxIssueDate(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
-                    <input
-                      type="date"
-                      value={taxExpiryDate}
-                      onChange={(e) => setTaxExpiryDate(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    />
-                  </div>
-                </>
-              )}
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">AMOUNT (₹)</label>
-                <input
-                  type="number"
-                  placeholder="₹"
-                  value={taxAmount}
-                  onChange={(e) => setTaxAmount(Number(e.target.value))}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
-                />
+            {showTaxDetails && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs transition-all duration-300">
+                {!isLumpsumTax && (
+                  <>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                      <input
+                        type="date"
+                        value={taxIssueDate}
+                        onChange={(e) => setTaxIssueDate(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
+                      <input
+                        type="date"
+                        value={taxExpiryDate}
+                        onChange={(e) => setTaxExpiryDate(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                  </>
+                )}
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">AMOUNT (₹)</label>
+                  <input
+                    type="number"
+                    placeholder="₹"
+                    value={taxAmount}
+                    onChange={(e) => setTaxAmount(Number(e.target.value))}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 3. Fitness Details Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <FileCheck className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Fitness Details</h3>
-                  <p className="text-[11px] text-slate-400">Fitness validity & details</p>
-                </div>
-              </div>
-              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-slate-900 uppercase">
                 <input
                   type="checkbox"
-                  checked={trackFitness}
-                  onChange={(e) => setTrackFitness(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                  checked={showFitnessDetails}
+                  onChange={(e) => setShowFitnessDetails(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>Show Expiry on Dashboard</span>
+                Fitness Details
               </label>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                <input
-                  type="date"
-                  value={fitnessIssueDate}
-                  onChange={(e) => setFitnessIssueDate(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
+            {showFitnessDetails && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs transition-all duration-300">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                  <input
+                    type="date"
+                    value={fitnessIssueDate}
+                    onChange={(e) => setFitnessIssueDate(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
+                  <input
+                    type="date"
+                    value={fitnessExpiryDate}
+                    onChange={(e) => setFitnessExpiryDate(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
-                <input
-                  type="date"
-                  value={fitnessExpiryDate}
-                  onChange={(e) => setFitnessExpiryDate(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* 5. Permit Section - 3 Fixed Permits */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <Building2 className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Permit Details</h3>
-                  <p className="text-[11px] text-slate-400">
-                    Fixed 3 permits with auto-calculated expiry dates (5 Yrs & 1 Yr gaps)
-                  </p>
-                </div>
-              </div>
-              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-slate-900 uppercase">
                 <input
                   type="checkbox"
-                  checked={trackPermit}
-                  onChange={(e) => setTrackPermit(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                  checked={showPermitDetails}
+                  onChange={(e) => setShowPermitDetails(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>Show Expiry on Dashboard</span>
+                Permit Details
               </label>
             </div>
 
-            <div className="space-y-4 text-xs">
-              {/* 1. Gujarat Permit (5 Yrs Gap) */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800 text-xs">Gujarat Permit</span>
-                  <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
-                    Fixed 5 Years Expiry Gap
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                    <input
-                      type="date"
-                      value={gujaratPermitIssueDate}
-                      onChange={(e) => handleGujaratIssueChange(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
-                    />
+            {showPermitDetails && (
+              <div className="space-y-4 text-xs transition-all duration-300">
+                {/* 1. Gujarat Permit (5 Yrs Gap) */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs">Gujarat Permit</span>
+                    <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
+                      Fixed 5 Years Expiry Gap
+                    </span>
                   </div>
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">
-                      EXPIRY DATE (+5 YEARS AUTO)
-                    </label>
-                    <input
-                      type="date"
-                      value={gujaratPermitExpiryDate}
-                      readOnly
-                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                      <input
+                        type="date"
+                        value={gujaratPermitIssueDate}
+                        onChange={(e) => handleGujaratIssueChange(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        EXPIRY DATE (+5 YEARS AUTO)
+                      </label>
+                      <input
+                        type="date"
+                        value={gujaratPermitExpiryDate}
+                        readOnly
+                        className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 2. National Permit (5 Yrs Gap) */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800 text-xs">National Permit</span>
-                  <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
-                    Fixed 5 Years Expiry Gap
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                    <input
-                      type="date"
-                      value={nationalPermitIssueDate}
-                      onChange={(e) => handleNationalIssueChange(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
-                    />
+                {/* 2. National Permit (5 Yrs Gap) */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs">National Permit</span>
+                    <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                      Fixed 5 Years Expiry Gap
+                    </span>
                   </div>
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">
-                      EXPIRY DATE (+5 YEARS AUTO)
-                    </label>
-                    <input
-                      type="date"
-                      value={nationalPermitExpiryDate}
-                      readOnly
-                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                      <input
+                        type="date"
+                        value={nationalPermitIssueDate}
+                        onChange={(e) => handleNationalIssueChange(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        EXPIRY DATE (+5 YEARS AUTO)
+                      </label>
+                      <input
+                        type="date"
+                        value={nationalPermitExpiryDate}
+                        readOnly
+                        className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 3. National Permit Authorization (1 Yr Gap) */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800 text-xs">
-                    National Permit Authorization
-                  </span>
-                  <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md">
-                    Fixed 1 Year Expiry Gap
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                    <input
-                      type="date"
-                      value={nationalAuthIssueDate}
-                      onChange={(e) => handleNationalAuthIssueChange(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
-                    />
+                {/* 3. National Permit Authorization (1 Yr Gap) */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs">
+                      National Permit Authorization
+                    </span>
+                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md">
+                      Fixed 1 Year Expiry Gap
+                    </span>
                   </div>
-                  <div>
-                    <label className="font-semibold text-slate-700 block mb-1">
-                      EXPIRY DATE (+1 YEAR AUTO)
-                    </label>
-                    <input
-                      type="date"
-                      value={nationalAuthExpiryDate}
-                      readOnly
-                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                      <input
+                        type="date"
+                        value={nationalAuthIssueDate}
+                        onChange={(e) => handleNationalAuthIssueChange(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        EXPIRY DATE (+1 YEAR AUTO)
+                      </label>
+                      <input
+                        type="date"
+                        value={nationalAuthExpiryDate}
+                        readOnly
+                        className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 6. Renewal of Registration (NT) Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <Calendar className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Renewal of Registration (NT)</h3>
-                <p className="text-[11px] text-slate-400">Registration renewal validity</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  DATE OF REGISTRATION
-                </label>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-slate-900 uppercase">
                 <input
-                  type="date"
-                  value={dateOfRegistration}
-                  onChange={(e) => setDateOfRegistration(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  type="checkbox"
+                  checked={showRegistrationDetails}
+                  onChange={(e) => setShowRegistrationDetails(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                 />
-              </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  REGISTRATION VALIDITY
-                </label>
-                <input
-                  type="date"
-                  value={registrationValidity}
-                  onChange={(e) => setRegistrationValidity(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
+                Renewal of Registration (NT)
+              </label>
             </div>
+            {showRegistrationDetails && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs transition-all duration-300">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    DATE OF REGISTRATION
+                  </label>
+                  <input
+                    type="date"
+                    value={dateOfRegistration}
+                    onChange={(e) => setDateOfRegistration(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    REGISTRATION VALIDITY
+                  </label>
+                  <input
+                    type="date"
+                    value={registrationValidity}
+                    onChange={(e) => setRegistrationValidity(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 7. Documents Section */}
