@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import {
   FileText,
@@ -69,10 +69,6 @@ export function getAppTypeBadgeColor(appType?: string) {
 
 const SERVICE_GROUPS = [
   {
-    category: "INSURANCE",
-    items: ["Insurance"],
-  },
-  {
     category: "RC",
     items: [
       "Transfer of Ownership",
@@ -124,7 +120,16 @@ export const Route = createFileRoute("/dashboard/applications")({
 import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
 
 function ApplicationsPage() {
+  const location = useLocation();
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sub = params.get("subModule");
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+      setActiveSubModule(sub as SubModuleType);
+    }
+  }, [location.search]);
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -198,10 +203,16 @@ function ApplicationsPage() {
           (app.licenseDetails.generalLicenceServices?.selectedServices &&
             app.licenseDetails.generalLicenceServices.selectedServices.length > 0)));
 
+    const isInsuranceApp =
+      app.subModule === "insurance" ||
+      (app.services || []).includes("Insurance");
+
     if (activeSubModule === "licence") {
       if (!isLicenceApp) return false;
+    } else if (activeSubModule === "insurance") {
+      if (!isInsuranceApp) return false;
     } else if (activeSubModule === "services") {
-      if (isLicenceApp) return false;
+      if (isLicenceApp || isInsuranceApp) return false;
     }
 
     const term = searchTerm.toLowerCase();
@@ -392,6 +403,18 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">Payment Status</th>
                     <th className="py-3.5 px-4 font-mono text-slate-600">Reference</th>
                   </>
+                ) : activeSubModule === "insurance" ? (
+                  <>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Vehicle Number</th>
+                    <th className="py-3.5 px-4">Owner Name</th>
+                    <th className="py-3.5 px-4">Phone Number</th>
+                    <th className="py-3.5 px-4">Issue Date</th>
+                    <th className="py-3.5 px-4">Expiry Date</th>
+                    <th className="py-3.5 px-4">Total Premium</th>
+                    <th className="py-3.5 px-4">Net Commission</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Charges</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Paid</th>
+                  </>
                 ) : (
                   <>
                     <th className="py-3.5 px-4 font-bold text-slate-900">Vehicle Number</th>
@@ -402,7 +425,7 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">PUC Expiry</th>
                     <th className="py-3.5 px-4">Tax Expiry</th>
                     <th className="py-3.5 px-4">Fitness Expiry</th>
-                    <th className="py-3.5 px-4">Insurance Expiry</th>
+                    {activeSubModule !== "services" && <th className="py-3.5 px-4">Insurance Expiry</th>}
                     <th className="py-3.5 px-4">National Permit Expiry</th>
                     <th className="py-3.5 px-4">Gujarat Permit Expiry</th>
                     <th className="py-3.5 px-4">NP Authorization Expiry</th>
@@ -551,6 +574,88 @@ function ApplicationsPage() {
                 </tr>
               ) : (
                 filteredApps.map((app, index) => {
+                  if (activeSubModule === "insurance") {
+                    const appRaw = app as any;
+                    const v = appRaw.vehicleDetails || appRaw.vehicleMaster || appRaw || {};
+                    const insDetails = appRaw.insuranceDetails || v.insuranceDetails || {};
+                    const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
+                    const totalPay = app.amount || app.serviceAccounting?.Insurance?.totalAmount || (acc?.totalCharges ?? acc?.totalPayment ?? 0);
+                    const advPay = app.totalPaid || app.serviceAccounting?.Insurance?.advancePayment || (acc?.advancePaid ?? acc?.advancePayment ?? 0);
+
+                    const ownerName = app.ownerName || appRaw.clientName || v.ownerName || "—";
+                    const phoneNo = app.mobileNumber || appRaw.phone || appRaw.phoneNo || v.phone || v.mobileNumber || "—";
+                    const vehNo = app.vehicleNumber || app.vehicleId || "—";
+
+                    const issueDate = insDetails.issueDate || appRaw.insuranceIssueDate || "—";
+                    const expiryDate = insDetails.expiryDate || appRaw.insuranceExpiryDate || "—";
+                    const totalPremium = insDetails.totalPremium ?? insDetails.amount ?? appRaw.totalPremium ?? "—";
+                    const netCommission = insDetails.netCommission ?? appRaw.netCommission ?? "—";
+
+                    return (
+                      <tr
+                        key={app.id}
+                        onClick={() => setViewingApp(app)}
+                        className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 text-center text-slate-400 font-mono">{index + 1}</td>
+                        <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
+                          {vehNo}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-slate-800">
+                          {ownerName}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-700">
+                          {phoneNo}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{issueDate}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{expiryDate}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">
+                          {typeof totalPremium === "number" ? `₹${totalPremium.toLocaleString("en-IN")}` : totalPremium}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">
+                          {typeof netCommission === "number" ? `₹${netCommission.toLocaleString("en-IN")}` : netCommission}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
+                          ₹{totalPay.toLocaleString("en-IN")}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-emerald-700 font-mono">
+                          ₹{advPay.toLocaleString("en-IN")}
+                        </td>
+                        <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => setViewingApp(app)}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-blue-600 transition-all"
+                              title="View Application Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingApp(app);
+                                setIsModalOpen(true);
+                              }}
+                              className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600 transition-all"
+                              title="Edit Application"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDeletingApp(app);
+                                setDeletePasscode("");
+                              }}
+                              className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-600 transition-all"
+                              title="Delete Application"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   if (activeSubModule === "licence") {
                     const ld = app.licenseDetails;
                     const clientDob = ld?.dateOfBirth || "—";
@@ -714,7 +819,7 @@ function ApplicationsPage() {
                       <td className="py-3.5 px-4 font-mono text-slate-600">{pucExp}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{taxExp}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{fitExp}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{insExp}</td>
+                      {activeSubModule !== "services" && <td className="py-3.5 px-4 font-mono text-slate-600">{insExp}</td>}
                       <td className="py-3.5 px-4 font-mono text-slate-600">{natPermitExp}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{gujPermitExp}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">{npAuthExp}</td>
@@ -997,6 +1102,8 @@ function ApplicationFormModal({
   const [insurerCommission, setInsurerCommission] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.insurerCommission || 0);
   const [clientDiscount, setClientDiscount] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.clientDiscount || 0);
   const [netCommission, setNetCommission] = useState<number>(editingApp?.vehicleDetails?.insuranceDetails?.netCommission || 0);
+  const [insTotalFees, setInsTotalFees] = useState<number>(editingApp?.amount || (editingApp as any)?.serviceAccounting?.Insurance?.totalAmount || 0);
+  const [insAdvancePayment, setInsAdvancePayment] = useState<number>(editingApp?.totalPaid || (editingApp as any)?.serviceAccounting?.Insurance?.advancePayment || 0);
 
   // Permit Section - 3 Fixed Permits
   const [gujaratPermitIssueDate, setGujaratPermitIssueDate] = useState(
@@ -1303,7 +1410,10 @@ function ApplicationFormModal({
     let totalAmt = 0;
     let totalAdv = 0;
 
-    if (activeSubModule === "licence") {
+    if (activeSubModule === "insurance") {
+      totalAmt = Number(insTotalFees) || 0;
+      totalAdv = Number(insAdvancePayment) || 0;
+    } else if (activeSubModule === "licence") {
       if (newLL.enabled) {
         totalAmt += Number(newLL.totalAmount) || 0;
         totalAdv += Number(newLL.advanceAmount) || 0;
@@ -1349,6 +1459,8 @@ function ApplicationFormModal({
     generalLicServices,
     selectedServices,
     serviceAccountingMap,
+    insTotalFees,
+    insAdvancePayment,
   ]);
 
   const handleDocSimulateUpload = (docName: string) => {
@@ -1416,7 +1528,16 @@ function ApplicationFormModal({
       }
     }
 
-    if (activeSubModule === "licence") {
+    if (activeSubModule === "insurance") {
+      if (!ownerName.trim() || !dateOfBirth.trim()) {
+        toast.error("Name and Date of Birth are mandatory for Insurance Applications!");
+        return;
+      }
+      if (!insTotalFees) {
+        toast.error("Total Fees is required!");
+        return;
+      }
+    } else if (activeSubModule === "licence") {
       if (!ownerName.trim() || !dateOfBirth.trim()) {
         toast.error("Name and Date of Birth are mandatory for License Applications!");
         return;
@@ -1434,9 +1555,15 @@ function ApplicationFormModal({
 
     setSaving(true);
 
+    const finalVehNo =
+      activeSubModule === "insurance"
+        ? (insVehicleRegNumber.trim() || `INS-${Date.now().toString().slice(-6)}`)
+        : (vehicleNumber.trim() || `LIC-${Date.now().toString().slice(-6)}`);
+    const cleanVehNo = finalVehNo.toUpperCase().replace(/[\s-]/g, "");
+
     const vehicleDetails: VehicleMaster = {
-      id: vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, ""),
-      vehicleNumber,
+      id: cleanVehNo,
+      vehicleNumber: finalVehNo,
       phone,
       ownerName,
       fatherHusbandName,
@@ -1512,15 +1639,24 @@ function ApplicationFormModal({
 
     // Format service accounting details map
     const serviceAccountingPayload: Record<string, ServiceAccountingItem> = {};
-    selectedServices.forEach((srv) => {
-      const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
-      serviceAccountingPayload[srv] = {
-        serviceName: srv,
-        totalAmount: item.totalAmount,
-        advancePayment: item.advancePayment,
-        pendingAmount: Math.max(0, item.totalAmount - item.advancePayment),
+    if (activeSubModule === "insurance") {
+      serviceAccountingPayload["Insurance"] = {
+        serviceName: "Insurance",
+        totalAmount: Number(insTotalFees) || 0,
+        advancePayment: Number(insAdvancePayment) || 0,
+        pendingAmount: Math.max(0, (Number(insTotalFees) || 0) - (Number(insAdvancePayment) || 0)),
       };
-    });
+    } else {
+      selectedServices.forEach((srv) => {
+        const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+        serviceAccountingPayload[srv] = {
+          serviceName: srv,
+          totalAmount: item.totalAmount,
+          advancePayment: item.advancePayment,
+          pendingAmount: Math.max(0, item.totalAmount - item.advancePayment),
+        };
+      });
+    }
 
     let generatedInvoiceNumber = "";
     let generatedInvoiceId = "";
@@ -1532,25 +1668,36 @@ function ApplicationFormModal({
     if (dlRenewRetest.enabled) selectedLicServices.push("DL Renew + Retest");
     if (generalLicServices.selected.length > 0) selectedLicServices.push(...generalLicServices.selected);
 
-    const activeServicesList = activeSubModule === "licence" ? selectedLicServices : selectedServices;
+    const finalServicesList =
+      activeSubModule === "licence"
+        ? selectedLicServices
+        : activeSubModule === "insurance"
+        ? ["Insurance"]
+        : selectedServices;
 
     // Connect to Accounting & Generate Invoice if selected
     if (shouldGenerateInvoice) {
       try {
         const session = getSession();
-        const clientNameStr = ownerName || (name as any) || vehicleNumber || "Client";
-        const vehicleNumStr = vehicleNumber || (name as any) || "";
-        const invoiceItems = activeServicesList.map((srv) => {
-          const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+        const clientNameStr = ownerName || (name as any) || finalVehNo || "Client";
+        const vehicleNumStr = finalVehNo || "";
+        const invoiceItems = finalServicesList.map((srv) => {
+          let srvTotal = 0;
+          if (activeSubModule === "insurance" && srv === "Insurance") {
+            srvTotal = insTotalFees;
+          } else {
+            const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+            srvTotal = item.totalAmount;
+          }
           return {
             serviceId: srv,
             serviceName: srv,
             vehicleNumber: vehicleNumStr,
             quantity: 1,
-            unitPrice: item.totalAmount,
-            amount: item.totalAmount,
+            unitPrice: srvTotal,
+            amount: srvTotal,
             tax: 0,
-            total: item.totalAmount,
+            total: srvTotal,
           };
         });
 
@@ -1562,7 +1709,7 @@ function ApplicationFormModal({
               mo: phone,
               application: address,
               mvNo: vehicleNumStr,
-              work: activeServicesList.join(", "),
+              work: finalServicesList.join(", "),
             } as any,
             invoiceItems,
             new Date().toISOString().split("T")[0],
@@ -1593,20 +1740,11 @@ function ApplicationFormModal({
     }
 
     try {
-      const selectedLicServices: string[] = [];
-      if (newLL.enabled) selectedLicServices.push("New Learning Licence");
-      if (dlEndorsement.enabled) selectedLicServices.push("DL New LL Endorsement");
-      if (llRenew.enabled) selectedLicServices.push("LL Renew Class");
-      if (dlRenewRetest.enabled) selectedLicServices.push("DL Renew + Retest");
-      if (generalLicServices.selected.length > 0) selectedLicServices.push(...generalLicServices.selected);
-
-      const finalServicesList = activeSubModule === "licence" ? selectedLicServices : selectedServices;
-      const finalVehNo = vehicleNumber.trim() || `LIC-${Date.now().toString().slice(-6)}`;
-
       await saveApplicationAndVehicle(
         {
           subModule: activeSubModule,
-          licenseDetails: {
+          dateOfBirth: activeSubModule === "licence" || activeSubModule === "insurance" ? dateOfBirth : undefined,
+          licenseDetails: activeSubModule === "licence" ? {
             subModule: activeSubModule,
             dateOfBirth,
             isDrivingSchoolHolder,
@@ -1618,7 +1756,7 @@ function ApplicationFormModal({
               selectedServices: generalLicServices.selected,
               serviceAccounting: generalLicServices.accounting,
             },
-          },
+          } : undefined,
           vehicleId: finalVehNo.toUpperCase().replace(/[\s-]/g, ""),
           vehicleNumber: finalVehNo,
           ownerName,
@@ -1641,11 +1779,11 @@ function ApplicationFormModal({
           documents: uploadedDocs,
           applicationType: finalAppType,
           trackExpiry: {
-            puc: trackPuc,
-            tax: trackTax,
-            insurance: trackInsurance,
-            permit: trackPermit,
-            fitness: trackFitness,
+            puc: activeSubModule === "insurance" ? false : trackPuc,
+            tax: activeSubModule === "insurance" ? false : trackTax,
+            insurance: activeSubModule === "insurance" ? trackInsurance : trackInsurance,
+            permit: activeSubModule === "insurance" ? false : trackPermit,
+            fitness: activeSubModule === "insurance" ? false : trackFitness,
           },
           vehicleDetails: vehicleDetails as any,
         },
@@ -3434,6 +3572,488 @@ function ApplicationFormModal({
             </div>
           )}
 
+          {activeSubModule === "insurance" && (
+            <div className="space-y-6">
+              {/* Section 1: Applicant Details */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Applicant Details</h3>
+                    <p className="text-[11px] text-slate-400">Only Name and Date of Birth are mandatory.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">NAME *</label>
+                    <input
+                      type="text"
+                      placeholder="Applicant's full name"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">DATE OF BIRTH *</label>
+                    <input
+                      type="date"
+                      value={dateOfBirth}
+                      onChange={(e) => setDateOfBirth(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER</label>
+                    <input
+                      type="text"
+                      placeholder="10 digit mobile number"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
+                    <input
+                      type="text"
+                      placeholder="House, street, city"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">C/O</label>
+                    <input
+                      type="text"
+                      placeholder="Father / Husband name"
+                      value={fatherHusbandName}
+                      onChange={(e) => setFatherHusbandName(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">GROUP NAME</label>
+                    <select
+                      value={groupName}
+                      onChange={(e) => setGroupName(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="">Select group</option>
+                      <option value="Group A">Group A</option>
+                      <option value="Group B">Group B</option>
+                      <option value="Individual">Individual</option>
+                      <option value="Corporate">Corporate</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Register Vehicle Insurance */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <Shield className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Register Vehicle Insurance</h3>
+                      <p className="text-[11px] text-slate-400">Policy, premium calculation & commission details</p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={trackInsurance}
+                      onChange={(e) => setTrackInsurance(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Show Expiry on Dashboard</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">POLICY SUB-CATEGORY *</label>
+                    <select
+                      value={policySubCategory}
+                      onChange={(e) => setPolicySubCategory(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="Motor / Vehicle">Motor / Vehicle</option>
+                      <option value="Health">Health</option>
+                      <option value="Life">Life</option>
+                      <option value="General">General</option>
+                      <option value="Commercial">Commercial</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">VEHICLE TYPE (IF MOTOR)</label>
+                    <select
+                      value={insVehicleType}
+                      onChange={(e) => setInsVehicleType(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="4 Wheel">4 Wheel</option>
+                      <option value="2 Wheel">2 Wheel</option>
+                      <option value="3 Wheel">3 Wheel</option>
+                      <option value="Commercial Vehicle">Commercial Vehicle</option>
+                      <option value="Heavy Vehicle">Heavy Vehicle</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">INSURANCE COMPANY *</label>
+                    <select
+                      value={insuranceCompany}
+                      onChange={(e) => setInsuranceCompany(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    >
+                      <option value="New India">New India Assurance</option>
+                      <option value="ICICI Lombard">ICICI Lombard</option>
+                      <option value="HDFC Ergo">HDFC Ergo</option>
+                      <option value="Bajaj Allianz">Bajaj Allianz</option>
+                      <option value="TATA AIG">TATA AIG</option>
+                      <option value="SBI General">SBI General</option>
+                      <option value="National Insurance">National Insurance</option>
+                      <option value="United India">United India Insurance</option>
+                      <option value="Oriental Insurance">Oriental Insurance</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">AGENT *</label>
+                    <select
+                      value={agent}
+                      onChange={(e) => setAgent(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="">Select Agent</option>
+                      {activeEmployees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name}
+                        </option>
+                      ))}
+                      <option value="Direct">Direct</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">INSURANCE AGENCY</label>
+                    <select
+                      value={insuranceAgency}
+                      onChange={(e) => setInsuranceAgency(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="">-- Select Agency --</option>
+                      <option value="Primary Agency">Primary Agency</option>
+                      <option value="Branch Agency">Branch Agency</option>
+                      <option value="Broker Agency">Broker Agency</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">REFERENCE</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Mr. Sharma"
+                      value={reference}
+                      onChange={(e) => setReference(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">POLICY TYPE *</label>
+                    <select
+                      value={insurancePolicyType}
+                      onChange={(e) => setInsurancePolicyType(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="Third Party">Third Party</option>
+                      <option value="Comprehensive">Comprehensive</option>
+                      <option value="Zero Dep">Zero Dep</option>
+                      <option value="Standalone Own Damage">Standalone Own Damage</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">FUEL TYPE</label>
+                    <select
+                      value={insFuelType}
+                      onChange={(e) => setInsFuelType(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    >
+                      <option value="Petrol">Petrol</option>
+                      <option value="Diesel">Diesel</option>
+                      <option value="CNG">CNG</option>
+                      <option value="Electric">Electric</option>
+                      <option value="Hybrid">Hybrid</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">VEHICLE REGISTRATION NUMBER</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. MH-02-AB-1234"
+                      value={insVehicleRegNumber}
+                      onChange={(e) => setInsVehicleRegNumber(e.target.value.toUpperCase())}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <label className="font-semibold text-slate-700 block mb-1">VEHICLE MODEL DETAILS</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Honda City ZX (2023)"
+                      value={insVehicleModelDetails}
+                      onChange={(e) => setInsVehicleModelDetails(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">POLICY NUMBER</label>
+                    <input
+                      type="text"
+                      placeholder="POL-XXXX"
+                      value={insurancePolicyNo}
+                      onChange={(e) => setInsurancePolicyNo(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
+                    <input
+                      type="date"
+                      value={insuranceIssueDate}
+                      onChange={(e) => setInsuranceIssueDate(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
+                    <input
+                      type="date"
+                      value={insuranceExpiryDate}
+                      onChange={(e) => setInsuranceExpiryDate(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">PREMIUM EXCL-GST (INR) *</label>
+                    <input
+                      type="number"
+                      placeholder="1000"
+                      value={premiumExclGst || ""}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPremiumExclGst(val);
+                        const gst = Math.round(val * 0.18);
+                        setGstAmount(gst);
+                        const tot = val + gst;
+                        setTotalPremium(tot);
+                        setInsuranceAmount(tot);
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">GST @18% (INR)</label>
+                    <input
+                      type="number"
+                      placeholder="180"
+                      value={gstAmount || ""}
+                      onChange={(e) => {
+                        const gst = Number(e.target.value);
+                        setGstAmount(gst);
+                        const tot = (premiumExclGst || 0) + gst;
+                        setTotalPremium(tot);
+                        setInsuranceAmount(tot);
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-blue-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">TOTAL PREMIUM (INR)</label>
+                    <input
+                      type="number"
+                      placeholder="1180"
+                      value={totalPremium || ""}
+                      onChange={(e) => {
+                        const tot = Number(e.target.value);
+                        setTotalPremium(tot);
+                        setInsuranceAmount(tot);
+                      }}
+                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">INSURER COMMISSION (INR)</label>
+                    <input
+                      type="number"
+                      placeholder="500"
+                      value={insurerCommission || ""}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setInsurerCommission(val);
+                        setNetCommission(val - (clientDiscount || 0));
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">CLIENT DISCOUNT (INR)</label>
+                    <input
+                      type="number"
+                      placeholder="200"
+                      value={clientDiscount || ""}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setClientDiscount(val);
+                        setNetCommission((insurerCommission || 0) - val);
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">NET COMMISSION (INR)</label>
+                    <input
+                      type="number"
+                      placeholder="300"
+                      value={netCommission || ""}
+                      onChange={(e) => setNetCommission(Number(e.target.value))}
+                      className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-emerald-700"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1 text-xs uppercase">TOTAL FEES (₹) *</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={insTotalFees || ""}
+                      onChange={(e) => setInsTotalFees(Number(e.target.value))}
+                      className="w-full p-3 bg-white border-2 border-blue-200 rounded-xl font-bold text-slate-900 text-sm shadow-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1 text-xs uppercase">ADVANCE PAYMENT (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={insAdvancePayment || ""}
+                      onChange={(e) => setInsAdvancePayment(Number(e.target.value))}
+                      className="w-full p-3 bg-white border-2 border-emerald-200 rounded-xl font-bold text-emerald-700 text-sm shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Internal Notes */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Internal Notes</h3>
+                    <p className="text-[11px] text-slate-400">Visible to internal team only</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">EMPLOYEE REMARKS</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Notes visible to internal team only..."
+                      value={employeeRemarks}
+                      onChange={(e) => setEmployeeRemarks(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">REMINDER</label>
+                      <input
+                        type="date"
+                        value={reminder}
+                        onChange={(e) => setReminder(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">PRIORITY</label>
+                      <select
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value as any)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Urgent">Urgent</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">ASSIGNED EMPLOYEE</label>
+                      <select
+                        value={assignedEmployee}
+                        onChange={(e) => setAssignedEmployee(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        {activeEmployees.map((emp) => (
+                          <option key={emp.id} value={emp.name}>
+                            {emp.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">APPLICATION TYPE</label>
+                      <select
+                        value={isCustomAppType ? "__CUSTOM__" : appTypeSelect}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "__CUSTOM__") {
+                            setIsCustomAppType(true);
+                          } else {
+                            setIsCustomAppType(false);
+                            setAppTypeSelect(val);
+                          }
+                        }}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        {availableAppTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                        <option value="__CUSTOM__">+ Add Custom Type</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SERVICES SUB MODULE FORM */}
           {activeSubModule === "services" && (
             <div className="space-y-6">
@@ -3822,319 +4442,6 @@ function ApplicationFormModal({
                   value={fitnessExpiryDate}
                   onChange={(e) => setFitnessExpiryDate(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* 4. Insurance Section */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <Shield className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Register Vehicle Insurance</h3>
-                  <p className="text-[11px] text-slate-400">Policy, premium calculation & commission details</p>
-                </div>
-              </div>
-              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
-                <input
-                  type="checkbox"
-                  checked={trackInsurance}
-                  onChange={(e) => setTrackInsurance(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
-                />
-                <span>Show Expiry on Dashboard</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  POLICY SUB-CATEGORY *
-                </label>
-                <select
-                  value={policySubCategory}
-                  onChange={(e) => setPolicySubCategory(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="Motor / Vehicle">Motor / Vehicle</option>
-                  <option value="Health">Health</option>
-                  <option value="Life">Life</option>
-                  <option value="General">General</option>
-                  <option value="Commercial">Commercial</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  VEHICLE TYPE (IF MOTOR)
-                </label>
-                <select
-                  value={insVehicleType}
-                  onChange={(e) => setInsVehicleType(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="4 Wheel">4 Wheel</option>
-                  <option value="2 Wheel">2 Wheel</option>
-                  <option value="3 Wheel">3 Wheel</option>
-                  <option value="Commercial Vehicle">Commercial Vehicle</option>
-                  <option value="Heavy Vehicle">Heavy Vehicle</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  INSURANCE COMPANY *
-                </label>
-                <select
-                  value={insuranceCompany}
-                  onChange={(e) => setInsuranceCompany(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                >
-                  <option value="New India">New India Assurance</option>
-                  <option value="ICICI Lombard">ICICI Lombard</option>
-                  <option value="HDFC Ergo">HDFC Ergo</option>
-                  <option value="Bajaj Allianz">Bajaj Allianz</option>
-                  <option value="TATA AIG">TATA AIG</option>
-                  <option value="SBI General">SBI General</option>
-                  <option value="National Insurance">National Insurance</option>
-                  <option value="United India">United India Insurance</option>
-                  <option value="Oriental Insurance">Oriental Insurance</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">AGENT *</label>
-                <select
-                  value={agent}
-                  onChange={(e) => setAgent(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="">Select Agent</option>
-                  {activeEmployees.map((emp) => (
-                    <option key={emp.id} value={emp.name}>
-                      {emp.name}
-                    </option>
-                  ))}
-                  <option value="Direct">Direct</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">INSURANCE AGENCY</label>
-                <select
-                  value={insuranceAgency}
-                  onChange={(e) => setInsuranceAgency(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="">-- Select Agency --</option>
-                  <option value="Primary Agency">Primary Agency</option>
-                  <option value="Branch Agency">Branch Agency</option>
-                  <option value="Broker Agency">Broker Agency</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">REFERENCE</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Mr. Sharma"
-                  value={reference}
-                  onChange={(e) => setReference(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">POLICY TYPE *</label>
-                <select
-                  value={insurancePolicyType}
-                  onChange={(e) => setInsurancePolicyType(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="Third Party">Third Party</option>
-                  <option value="Comprehensive">Comprehensive</option>
-                  <option value="Zero Dep">Zero Dep</option>
-                  <option value="Standalone Own Damage">Standalone Own Damage</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">FUEL TYPE</label>
-                <select
-                  value={insFuelType}
-                  onChange={(e) => setInsFuelType(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  <option value="Petrol">Petrol</option>
-                  <option value="Diesel">Diesel</option>
-                  <option value="CNG">CNG</option>
-                  <option value="Electric">Electric</option>
-                  <option value="Hybrid">Hybrid</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  VEHICLE REGISTRATION NUMBER
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. MH-02-AB-1234"
-                  value={insVehicleRegNumber || vehicleNumber}
-                  onChange={(e) => setInsVehicleRegNumber(e.target.value.toUpperCase())}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase"
-                />
-              </div>
-
-              <div className="md:col-span-2 lg:col-span-3">
-                <label className="font-semibold text-slate-700 block mb-1">
-                  VEHICLE MODEL DETAILS
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Honda City ZX (2023)"
-                  value={insVehicleModelDetails || `${makerName} ${modelName}`.trim()}
-                  onChange={(e) => setInsVehicleModelDetails(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">POLICY NUMBER</label>
-                <input
-                  type="text"
-                  placeholder="POL-XXXX"
-                  value={insurancePolicyNo}
-                  onChange={(e) => setInsurancePolicyNo(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">ISSUE DATE</label>
-                <input
-                  type="date"
-                  value={insuranceIssueDate}
-                  onChange={(e) => setInsuranceIssueDate(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">EXPIRY DATE</label>
-                <input
-                  type="date"
-                  value={insuranceExpiryDate}
-                  onChange={(e) => setInsuranceExpiryDate(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-
-              {/* Premium Calculations */}
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  PREMIUM EXCL-GST (INR) *
-                </label>
-                <input
-                  type="number"
-                  placeholder="1000"
-                  value={premiumExclGst || ""}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setPremiumExclGst(val);
-                    const gst = Math.round(val * 0.18);
-                    setGstAmount(gst);
-                    const tot = val + gst;
-                    setTotalPremium(tot);
-                    setInsuranceAmount(tot);
-                  }}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  GST @18% (INR)
-                </label>
-                <input
-                  type="number"
-                  placeholder="180"
-                  value={gstAmount || ""}
-                  onChange={(e) => {
-                    const gst = Number(e.target.value);
-                    setGstAmount(gst);
-                    const tot = (premiumExclGst || 0) + gst;
-                    setTotalPremium(tot);
-                    setInsuranceAmount(tot);
-                  }}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-blue-700"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  TOTAL PREMIUM (INR)
-                </label>
-                <input
-                  type="number"
-                  placeholder="1180"
-                  value={totalPremium || ""}
-                  onChange={(e) => {
-                    const tot = Number(e.target.value);
-                    setTotalPremium(tot);
-                    setInsuranceAmount(tot);
-                  }}
-                  className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-900"
-                />
-              </div>
-
-              {/* Commissions & Discounts */}
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  INSURER COMMISSION (INR)
-                </label>
-                <input
-                  type="number"
-                  placeholder="500"
-                  value={insurerCommission || ""}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setInsurerCommission(val);
-                    setNetCommission(val - (clientDiscount || 0));
-                  }}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  CLIENT DISCOUNT (INR)
-                </label>
-                <input
-                  type="number"
-                  placeholder="200"
-                  value={clientDiscount || ""}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setClientDiscount(val);
-                    setNetCommission((insurerCommission || 0) - val);
-                  }}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  NET COMMISSION (INR)
-                </label>
-                <input
-                  type="number"
-                  placeholder="300"
-                  value={netCommission || ""}
-                  onChange={(e) => setNetCommission(Number(e.target.value))}
-                  className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-emerald-700"
                 />
               </div>
             </div>
@@ -4548,7 +4855,8 @@ function ApplicationFormModal({
           )}
 
           {/* 10. Internal Notes / Employee Remarks */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+          {activeSubModule !== "insurance" && (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
               <User className="w-5 h-5 text-blue-600" />
               <div>
@@ -4649,6 +4957,7 @@ function ApplicationFormModal({
               </div>
             </div>
           </div>
+        )}
         </div>
       )}
       </div>
@@ -4750,19 +5059,19 @@ function ApplicationDetailsModal({
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
               <span className="text-[10px] font-bold text-slate-400 uppercase">Total Fees</span>
               <p className="text-xs font-semibold text-slate-900 mt-1">
-                ₹{(app.amount || 0).toLocaleString("en-IN")}
+                ₹{(app.amount || app.serviceAccounting?.Insurance?.totalAmount || 0).toLocaleString("en-IN")}
               </p>
             </div>
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <span className="text-[10px] font-bold text-emerald-600 uppercase">Advance Paid</span>
               <p className="text-xs font-semibold text-emerald-800 mt-1">
-                ₹{(app.totalPaid || 0).toLocaleString("en-IN")}
+                ₹{(app.totalPaid || app.serviceAccounting?.Insurance?.advancePayment || 0).toLocaleString("en-IN")}
               </p>
             </div>
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
               <span className="text-[10px] font-bold text-amber-600 uppercase">Pending Due</span>
               <p className="text-xs font-semibold text-amber-800 mt-1">
-                ₹{(app.pendingAmount || 0).toLocaleString("en-IN")}
+                ₹{(app.pendingAmount || app.serviceAccounting?.Insurance?.pendingAmount || 0).toLocaleString("en-IN")}
               </p>
             </div>
           </div>

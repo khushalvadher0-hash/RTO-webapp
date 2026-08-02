@@ -188,7 +188,7 @@ export interface ServiceAccountingItem {
 }
 
 export interface LicenseDetailsData {
-  subModule?: "services" | "licence" | "driving_school";
+  subModule?: "services" | "licence" | "driving_school" | "insurance";
   dateOfBirth?: string;
   isDrivingSchoolHolder?: boolean;
   newLearningLicence?: {
@@ -274,7 +274,7 @@ export interface ApplicationRecord {
   ownerName: string;
   mobileNumber: string;
   services: string[];
-  subModule?: "services" | "licence" | "driving_school";
+  subModule?: "services" | "licence" | "driving_school" | "insurance";
   licenseDetails?: LicenseDetailsData;
   serviceAccounting?: Record<string, ServiceAccountingItem>;
   assignedEmployeeId?: string;

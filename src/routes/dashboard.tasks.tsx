@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -343,7 +343,17 @@ function TasksPage() {
     const isAd = sess?.role === "admin" || sess?.role === "manager";
     return isAd ? "all" : "my";
   });
+  const location = useLocation();
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sub = params.get("subModule");
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+      setActiveSubModule(sub as SubModuleType);
+    }
+  }, [location.search]);
+
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -699,7 +709,19 @@ function TasksPage() {
     let list = baseList;
 
     if (activeSubModule === "driving_school") return [];
-    if (activeSubModule === "licence") {
+    if (activeSubModule === "insurance") {
+      list = list.filter((t) => {
+        if ((t as any).subModule) return (t as any).subModule === "insurance";
+        const linked = applications.find(
+          (a: any) =>
+            (t.applicationId && a.applicationId === t.applicationId) ||
+            a.id === (t as any).recordId ||
+            a.id === (t as any).applicationDocId
+        );
+        if (linked) return linked.subModule === "insurance";
+        return (t.applicationType || "").toLowerCase() === "insurance";
+      });
+    } else if (activeSubModule === "licence") {
       list = list.filter((t) => {
         if ((t as any).subModule) return (t as any).subModule === "licence";
         if ((t as any).licenseDetails) return true;
@@ -722,8 +744,8 @@ function TasksPage() {
             a.id === (t as any).recordId ||
             a.id === (t as any).applicationDocId
         );
-        if (linked) return linked.subModule !== "licence" && !linked.licenseDetails;
-        return (t.applicationType || "").toLowerCase() !== "licence";
+        if (linked) return linked.subModule !== "licence" && linked.subModule !== "insurance" && !linked.licenseDetails;
+        return (t.applicationType || "").toLowerCase() !== "licence" && (t.applicationType || "").toLowerCase() !== "insurance";
       });
     }
 
@@ -1852,7 +1874,23 @@ function TaskTable({
             <thead className="sticky top-0 bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b z-10">
               <tr>
                 <th className="p-3 text-center">SR NO</th>
-                {isLicenceSubModule ? (
+                {activeSubModule === "insurance" ? (
+                  <>
+                    <th className="p-3">CLIENT NAME</th>
+                    <th className="p-3">DOB</th>
+                    <th className="p-3">MOBILE NUMBER</th>
+                    <th className="p-3">VEHICLE NUMBER</th>
+                    <th className="p-3">INSURANCE COMPANY</th>
+                    <th className="p-3">POLICY NUMBER</th>
+                    <th className="p-3">EXPIRY DATE</th>
+                    <th className="p-3">TOTAL CHARGES</th>
+                    <th className="p-3">ADVANCE PAYMENT</th>
+                    <th className="p-3">REMAINING PAYMENT</th>
+                    <th className="p-3">PAYMENT STATUS</th>
+                    <th className="p-3">STATUS OF TASK</th>
+                    <th className="p-3">ASSIGNED TO</th>
+                  </>
+                ) : isLicenceSubModule ? (
                   <>
                     <th className="p-3">CLIENT NAME</th>
                     <th className="p-3">DOB</th>
@@ -1882,7 +1920,7 @@ function TaskTable({
                     <th className="p-3">PUC EXPIRY</th>
                     <th className="p-3">TAX EXPIRY</th>
                     <th className="p-3">FITNESS EXPIRY</th>
-                    <th className="p-3">INSURANCE EXPIRY</th>
+                    {activeSubModule !== "services" && <th className="p-3">INSURANCE EXPIRY</th>}
                     <th className="p-3">NATIONAL PERMIT EXPIRY</th>
                     <th className="p-3">GUJARAT PERMIT EXPIRY</th>
                     <th className="p-3 font-bold text-slate-900">TOTAL CHARGES</th>
@@ -1901,6 +1939,91 @@ function TaskTable({
                 const creationDate = t.createdDate || t.createdAt
                   ? new Date(t.createdDate || t.createdAt).toLocaleDateString("en-IN")
                   : "—";
+
+                if (activeSubModule === "insurance") {
+                  const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;
+                  const linkedApp = applications?.find((a: any) => a.id === targetAppKey || a.applicationId === t.applicationId);
+                  const insDetails = (t as any).insuranceDetails || linkedApp?.vehicleDetails?.insuranceDetails || {};
+                  const clientDob = (t as any).dateOfBirth || (t as any).licenseDetails?.dateOfBirth || linkedApp?.dateOfBirth || linkedApp?.licenseDetails?.dateOfBirth || "—";
+                  
+                  const acc = accountingMap?.get(targetAppKey) || accountingMap?.get(t.applicationId || "");
+                  const totalPay = acc?.totalPayment ?? ((t as any).amount || (t as any).totalAmount || 0);
+                  const advPay = acc?.advancePayment ?? ((t as any).totalPaid || (t as any).advanceAmount || 0);
+                  const remPay = acc?.remainingPayment ?? (typeof (t as any).pendingAmount === "number" ? (t as any).pendingAmount : Math.max(0, totalPay - advPay));
+                  const rawStatus = acc?.paymentStatus ?? (t as any).paymentStatus ?? (remPay <= 0 ? "Paid" : advPay > 0 ? "Partially Paid" : "Pending");
+                  const pStatus = rawStatus === "Partially Paid" ? "Partial" : rawStatus;
+
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-3 text-center font-mono text-slate-400 font-semibold">{srNo}</td>
+                      <td className="p-3 font-bold text-blue-900">{info.clientName || linkedApp?.ownerName || "—"}</td>
+                      <td className="p-3 font-mono text-slate-600">{clientDob}</td>
+                      <td className="p-3 font-mono text-slate-700">{info.clientPhone || linkedApp?.mobileNumber || "—"}</td>
+                      <td className="p-3 font-mono text-slate-700">{t.vehicleNumber || linkedApp?.vehicleNumber || "—"}</td>
+                      <td className="p-3 font-semibold text-slate-800">{insDetails.company || "—"}</td>
+                      <td className="p-3 font-mono text-slate-600">{insDetails.policyNumber || "—"}</td>
+                      <td className="p-3 font-mono text-slate-600">{insDetails.expiryDate || "—"}</td>
+                      <td className="p-3 font-bold text-slate-900 font-mono">
+                        ₹{Number(totalPay).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3 font-bold text-emerald-700 font-mono">
+                        ₹{Number(advPay).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3 font-bold text-amber-700 font-mono">
+                        ₹{Number(remPay).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                            pStatus === "Paid" && "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                            pStatus === "Pending" && "bg-amber-50 text-amber-700 border border-amber-200",
+                            pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
+                          )}
+                        >
+                          {pStatus}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <select
+                          value={t.status}
+                          onChange={(e) => onChangeStatus(t, e.target.value as TaskStatus)}
+                          className={cn(
+                            "px-2 py-1 rounded text-[10px] font-bold border bg-transparent cursor-pointer",
+                            statusBadgeClass(t.status)
+                          )}
+                        >
+                          {TASK_STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-3 text-slate-700 font-semibold">{t.assignee || t.assignedEmployeeName || "—"}</td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onView(t)}
+                            title="View Detail"
+                          >
+                            <Eye className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onEdit(t)}
+                            title="Edit Task"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
 
                 if (isLicenceSubModule) {
                   const ld = (t as any).licenseDetails;
@@ -2103,7 +2226,7 @@ function TaskTable({
                     <td className="p-3 font-mono text-slate-600">{pucExp}</td>
                     <td className="p-3 font-mono text-slate-600">{taxExp}</td>
                     <td className="p-3 font-mono text-slate-600">{fitExp}</td>
-                    <td className="p-3 font-mono text-slate-600">{insExp}</td>
+                    {activeSubModule !== "services" && <td className="p-3 font-mono text-slate-600">{insExp}</td>}
                     <td className="p-3 font-mono text-slate-600">{natPermitExp}</td>
                     <td className="p-3 font-mono text-slate-600">{gujPermitExp}</td>
                     <td className="p-3 font-bold text-slate-900 font-mono">

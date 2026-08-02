@@ -22,6 +22,7 @@ import {
   Target,
   Users2,
   Shield,
+  ShieldCheck,
   CheckCircle,
   Lightbulb,
   FileText,
@@ -90,6 +91,13 @@ const GROUPS: NavGroup[] = [
       { to: "/dashboard?subModule=driving_school", label: "Dashboard", icon: LayoutDashboard },
       { to: "/dashboard/applications?subModule=driving_school", label: "Applications", icon: FileText },
       { to: "/dashboard/driving-school/vehicles", label: "School Vehicles", icon: Car },
+    ],
+  },
+  {
+    heading: "Insurance",
+    items: [
+      { to: "/dashboard?subModule=insurance", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/dashboard/applications?subModule=insurance", label: "Applications", icon: FileText },
     ],
   },
   {

@@ -567,7 +567,7 @@ export function ServiceDashboard({
                       <th className="p-3">PUC EXPIRY</th>
                       <th className="p-3">TAX EXPIRY</th>
                       <th className="p-3">FITNESS EXPIRY</th>
-                      <th className="p-3">INSURANCE EXPIRY</th>
+                      {activeSubModule !== "services" && <th className="p-3">INSURANCE EXPIRY</th>}
                       <th className="p-3">NATIONAL PERMIT</th>
                       <th className="p-3">GUJARAT PERMIT</th>
                       <th className="p-3">NP AUTHORIZATION</th>
@@ -753,7 +753,7 @@ export function ServiceDashboard({
                         <td className="p-3 font-mono text-xs text-slate-600">{t.pucExpiryDate || ""}</td>
                         <td className="p-3 font-mono text-xs text-slate-600">{t.taxExpiryDate || ""}</td>
                         <td className="p-3 font-mono text-xs text-slate-600">{t.fitnessExpiryDate || ""}</td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.insuranceExpiryDate || ""}</td>
+                        {activeSubModule !== "services" && <td className="p-3 font-mono text-xs text-slate-600">{t.insuranceExpiryDate || ""}</td>}
                         <td className="p-3 font-mono text-xs text-slate-600">{t.nationalPermitExpiryDate || ""}</td>
                         <td className="p-3 font-mono text-xs text-slate-600">{t.gujaratPermitExpiryDate || ""}</td>
                         <td className="p-3 font-mono text-xs text-slate-600">{t.npAuthExpiryDate || ""}</td>

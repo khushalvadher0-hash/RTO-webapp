@@ -1,5 +1,5 @@
 // src/routes/dashboard.accounting.tsx
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   subscribeAndSyncFinance,
@@ -69,7 +69,17 @@ export const Route = createFileRoute("/dashboard/accounting")({
 import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
 
 function AccountingDashboardPage() {
+  const location = useLocation();
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sub = params.get("subModule");
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+      setActiveSubModule(sub as SubModuleType);
+    }
+  }, [location.search]);
+
   const [activeTab, setActiveTab] = useState<"collections" | "outstanding" | "payments" | "ledger">("collections");
   const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
   const [paymentEntries, setPaymentEntries] = useState<PaymentHistoryItem[]>([]);
@@ -685,8 +695,10 @@ function AccountingDashboardPage() {
       } else {
         const srvs = (r.services || "").toLowerCase();
         const isLic = srvs.includes("license") || srvs.includes("licence") || srvs.includes("learning") || srvs.includes("dl") || srvs.includes("ll");
+        const isIns = srvs.includes("insurance");
         if (activeSubModule === "licence" && !isLic) return false;
-        if (activeSubModule === "services" && isLic) return false;
+        if (activeSubModule === "insurance" && !isIns) return false;
+        if (activeSubModule === "services" && (isLic || isIns)) return false;
         if (activeSubModule === "driving_school") return false;
       }
 
@@ -834,7 +846,8 @@ function AccountingDashboardPage() {
     const todayCollections = paymentEntries
       .filter((p) => {
         const payDateStr = p.paymentDate || p.receivedAt?.slice(0, 10) || "";
-        return payDateStr === todayStr;
+        if (payDateStr !== todayStr) return false;
+        return filteredRecords.some(r => r.clientId === p.clientId || r.applicationId === p.clientId || r.invoiceId === p.invoiceId);
       })
       .reduce((sum, p) => sum + (p.amount || 0), 0);
 

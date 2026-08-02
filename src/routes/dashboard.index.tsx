@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import {
   subscribeApplications,
@@ -54,10 +54,19 @@ function computeDaysRemaining(expiryStr: string): number {
 }
 
 function Overview() {
+  const location = useLocation();
   const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [vehicles, setVehicles] = useState<VehicleMaster[]>([]);
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sub = params.get("subModule");
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+      setActiveSubModule(sub as SubModuleType);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     // 1. Subscribe to master vehicles
@@ -102,6 +111,66 @@ function Overview() {
   const expiryCategories = useMemo(() => {
     if (activeSubModule === "driving_school") {
       return [];
+    }
+
+    if (activeSubModule === "insurance") {
+      const insuranceList: ExpiryItem[] = [];
+
+      applications.forEach((app) => {
+        if (app.subModule === "insurance" || (app.services || []).includes("Insurance")) {
+          const insExp = app.insuranceExpiryDate || (app as any).vehicleDetails?.insuranceDetails?.expiryDate || app.dueDate;
+          if (insExp) {
+            const days = computeDaysRemaining(insExp);
+            insuranceList.push({
+              vehicleNumber: app.vehicleNumber || app.applicationId || app.id,
+              ownerName: app.ownerName || "Applicant",
+              phone: app.mobileNumber || "—",
+              vehicleClass: "Insurance Record",
+              expiryDate: insExp,
+              daysRemaining: days,
+              isCritical: days <= 15,
+            });
+          }
+        }
+      });
+
+      const insuranceVehicleNumbers = new Set(
+        applications
+          .filter(app => app.subModule === "insurance")
+          .map(app => (app.vehicleNumber || "").trim().toUpperCase().replace(/[\s-]/g, ""))
+      );
+
+      activeVehicles.forEach((v) => {
+        const cleanNo = (v.vehicleNumber || v.id || "").trim().toUpperCase().replace(/[\s-]/g, "");
+        if (!insuranceVehicleNumbers.has(cleanNo)) return;
+
+        const track = v.trackExpiry || {};
+        if (track.insurance !== false && v.insuranceDetails?.expiryDate) {
+          const days = computeDaysRemaining(v.insuranceDetails.expiryDate);
+          if (!insuranceList.some((item) => item.vehicleNumber === v.vehicleNumber)) {
+            insuranceList.push({
+              vehicleNumber: v.vehicleNumber || v.id,
+              ownerName: v.ownerName || "Unknown Owner",
+              phone: v.phone || "—",
+              vehicleClass: v.vehicleClass || "Vehicle",
+              expiryDate: v.insuranceDetails.expiryDate,
+              daysRemaining: days,
+              isCritical: days <= 15,
+            });
+          }
+        }
+      });
+
+      const sortFn = (a: ExpiryItem, b: ExpiryItem) => a.daysRemaining - b.daysRemaining;
+
+      return [
+        {
+          title: "Insurance Due",
+          icon: Shield,
+          items: insuranceList.sort(sortFn),
+          color: "text-blue-600 bg-blue-50 border-blue-100",
+        },
+      ];
     }
 
     if (activeSubModule === "licence") {
@@ -294,12 +363,6 @@ function Overview() {
     const sortFn = (a: ExpiryItem, b: ExpiryItem) => a.daysRemaining - b.daysRemaining;
 
     return [
-      {
-        title: "Insurance Due",
-        icon: Shield,
-        items: insuranceList.sort(sortFn),
-        color: "text-rose-600 bg-rose-50 border-rose-100",
-      },
       {
         title: "Fitness Due",
         icon: FileCheck,
