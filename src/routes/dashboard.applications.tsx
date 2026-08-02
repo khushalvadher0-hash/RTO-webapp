@@ -3156,16 +3156,6 @@ function ApplicationFormModal({
                                   >
                                     + Add
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setShowLlRenewS2Dropdown(false);
-                                    }}
-                                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
-                                  >
-                                    Close
-                                  </button>
                                 </div>
                               </div>
                             )}
@@ -3311,16 +3301,6 @@ function ApplicationFormModal({
                                     className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
                                   >
                                     + Add
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setShowLlRenewS3Dropdown(false);
-                                    }}
-                                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
-                                  >
-                                    Close
                                   </button>
                                 </div>
                               </div>
