@@ -4227,29 +4227,31 @@ function ApplicationFormModal({
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="font-semibold text-slate-700 block mb-1">APPLICATION TYPE</label>
-                      <select
-                        value={isCustomAppType ? "__CUSTOM__" : appTypeSelect}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "__CUSTOM__") {
-                            setIsCustomAppType(true);
-                          } else {
-                            setIsCustomAppType(false);
-                            setAppTypeSelect(val);
-                          }
-                        }}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                      >
-                        {availableAppTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                        <option value="__CUSTOM__">+ Add Custom Type</option>
-                      </select>
-                    </div>
+                    {activeSubModule === "insurance" && (
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">APPLICATION TYPE</label>
+                        <select
+                          value={isCustomAppType ? "__CUSTOM__" : appTypeSelect}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "__CUSTOM__") {
+                              setIsCustomAppType(true);
+                            } else {
+                              setIsCustomAppType(false);
+                              setAppTypeSelect(val);
+                            }
+                          }}
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                        >
+                          {availableAppTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                          <option value="__CUSTOM__">+ Add Custom Type</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -5186,42 +5188,6 @@ function ApplicationFormModal({
                       </option>
                     ))}
                   </select>
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    APPLICATION TYPE
-                  </label>
-                  <select
-                    value={isCustomAppType ? "__CUSTOM__" : appTypeSelect}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "__CUSTOM__") {
-                        setIsCustomAppType(true);
-                      } else {
-                        setIsCustomAppType(false);
-                        setAppTypeSelect(val);
-                      }
-                    }}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                  >
-                    {availableAppTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                    <option value="__CUSTOM__">+ Add Custom Application Type...</option>
-                  </select>
-
-                  {isCustomAppType && (
-                    <input
-                      type="text"
-                      placeholder="Type custom application type..."
-                      value={customAppTypeInput}
-                      onChange={(e) => setCustomAppTypeInput(e.target.value)}
-                      className="w-full mt-2 p-2 bg-white border border-blue-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
-                      autoFocus
-                    />
-                  )}
                 </div>
               </div>
             </div>

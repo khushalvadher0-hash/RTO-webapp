@@ -945,12 +945,21 @@ export async function updateTask(
       const appData = appSnap.exists() ? (appSnap.data() as any) : {};
 
       const appStatus = patch.status === "Completed" ? "Approved" : patch.status === "On Hold" ? "On Hold" : patch.status;
-      if (appSnap.exists() && patch.status) {
+      if (appSnap.exists()) {
         try {
-          await updateDoc(appRef, {
-            applicationStatus: appStatus,
+          const appUpdates: any = {
             updatedAt: new Date().toISOString(),
-          });
+          };
+          if (patch.status) {
+            appUpdates.applicationStatus = appStatus;
+          }
+          if ((patch as any).applicationId !== undefined) {
+            appUpdates.applicationId = (patch as any).applicationId;
+          }
+          if ((patch as any).applicationType !== undefined) {
+            appUpdates.applicationType = (patch as any).applicationType;
+          }
+          await updateDoc(appRef, appUpdates);
         } catch (e) {
           console.warn("App doc status update notice:", e);
         }
@@ -1041,6 +1050,29 @@ export async function updateTask(
     console.log("📝 updateTask CLEAN:", cleanUpdates);
     await updateDoc(doc(db, COL, taskId), cleanUpdates);
     console.log("✅ Task updated successfully");
+
+    // Sync back to registry_applications_v1 application doc if it is associated with one
+    try {
+      const appDocId = existing.recordId || existing.clientId;
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        const appSnap = await getDoc(appRef);
+        if (appSnap.exists()) {
+          const appUpdates: any = { updatedAt: new Date().toISOString() };
+          if (patch.applicationId !== undefined) {
+            appUpdates.applicationId = patch.applicationId;
+          }
+          if (patch.applicationType !== undefined) {
+            appUpdates.applicationType = patch.applicationType;
+          }
+          await updateDoc(appRef, appUpdates);
+          console.log("✅ Synced Application ID and Type back to application document:", appDocId);
+        }
+      }
+    } catch (e) {
+      console.warn("Application doc sync notice:", e);
+    }
+
     if (existing.associationType === "client" && existing.recordId) {
       await logClientActivity(
         existing.recordId,

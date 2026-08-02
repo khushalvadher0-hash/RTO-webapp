@@ -656,7 +656,8 @@ function TasksPage() {
           assignedEmployeeName: item.assignedEmployeeName || existing.assignedEmployeeName,
           remarks: item.remarks || existing.remarks,
           appointmentDate: item.appointmentDate || existing.appointmentDate,
-          applicationId: existing.applicationId || item.applicationId,
+          applicationId: item.applicationId || existing.applicationId,
+          applicationType: item.applicationType || existing.applicationType,
           vehicleNumber: existing.vehicleNumber || item.vehicleNumber,
           clientName: existing.clientName || item.clientName,
         };
@@ -922,6 +923,8 @@ function TasksPage() {
   const [completeRtoExpense, setCompleteRtoExpense] = useState<string>("");
   const [completeRemarks, setCompleteRemarks] = useState("");
   const [completeNewDob, setCompleteNewDob] = useState("");
+  const [completeApplicationId, setCompleteApplicationId] = useState("");
+  const [completeApplicationType, setCompleteApplicationType] = useState("Home");
   const [savingComplete, setSavingComplete] = useState(false);
 
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
@@ -936,6 +939,8 @@ function TasksPage() {
       setCompleteAppointmentDate(task.appointmentDate || new Date().toISOString().split("T")[0]);
       setCompleteRtoExpense(task.rtoExpense ? String(task.rtoExpense) : "");
       setCompleteRemarks(task.remarks || "");
+      setCompleteApplicationId(task.applicationId || "");
+      setCompleteApplicationType(task.applicationType || "Home");
       return;
     }
 
@@ -1002,6 +1007,8 @@ function TasksPage() {
           appointmentDate: completeAppointmentDate,
           rtoExpense: expNum,
           remarks: completeRemarks.trim(),
+          applicationId: completeApplicationId.trim(),
+          applicationType: completeApplicationType,
         },
         session?.username || "system",
         `Status → Completed`,
@@ -1022,6 +1029,8 @@ function TasksPage() {
               rtoExpense: expNum,
               remarks: completeRemarks.trim(),
               notes: completeRemarks.trim(),
+              applicationId: completeApplicationId.trim(),
+              applicationType: completeApplicationType,
               updatedAt: new Date().toISOString(),
             }),
             { merge: true }
@@ -1029,6 +1038,24 @@ function TasksPage() {
         }
       } catch (svcErr) {
         console.warn("Service doc sync notice:", svcErr);
+      }
+
+      // Sync back to registry_applications_v1 application doc
+      try {
+        const appDocId = (completeModalTask as any).applicationDocId || completeModalTask.recordId || completeModalTask.id.replace("task-app-", "");
+        if (appDocId) {
+          const appRef = doc(db, "registry_applications_v1", appDocId);
+          const appSnap = await getDoc(appRef);
+          if (appSnap.exists()) {
+            await updateDoc(appRef, {
+              applicationId: completeApplicationId.trim(),
+              applicationType: completeApplicationType,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (appErr) {
+        console.warn("Application doc sync notice:", appErr);
       }
 
       // If Change Date of Birth In DL service task, update DOB in application record
@@ -1676,13 +1703,13 @@ function TasksPage() {
 
               <div className="space-y-1.5">
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
-                  RTO EXPENSE
+                  RTO RECEIPT
                 </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₹</span>
                   <Input
                     type="number"
-                    placeholder="Enter RTO Expense"
+                    placeholder="Enter RTO Receipt"
                     value={completeRtoExpense}
                     onChange={(e) => setCompleteRtoExpense(e.target.value)}
                     className="pl-8 bg-slate-50 font-medium text-slate-900"
@@ -1706,6 +1733,34 @@ function TasksPage() {
                   </p>
                 </div>
               )}
+
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border rounded-xl">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Application No.</Label>
+                  <Input
+                    type="text"
+                    placeholder="APL-XXXX-XXXX"
+                    value={completeApplicationId}
+                    onChange={(e) => setCompleteApplicationId(e.target.value)}
+                    className="bg-white text-xs font-semibold text-slate-900"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Application Type</Label>
+                  <Select value={completeApplicationType} onValueChange={setCompleteApplicationType}>
+                    <SelectTrigger className="bg-white text-xs font-semibold text-slate-900 h-9">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Home">Home</SelectItem>
+                      <SelectItem value="Faceless">Faceless</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                      <SelectItem value="CNG">CNG</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               <div className="space-y-1.5">
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
@@ -2183,10 +2238,10 @@ function TaskTable({
                 const advPay = acc?.advancePayment ?? linkedApp?.totalPaid ?? tRaw.totalPaid ?? 0;
                 
                 const appNo = tRaw.applicationId || linkedApp?.applicationId || "—";
-                const appType = linkedApp?.applicationType || tRaw.applicationType || "Home";
+                const appType = tRaw.applicationType || linkedApp?.applicationType || "Home";
 
                 return (
-                  <tr key={t.id} className="hover:bg-slate-50/20">
+                  <tr key={t.id} style={getApplicationTypeStyle(appType)} className="hover:bg-slate-50/40 border-b border-slate-100 transition-colors">
                     <td className="p-3 font-mono text-gray-500 font-semibold text-center">{srNo}</td>
                     <td className="p-3 font-mono">{taskCreatedDateStr}</td>
                     <td className="p-3 font-mono text-[11px] text-gray-600">
@@ -2571,6 +2626,7 @@ function TaskFormDialog({
   const [saving, setSaving] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [applicationId, setApplicationId] = useState("");
+  const [applicationType, setApplicationType] = useState("Home");
 
   // Subtasks and Templates
   const [checklist, setChecklist] = useState<TaskSubtask[]>([]);
@@ -2593,6 +2649,7 @@ function TaskFormDialog({
       setDescription(editing.description ?? "");
       setRemarks(editing.remarks ?? "");
       setApplicationId(editing.applicationId ?? "");
+      setApplicationType(editing.applicationType ?? "Home");
       const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
       const matchedEmp = activeEmployees.find(e =>
         e.id === editing.assignee ||
@@ -2628,6 +2685,7 @@ function TaskFormDialog({
       setDescription("");
       setRemarks("");
       setApplicationId("");
+      setApplicationType("Home");
       const activeEmployees = employees.filter((e) => e.status === "active" && !e.isDeleted);
       const defaultEmp = activeEmployees.find((e) => e.role === "admin" || e.username === "admin") || activeEmployees[0];
       setAssignee(defaultEmp?.id || "");
@@ -2752,6 +2810,7 @@ function TaskFormDialog({
             serviceType: serviceName.trim(),
             remarks: remarks.trim(),
             applicationId: applicationId.trim(),
+            applicationType: applicationType,
           },
           actor,
           "Task edited",
@@ -2780,6 +2839,7 @@ function TaskFormDialog({
           serviceType: serviceName.trim(),
           remarks: remarks.trim(),
           applicationId: applicationId.trim(),
+          applicationType: applicationType,
         });
       }
       onClose();
@@ -3099,22 +3159,33 @@ function TaskFormDialog({
                 onChange={(e) => setAppointmentDate(e.target.value)}
               />
             </div>
-            {(editing?.applicationId || editing?.applicationType) && (
-              <div className="grid grid-cols-2 gap-2 p-2 bg-slate-50 border rounded-lg text-xs">
-                {editing?.applicationId && (
-                  <div>
-                    <span className="font-bold text-gray-500 uppercase block text-[10px]">Application ID</span>
-                    <span className="font-mono text-gray-900 font-semibold">{editing.applicationId}</span>
-                  </div>
-                )}
-                {editing?.applicationType && (
-                  <div>
-                    <span className="font-bold text-gray-500 uppercase block text-[10px]">Application Type</span>
-                    <span className="font-semibold text-gray-900">{editing.applicationType}</span>
-                  </div>
-                )}
+            <div className="grid grid-cols-2 gap-4 p-2 bg-slate-50 border rounded-lg text-xs">
+              <div className="grid gap-1">
+                <span className="font-bold text-gray-500 uppercase block text-[10px]">Application No.</span>
+                <Input
+                  type="text"
+                  placeholder="e.g. APL-2026-3084"
+                  value={applicationId}
+                  onChange={(e) => setApplicationId(e.target.value)}
+                  className="bg-white"
+                />
               </div>
-            )}
+              <div className="grid gap-1">
+                <span className="font-bold text-gray-500 uppercase block text-[10px]">Application Type</span>
+                <Select value={applicationType} onValueChange={setApplicationType}>
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Select type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Home">Home</SelectItem>
+                    <SelectItem value="Faceless">Faceless</SelectItem>
+                    <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                    <SelectItem value="CNG">CNG</SelectItem>
+                    <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-3">
@@ -3692,7 +3763,7 @@ function TaskDetailsSheet({
                     <Meta label="Remarks" value={activeTask.remarks} />
                   )}
                   {activeTask.rtoExpense !== undefined && activeTask.rtoExpense > 0 && (
-                    <Meta label="RTO Expense" value={`₹${activeTask.rtoExpense}`} />
+                    <Meta label="RTO Receipt" value={`₹${activeTask.rtoExpense}`} />
                   )}
                   <Meta label="Due Date" value={activeTask.dueDate ? formatDate(activeTask.dueDate) : "—"} />
 
