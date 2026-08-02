@@ -194,6 +194,7 @@ export interface LicenseDetailsData {
   newLearningLicence?: {
     enabled: boolean;
     appointmentDate?: string;
+    applicationNo?: string;
     classOfVehicle?: string[];
     totalAmount?: number | string;
     advanceAmount?: number | string;
@@ -206,6 +207,7 @@ export interface LicenseDetailsData {
     step2?: {
       dlNumber?: string;
       issueDate?: string;
+      expiryDate?: string;
       validityDate?: string;
       vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
       classOfVehicle?: string[];
@@ -213,6 +215,7 @@ export interface LicenseDetailsData {
   };
   dlNewLlEndorsement?: {
     enabled: boolean;
+    applicationNo?: string;
     totalAmount?: number | string;
     advanceAmount?: number | string;
     step1?: {
@@ -220,6 +223,7 @@ export interface LicenseDetailsData {
       issueDate?: string;
       validityDate?: string;
       vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
+      classOfVehicle?: string;
     };
     step2?: {
       llNumber?: string;
@@ -238,14 +242,16 @@ export interface LicenseDetailsData {
   llRenewClass?: {
     enabled: boolean;
     appointmentDate?: string;
+    applicationNo?: string;
     totalAmount?: number | string;
     advanceAmount?: number | string;
-    step1?: { llNumber?: string; issueDate?: string; expiryDate?: string };
-    step2?: { dlNumber?: string; issueDate?: string; validityDate?: string };
-    step3?: { dlNumber?: string; issueDate?: string; validityDate?: string };
+    step1?: { llNumber?: string; issueDate?: string; expiryDate?: string; classOfVehicle?: string[] };
+    step2?: { dlNumber?: string; issueDate?: string; validityDate?: string; classOfVehicle?: string[] };
+    step3?: { dlNumber?: string; issueDate?: string; validityDate?: string; classOfVehicle?: string[] };
   };
   dlRenewRetest?: {
     enabled: boolean;
+    applicationNo?: string;
     totalAmount?: number | string;
     advanceAmount?: number | string;
     step1?: { dlNumber?: string; issueDate?: string; validityDate?: string; appNo1?: string };

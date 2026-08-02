@@ -3631,6 +3631,24 @@ function TaskDetailsSheet({
                   // Render 2 steps for New Learning Licence or 3 steps for DL New LL Endorsement / Renewals
                   return (
                     <div className="space-y-4">
+                      {/* Application Numbers summary */}
+                      {(lic.newLearningLicence?.applicationNo || lic.dlNewLlEndorsement?.applicationNo || lic.llRenewClass?.applicationNo || lic.dlRenewRetest?.applicationNo) && (
+                        <div className="bg-blue-100/50 p-2.5 rounded-lg border border-blue-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                          {lic.newLearningLicence?.enabled && lic.newLearningLicence?.applicationNo && (
+                            <div><span className="font-semibold text-slate-600">New Learning Licence App No:</span> <span className="font-mono font-bold text-slate-800">{lic.newLearningLicence.applicationNo}</span></div>
+                          )}
+                          {lic.dlNewLlEndorsement?.enabled && lic.dlNewLlEndorsement?.applicationNo && (
+                            <div><span className="font-semibold text-slate-600">DL Endorsement App No:</span> <span className="font-mono font-bold text-slate-800">{lic.dlNewLlEndorsement.applicationNo}</span></div>
+                          )}
+                          {lic.llRenewClass?.enabled && lic.llRenewClass?.applicationNo && (
+                            <div><span className="font-semibold text-slate-600">LL Renew Class App No:</span> <span className="font-mono font-bold text-slate-800">{lic.llRenewClass.applicationNo}</span></div>
+                          )}
+                          {lic.dlRenewRetest?.enabled && lic.dlRenewRetest?.applicationNo && (
+                            <div><span className="font-semibold text-slate-600">DL Renew + Retest App No:</span> <span className="font-mono font-bold text-slate-800">{lic.dlRenewRetest.applicationNo}</span></div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Step 1 */}
                       <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">

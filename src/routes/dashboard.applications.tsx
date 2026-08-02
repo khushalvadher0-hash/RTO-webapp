@@ -20,6 +20,10 @@ import {
   Pencil,
   Trash2,
   GraduationCap,
+  FolderOpen,
+  Printer,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   subscribeApplications,
@@ -1070,6 +1074,7 @@ function ApplicationFormModal({
   );
 
   const gstPercentage = getInsuranceGstPercentage();
+  const [showLicenseDocsSection, setShowLicenseDocsSection] = useState(true);
 
   // Driving School State
   const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">("Male");
@@ -1091,12 +1096,28 @@ function ApplicationFormModal({
   );
   const [groupOptions, setGroupOptions] = useState<string[]>(["Select group", "Self", "Company Fleet"]);
   const [showAddGroupInput, setShowAddGroupInput] = useState(false);
-  const [newGroupInput, setNewGroupInput] = useState("");
+  const [suggestedClasses, setSuggestedClasses] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("custom_vehicle_classes");
+      return saved ? JSON.parse(saved) : ["MCWG", "LMV", "TRANS", "MCWOG", "3W-DET", "HGMV", "HPMV"];
+    } catch (e) {
+      return ["MCWG", "LMV", "TRANS", "MCWOG", "3W-DET", "HGMV", "HPMV"];
+    }
+  });
+  const [showClassDropdown, setShowClassDropdown] = useState(false);
+  const [customClassInput, setCustomClassInput] = useState("");
+  const [showLlRenewS1Dropdown, setShowLlRenewS1Dropdown] = useState(false);
+  const [showLlRenewS2Dropdown, setShowLlRenewS2Dropdown] = useState(false);
+  const [showLlRenewS3Dropdown, setShowLlRenewS3Dropdown] = useState(false);
+  const [customClassInputS1, setCustomClassInputS1] = useState("");
+  const [customClassInputS2, setCustomClassInputS2] = useState("");
+  const [customClassInputS3, setCustomClassInputS3] = useState("");
 
   // License Services State
   const [newLL, setNewLL] = useState({
     enabled: editingApp?.licenseDetails?.newLearningLicence?.enabled ?? false,
     appointmentDate: editingApp?.licenseDetails?.newLearningLicence?.appointmentDate || "",
+    applicationNo: editingApp?.licenseDetails?.newLearningLicence?.applicationNo || "",
     classOfVehicle: editingApp?.licenseDetails?.newLearningLicence?.classOfVehicle || [],
     totalAmount: editingApp?.licenseDetails?.newLearningLicence?.totalAmount || "",
     advanceAmount: editingApp?.licenseDetails?.newLearningLicence?.advanceAmount || "",
@@ -1110,11 +1131,13 @@ function ApplicationFormModal({
       issueDate: editingApp?.licenseDetails?.newLearningLicence?.step2?.issueDate || "",
       validityDate: editingApp?.licenseDetails?.newLearningLicence?.step2?.validityDate || "",
       vehicleTypes: editingApp?.licenseDetails?.newLearningLicence?.step2?.vehicleTypes || { nt: false, tr: false, hazardous: false },
+      classOfVehicle: editingApp?.licenseDetails?.newLearningLicence?.step2?.classOfVehicle || [],
     },
   });
 
   const [dlEndorsement, setDlEndorsement] = useState({
     enabled: editingApp?.licenseDetails?.dlNewLlEndorsement?.enabled ?? false,
+    applicationNo: editingApp?.licenseDetails?.dlNewLlEndorsement?.applicationNo || "",
     totalAmount: editingApp?.licenseDetails?.dlNewLlEndorsement?.totalAmount || "",
     advanceAmount: editingApp?.licenseDetails?.dlNewLlEndorsement?.advanceAmount || "",
     step1: {
@@ -1122,6 +1145,7 @@ function ApplicationFormModal({
       issueDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.issueDate || "",
       validityDate: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.validityDate || "",
       vehicleTypes: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.vehicleTypes || { nt: false, tr: false, hazardous: false },
+      classOfVehicle: editingApp?.licenseDetails?.dlNewLlEndorsement?.step1?.classOfVehicle || "",
     },
     step2: {
       llNumber: editingApp?.licenseDetails?.dlNewLlEndorsement?.step2?.llNumber || "",
@@ -1141,15 +1165,17 @@ function ApplicationFormModal({
   const [llRenew, setLlRenew] = useState({
     enabled: editingApp?.licenseDetails?.llRenewClass?.enabled ?? false,
     appointmentDate: editingApp?.licenseDetails?.llRenewClass?.appointmentDate || "",
+    applicationNo: editingApp?.licenseDetails?.llRenewClass?.applicationNo || "",
     totalAmount: editingApp?.licenseDetails?.llRenewClass?.totalAmount || "",
     advanceAmount: editingApp?.licenseDetails?.llRenewClass?.advanceAmount || "",
-    step1: { llNumber: editingApp?.licenseDetails?.llRenewClass?.step1?.llNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step1?.issueDate || "", expiryDate: editingApp?.licenseDetails?.llRenewClass?.step1?.expiryDate || "" },
-    step2: { dlNumber: editingApp?.licenseDetails?.llRenewClass?.step2?.dlNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step2?.issueDate || "", validityDate: editingApp?.licenseDetails?.llRenewClass?.step2?.validityDate || "" },
-    step3: { dlNumber: editingApp?.licenseDetails?.llRenewClass?.step3?.dlNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step3?.issueDate || "", validityDate: editingApp?.licenseDetails?.llRenewClass?.step3?.validityDate || "" },
+    step1: { llNumber: editingApp?.licenseDetails?.llRenewClass?.step1?.llNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step1?.issueDate || "", expiryDate: editingApp?.licenseDetails?.llRenewClass?.step1?.expiryDate || "", classOfVehicle: editingApp?.licenseDetails?.llRenewClass?.step1?.classOfVehicle || [] },
+    step2: { dlNumber: editingApp?.licenseDetails?.llRenewClass?.step2?.dlNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step2?.issueDate || "", validityDate: editingApp?.licenseDetails?.llRenewClass?.step2?.validityDate || "", classOfVehicle: editingApp?.licenseDetails?.llRenewClass?.step2?.classOfVehicle || [] },
+    step3: { dlNumber: editingApp?.licenseDetails?.llRenewClass?.step3?.dlNumber || "", issueDate: editingApp?.licenseDetails?.llRenewClass?.step3?.issueDate || "", validityDate: editingApp?.licenseDetails?.llRenewClass?.step3?.validityDate || "", classOfVehicle: editingApp?.licenseDetails?.llRenewClass?.step3?.classOfVehicle || [] },
   });
 
   const [dlRenewRetest, setDlRenewRetest] = useState({
     enabled: editingApp?.licenseDetails?.dlRenewRetest?.enabled ?? false,
+    applicationNo: editingApp?.licenseDetails?.dlRenewRetest?.applicationNo || "",
     totalAmount: editingApp?.licenseDetails?.dlRenewRetest?.totalAmount || "",
     advanceAmount: editingApp?.licenseDetails?.dlRenewRetest?.advanceAmount || "",
     step1: { dlNumber: editingApp?.licenseDetails?.dlRenewRetest?.step1?.dlNumber || "", issueDate: editingApp?.licenseDetails?.dlRenewRetest?.step1?.issueDate || "", validityDate: editingApp?.licenseDetails?.dlRenewRetest?.step1?.validityDate || "", appNo1: editingApp?.licenseDetails?.dlRenewRetest?.step1?.appNo1 || "" },
@@ -2023,6 +2049,22 @@ function ApplicationFormModal({
     "Other Document 3",
   ];
 
+  const licenseDocumentItems = [
+    "Aadhaar Card",
+    "Date Of Birth Certificate",
+    "PAN Card",
+    "School Leaving Certificate",
+    "Passport",
+    "Visa",
+    "Air Ticket",
+    "Marriage Certificate",
+    "Ration Card",
+    "Driving Licence",
+    "Learning Licence",
+    "Election Card",
+    "Hazardous Card",
+  ];
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm overflow-y-auto flex justify-center p-4 sm:p-6">
       <div className="bg-slate-50 w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto flex flex-col max-h-[92vh]">
@@ -2214,22 +2256,22 @@ function ApplicationFormModal({
                     <div className="p-5 space-y-5 text-xs">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
+                          <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
+                          <input
+                            type="text"
+                            placeholder="Enter application number"
+                            value={newLL.applicationNo}
+                            onChange={(e) => setNewLL((prev) => ({ ...prev, applicationNo: e.target.value }))}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-mono"
+                          />
+                        </div>
+                        <div>
                           <label className="font-semibold text-slate-700 block mb-1">APPOINTMENT DATE</label>
                           <input
                             type="date"
                             value={newLL.appointmentDate}
-                            onChange={(e) => setNewLL((prev) => ({ ...prev, appointmentDate: e.target.value }))}
+                            onChange={(prev) => setNewLL((prevVal) => ({ ...prevVal, appointmentDate: prev.target.value }))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
-                          />
-                        </div>
-                        <div>
-                          <label className="font-semibold text-slate-700 block mb-1">CLASS OF VEHICLE (MULTIPLE SELECTION)</label>
-                          <input
-                            type="text"
-                            placeholder="MCWG, LMV, TRANS"
-                            value={newLL.classOfVehicle.join(", ")}
-                            onChange={(e) => setNewLL((prev) => ({ ...prev, classOfVehicle: e.target.value.split(",").map((s) => s.trim()) }))}
-                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-medium"
                           />
                         </div>
                       </div>
@@ -2240,7 +2282,7 @@ function ApplicationFormModal({
                           <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span>
                           <span>LEARNING LICENCE DETAILS</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                           <div>
                             <label className="font-semibold text-slate-600 block mb-1">LL NUMBER</label>
                             <input
@@ -2269,6 +2311,131 @@ function ApplicationFormModal({
                               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
                             />
                           </div>
+                          <div className="relative">
+                            <label className="font-semibold text-slate-700 block mb-1">CLASS OF VEHICLE (MULTIPLE SELECTION)</label>
+                            <div 
+                              className="min-h-[42px] p-1.5 bg-white border border-slate-200 rounded-xl flex flex-wrap gap-1.5 items-center cursor-pointer select-none text-xs"
+                              onClick={() => setShowClassDropdown(!showClassDropdown)}
+                            >
+                              {newLL.classOfVehicle.length === 0 ? (
+                                <span className="text-slate-400 pl-2 text-[11px]">Select Class of Vehicle...</span>
+                              ) : (
+                                newLL.classOfVehicle.map((val) => (
+                                  <span 
+                                    key={val} 
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-lg border border-blue-100"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const next = newLL.classOfVehicle.filter((v) => v !== val);
+                                      setNewLL((prevVal) => {
+                                        const updated = {
+                                          ...prevVal,
+                                          classOfVehicle: next,
+                                          step2: {
+                                            ...prevVal.step2,
+                                            classOfVehicle: next,
+                                          }
+                                        };
+                                        return updated;
+                                      });
+                                    }}
+                                  >
+                                    {val}
+                                    <span className="text-blue-500 hover:text-blue-700 font-bold ml-0.5">×</span>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+
+                            {showClassDropdown && (
+                              <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-[250px] overflow-y-auto">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {suggestedClasses.map((item) => {
+                                    const isSelected = newLL.classOfVehicle.includes(item);
+                                    return (
+                                      <label 
+                                        key={item} 
+                                        className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer font-semibold text-[11px] transition-all select-none ${
+                                          isSelected ? "bg-blue-50 border-blue-200 text-blue-900" : "bg-slate-50 border-slate-100 hover:bg-slate-100 text-slate-700"
+                                        }`}
+                                      >
+                                        <input 
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const next = e.target.checked 
+                                              ? [...newLL.classOfVehicle, item]
+                                              : newLL.classOfVehicle.filter((v) => v !== item);
+                                            
+                                            setNewLL((prevVal) => {
+                                              const updated = {
+                                                ...prevVal,
+                                                classOfVehicle: next,
+                                                step2: {
+                                                  ...prevVal.step2,
+                                                  classOfVehicle: next,
+                                                }
+                                              };
+                                              return updated;
+                                            });
+                                          }}
+                                          className="w-3.5 h-3.5 text-blue-600 rounded"
+                                        />
+                                        <span>{item}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="border-t pt-2 flex gap-2">
+                                  <input 
+                                    type="text"
+                                    placeholder="Add custom class..."
+                                    value={customClassInput}
+                                    onChange={(e) => setCustomClassInput(e.target.value.toUpperCase())}
+                                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const cleaned = customClassInput.trim();
+                                      if (cleaned && !suggestedClasses.includes(cleaned)) {
+                                        const nextSuggested = [...suggestedClasses, cleaned];
+                                        setSuggestedClasses(nextSuggested);
+                                        localStorage.setItem("custom_vehicle_classes", JSON.stringify(nextSuggested));
+                                        
+                                        const nextSelected = [...newLL.classOfVehicle, cleaned];
+                                        setNewLL((prevVal) => ({
+                                          ...prevVal,
+                                          classOfVehicle: nextSelected,
+                                          step2: {
+                                            ...prevVal.step2,
+                                            classOfVehicle: nextSelected,
+                                          }
+                                        }));
+                                        setCustomClassInput("");
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                                  >
+                                    + Add
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowClassDropdown(false);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -2278,7 +2445,7 @@ function ApplicationFormModal({
                           <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">2</span>
                           <span>DRIVING LICENCE DETAILS</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                           <div>
                             <label className="font-semibold text-slate-600 block mb-1">DL NUMBER</label>
                             <input
@@ -2305,6 +2472,16 @@ function ApplicationFormModal({
                               value={newLL.step2.validityDate}
                               onChange={(e) => setNewLL((prev) => ({ ...prev, step2: { ...prev.step2, validityDate: e.target.value } }))}
                               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-600 block mb-1">CLASS OF VEHICLE</label>
+                            <input
+                              type="text"
+                              disabled
+                              value={newLL.step2.classOfVehicle?.join(", ") || ""}
+                              className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-semibold text-slate-500 cursor-not-allowed"
+                              placeholder="Auto-taken from step 1"
                             />
                           </div>
                         </div>
@@ -2409,13 +2586,29 @@ function ApplicationFormModal({
 
                   {dlEndorsement.enabled && (
                     <div className="p-5 space-y-5 text-xs">
+                      {/* General Application Number */}
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                        <div className="grid grid-cols-1 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
+                            <input
+                              type="text"
+                              placeholder="Enter application number"
+                              value={dlEndorsement.applicationNo}
+                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, applicationNo: e.target.value }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Step 1: DL Details */}
                       <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
                           <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">1</span>
                           <span className="uppercase tracking-wider">DL DETAILS</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div>
                             <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">DL NUMBER</label>
                             <input
@@ -2441,6 +2634,28 @@ function ApplicationFormModal({
                               value={dlEndorsement.step1.validityDate}
                               onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step1: { ...prev.step1, validityDate: e.target.value } }))}
                               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <input
+                              type="text"
+                              placeholder="Select or enter vehicle class..."
+                              value={dlEndorsement.step1.classOfVehicle || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setDlEndorsement((prev) => {
+                                  const s1 = val;
+                                  const s2 = prev.step2.classOfVehicle || "";
+                                  const combined = [s1, s2].map(s => s.trim()).filter(Boolean).join(", ");
+                                  return {
+                                    ...prev,
+                                    step1: { ...prev.step1, classOfVehicle: s1 },
+                                    step3: { ...prev.step3, classOfVehicle: combined }
+                                  };
+                                });
+                              }}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
                             />
                           </div>
                         </div>
@@ -2516,7 +2731,19 @@ function ApplicationFormModal({
                               type="text"
                               placeholder="Select or enter vehicle class..."
                               value={(dlEndorsement.step2 as any).classOfVehicle || ""}
-                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step2: { ...prev.step2, classOfVehicle: e.target.value } }))}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setDlEndorsement((prev) => {
+                                  const s1 = prev.step1.classOfVehicle || "";
+                                  const s2 = val;
+                                  const combined = [s1, s2].map(s => s.trim()).filter(Boolean).join(", ");
+                                  return {
+                                    ...prev,
+                                    step2: { ...prev.step2, classOfVehicle: s2 },
+                                    step3: { ...prev.step3, classOfVehicle: combined }
+                                  };
+                                });
+                              }}
                               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
                             />
                           </div>
@@ -2589,13 +2816,13 @@ function ApplicationFormModal({
                             </div>
                           </div>
                           <div>
-                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE (COMBINED)</label>
                             <input
                               type="text"
-                              placeholder="Select or enter vehicle class..."
+                              disabled={true}
+                              placeholder="Combined class of vehicle..."
                               value={(dlEndorsement.step3 as any).classOfVehicle || ""}
-                              onChange={(e) => setDlEndorsement((prev) => ({ ...prev, step3: { ...prev.step3, classOfVehicle: e.target.value } }))}
-                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                              className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-500 cursor-not-allowed"
                             />
                           </div>
                         </div>
@@ -2642,13 +2869,29 @@ function ApplicationFormModal({
 
                   {llRenew.enabled && (
                     <div className="p-5 space-y-5 text-xs">
+                      {/* General Application Number */}
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                        <div className="grid grid-cols-1 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
+                            <input
+                              type="text"
+                              placeholder="Enter application number"
+                              value={llRenew.applicationNo}
+                              onChange={(e) => setLlRenew((prev) => ({ ...prev, applicationNo: e.target.value }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Step 1: LL DETAILS */}
                       <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
                           <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">1</span>
                           <span className="uppercase tracking-wider">LL DETAILS</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div>
                             <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">LL NUMBER</label>
                             <input
@@ -2676,6 +2919,113 @@ function ApplicationFormModal({
                               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                             />
                           </div>
+                          <div className="relative">
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <div 
+                              className="min-h-[42px] p-1.5 bg-white border border-slate-200 rounded-xl flex flex-wrap gap-1.5 items-center cursor-pointer select-none text-xs"
+                              onClick={() => setShowLlRenewS1Dropdown(!showLlRenewS1Dropdown)}
+                            >
+                              {((llRenew as any).step1?.classOfVehicle || []).length === 0 ? (
+                                <span className="text-slate-400 pl-2 text-[11px]">Select Class of Vehicle...</span>
+                              ) : (
+                                (llRenew.step1.classOfVehicle || []).map((val: string) => (
+                                  <span 
+                                    key={val} 
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-lg border border-blue-100"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const next = (llRenew.step1.classOfVehicle || []).filter((v: string) => v !== val);
+                                      setLlRenew((prevVal) => ({
+                                        ...prevVal,
+                                        step1: { ...prevVal.step1, classOfVehicle: next }
+                                      }));
+                                    }}
+                                  >
+                                    {val}
+                                    <span className="text-blue-500 hover:text-blue-700 font-bold ml-0.5">×</span>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+
+                            {showLlRenewS1Dropdown && (
+                              <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-[250px] overflow-y-auto">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {suggestedClasses.map((item) => {
+                                    const isSelected = ((llRenew as any).step1?.classOfVehicle || []).includes(item);
+                                    return (
+                                      <label 
+                                        key={item} 
+                                        className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer font-semibold text-[11px] transition-all select-none ${
+                                          isSelected ? "bg-blue-50 border-blue-200 text-blue-900" : "bg-slate-50 border-slate-100 hover:bg-slate-100 text-slate-700"
+                                        }`}
+                                      >
+                                        <input 
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const next = e.target.checked 
+                                              ? [...((llRenew as any).step1?.classOfVehicle || []), item]
+                                              : ((llRenew as any).step1?.classOfVehicle || []).filter((v: string) => v !== item);
+                                            
+                                            setLlRenew((prevVal) => ({
+                                              ...prevVal,
+                                              step1: { ...prevVal.step1, classOfVehicle: next }
+                                            }));
+                                          }}
+                                          className="w-3.5 h-3.5 text-blue-600 rounded"
+                                        />
+                                        <span>{item}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="border-t pt-2 flex gap-2">
+                                  <input 
+                                    type="text"
+                                    placeholder="Add custom..."
+                                    value={customClassInputS1}
+                                    onChange={(e) => setCustomClassInputS1(e.target.value.toUpperCase())}
+                                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const cleaned = customClassInputS1.trim();
+                                      if (cleaned && !suggestedClasses.includes(cleaned)) {
+                                        const nextSuggested = [...suggestedClasses, cleaned];
+                                        setSuggestedClasses(nextSuggested);
+                                        localStorage.setItem("custom_vehicle_classes", JSON.stringify(nextSuggested));
+                                        
+                                        const nextSelected = [...((llRenew as any).step1?.classOfVehicle || []), cleaned];
+                                        setLlRenew((prevVal) => ({
+                                          ...prevVal,
+                                          step1: { ...prevVal.step1, classOfVehicle: nextSelected }
+                                        }));
+                                        setCustomClassInputS1("");
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                                  >
+                                    + Add
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowLlRenewS1Dropdown(false);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -2685,7 +3035,7 @@ function ApplicationFormModal({
                           <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">2</span>
                           <span className="uppercase tracking-wider">NEW LL DETAILS</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div>
                             <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">LL NUMBER</label>
                             <input
@@ -2712,6 +3062,113 @@ function ApplicationFormModal({
                               onChange={(e) => setLlRenew((prev) => ({ ...prev, step2: { ...prev.step2, expiryDate: e.target.value } }))}
                               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                             />
+                          </div>
+                          <div className="relative">
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                            <div 
+                              className="min-h-[42px] p-1.5 bg-white border border-slate-200 rounded-xl flex flex-wrap gap-1.5 items-center cursor-pointer select-none text-xs"
+                              onClick={() => setShowLlRenewS2Dropdown(!showLlRenewS2Dropdown)}
+                            >
+                              {((llRenew as any).step2?.classOfVehicle || []).length === 0 ? (
+                                <span className="text-slate-400 pl-2 text-[11px]">Select Class of Vehicle...</span>
+                              ) : (
+                                (llRenew.step2.classOfVehicle || []).map((val: string) => (
+                                  <span 
+                                    key={val} 
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-lg border border-blue-100"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const next = (llRenew.step2.classOfVehicle || []).filter((v: string) => v !== val);
+                                      setLlRenew((prevVal) => ({
+                                        ...prevVal,
+                                        step2: { ...prevVal.step2, classOfVehicle: next }
+                                      }));
+                                    }}
+                                  >
+                                    {val}
+                                    <span className="text-blue-500 hover:text-blue-700 font-bold ml-0.5">×</span>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+
+                            {showLlRenewS2Dropdown && (
+                              <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-[250px] overflow-y-auto">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {suggestedClasses.map((item) => {
+                                    const isSelected = ((llRenew as any).step2?.classOfVehicle || []).includes(item);
+                                    return (
+                                      <label 
+                                        key={item} 
+                                        className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer font-semibold text-[11px] transition-all select-none ${
+                                          isSelected ? "bg-blue-50 border-blue-200 text-blue-900" : "bg-slate-50 border-slate-100 hover:bg-slate-100 text-slate-700"
+                                        }`}
+                                      >
+                                        <input 
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const next = e.target.checked 
+                                              ? [...((llRenew as any).step2?.classOfVehicle || []), item]
+                                              : ((llRenew as any).step2?.classOfVehicle || []).filter((v: string) => v !== item);
+                                            
+                                            setLlRenew((prevVal) => ({
+                                              ...prevVal,
+                                              step2: { ...prevVal.step2, classOfVehicle: next }
+                                            }));
+                                          }}
+                                          className="w-3.5 h-3.5 text-blue-600 rounded"
+                                        />
+                                        <span>{item}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="border-t pt-2 flex gap-2">
+                                  <input 
+                                    type="text"
+                                    placeholder="Add custom..."
+                                    value={customClassInputS2}
+                                    onChange={(e) => setCustomClassInputS2(e.target.value.toUpperCase())}
+                                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const cleaned = customClassInputS2.trim();
+                                      if (cleaned && !suggestedClasses.includes(cleaned)) {
+                                        const nextSuggested = [...suggestedClasses, cleaned];
+                                        setSuggestedClasses(nextSuggested);
+                                        localStorage.setItem("custom_vehicle_classes", JSON.stringify(nextSuggested));
+                                        
+                                        const nextSelected = [...((llRenew as any).step2?.classOfVehicle || []), cleaned];
+                                        setLlRenew((prevVal) => ({
+                                          ...prevVal,
+                                          step2: { ...prevVal.step2, classOfVehicle: nextSelected }
+                                        }));
+                                        setCustomClassInputS2("");
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                                  >
+                                    + Add
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowLlRenewS2Dropdown(false);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2762,15 +3219,112 @@ function ApplicationFormModal({
                               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs"
                             />
                           </div>
-                          <div>
+                          <div className="relative">
                             <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">CLASS OF VEHICLE</label>
-                            <input
-                              type="text"
-                              placeholder="Select or enter vehicle class..."
-                              value={(llRenew as any).step3?.classOfVehicle || ""}
-                              onChange={(e) => setLlRenew((prev) => ({ ...prev, step3: { ...prev.step3, classOfVehicle: e.target.value } }))}
-                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
-                            />
+                            <div 
+                              className="min-h-[42px] p-1.5 bg-white border border-slate-200 rounded-xl flex flex-wrap gap-1.5 items-center cursor-pointer select-none text-xs"
+                              onClick={() => setShowLlRenewS3Dropdown(!showLlRenewS3Dropdown)}
+                            >
+                              {((llRenew as any).step3?.classOfVehicle || []).length === 0 ? (
+                                <span className="text-slate-400 pl-2 text-[11px]">Select Class of Vehicle...</span>
+                              ) : (
+                                (llRenew.step3.classOfVehicle || []).map((val: string) => (
+                                  <span 
+                                    key={val} 
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-lg border border-blue-100"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const next = (llRenew.step3.classOfVehicle || []).filter((v: string) => v !== val);
+                                      setLlRenew((prevVal) => ({
+                                        ...prevVal,
+                                        step3: { ...prevVal.step3, classOfVehicle: next }
+                                      }));
+                                    }}
+                                  >
+                                    {val}
+                                    <span className="text-blue-500 hover:text-blue-700 font-bold ml-0.5">×</span>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+
+                            {showLlRenewS3Dropdown && (
+                              <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-[250px] overflow-y-auto">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {suggestedClasses.map((item) => {
+                                    const isSelected = ((llRenew as any).step3?.classOfVehicle || []).includes(item);
+                                    return (
+                                      <label 
+                                        key={item} 
+                                        className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer font-semibold text-[11px] transition-all select-none ${
+                                          isSelected ? "bg-blue-50 border-blue-200 text-blue-900" : "bg-slate-50 border-slate-100 hover:bg-slate-100 text-slate-700"
+                                        }`}
+                                      >
+                                        <input 
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const next = e.target.checked 
+                                              ? [...((llRenew as any).step3?.classOfVehicle || []), item]
+                                              : ((llRenew as any).step3?.classOfVehicle || []).filter((v: string) => v !== item);
+                                            
+                                            setLlRenew((prevVal) => ({
+                                              ...prevVal,
+                                              step3: { ...prevVal.step3, classOfVehicle: next }
+                                            }));
+                                          }}
+                                          className="w-3.5 h-3.5 text-blue-600 rounded"
+                                        />
+                                        <span>{item}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="border-t pt-2 flex gap-2">
+                                  <input 
+                                    type="text"
+                                    placeholder="Add custom..."
+                                    value={customClassInputS3}
+                                    onChange={(e) => setCustomClassInputS3(e.target.value.toUpperCase())}
+                                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const cleaned = customClassInputS3.trim();
+                                      if (cleaned && !suggestedClasses.includes(cleaned)) {
+                                        const nextSuggested = [...suggestedClasses, cleaned];
+                                        setSuggestedClasses(nextSuggested);
+                                        localStorage.setItem("custom_vehicle_classes", JSON.stringify(nextSuggested));
+                                        
+                                        const nextSelected = [...((llRenew as any).step3?.classOfVehicle || []), cleaned];
+                                        setLlRenew((prevVal) => ({
+                                          ...prevVal,
+                                          step3: { ...prevVal.step3, classOfVehicle: nextSelected }
+                                        }));
+                                        setCustomClassInputS3("");
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                                  >
+                                    + Add
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowLlRenewS3Dropdown(false);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2816,6 +3370,22 @@ function ApplicationFormModal({
 
                   {dlRenewRetest.enabled && (
                     <div className="p-5 space-y-5 text-xs">
+                      {/* General Application Number */}
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                        <div className="grid grid-cols-1 gap-4">
+                          <div>
+                            <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
+                            <input
+                              type="text"
+                              placeholder="Enter application number"
+                              value={dlRenewRetest.applicationNo}
+                              onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, applicationNo: e.target.value }))}
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Step 1: DL DETAILS */}
                       <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm">
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
@@ -3001,6 +3571,7 @@ function ApplicationFormModal({
                     "Hazardous Training Card",
                     "International Licence",
                     "Change Date Of Birth In DL",
+                    "DL New",
                   ].map((srv) => {
                     const isChecked = generalLicServices.selected.includes(srv);
                     return (
@@ -3143,96 +3714,153 @@ function ApplicationFormModal({
               </div>
 
               {/* License Documents Section */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                <div 
+                  className="flex items-center justify-between p-6 cursor-pointer select-none bg-white hover:bg-slate-50/50 transition-colors"
+                  onClick={() => setShowLicenseDocsSection(!showLicenseDocsSection)}
+                >
                   <div className="flex items-center gap-3">
-                    <Upload className="w-5 h-5 text-blue-600" />
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                      <FolderOpen className="w-5 h-5 text-blue-600" />
+                    </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900">Documents Upload</h3>
-                      <p className="text-[11px] text-slate-400">
-                        Light Red = Missing • Light Green = Uploaded
-                      </p>
+                      <h3 className="text-sm font-bold text-slate-900">Documents</h3>
+                      <p className="text-[11px] text-slate-400">Upload supporting documents</p>
                     </div>
                   </div>
+                  {showLicenseDocsSection ? (
+                    <ChevronUp className="w-5 h-5 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                  {documentItems.map((docName) => {
-                    const docUrl = uploadedDocs[docName];
-                    const isUploaded = !!docUrl;
-                    return (
-                      <div
-                        key={docName}
-                        className={cn(
-                          "p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 min-h-[100px] relative group",
-                          isUploaded
-                            ? "bg-emerald-50 border-emerald-300 text-emerald-900"
-                            : "bg-rose-50/80 border-rose-200 text-rose-800"
-                        )}
-                      >
-                        <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center gap-1">
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              if (file.size > 15 * 1024 * 1024) {
-                                toast.error("File size must be under 15MB");
-                                return;
-                              }
-                              const reader = new FileReader();
-                              reader.onload = (evt) => {
-                                const result = evt.target?.result as string;
-                                setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
-                                toast.success(`${docName} file uploaded!`);
-                              };
-                              reader.readAsDataURL(file);
-                            }}
-                          />
-                          <Upload
-                            className={cn("w-5 h-5", isUploaded ? "text-emerald-600" : "text-rose-500")}
-                          />
-                          <span className="text-[11px] font-bold leading-tight px-1">{docName}</span>
-                          <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded-full border bg-white/80">
-                            {isUploaded ? "✓ Uploaded" : "Click to Upload"}
-                          </span>
-                        </label>
+                {showLicenseDocsSection && (
+                  <div className="p-6 pt-0 border-t border-slate-100 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {licenseDocumentItems.map((docName) => {
+                        const docUrl = uploadedDocs[docName];
+                        const isUploaded = !!docUrl;
+                        return (
+                          <div
+                            key={docName}
+                            className={cn(
+                              "p-4 rounded-2xl border transition-all flex items-center gap-3.5 relative min-h-[70px]",
+                              isUploaded
+                                ? "bg-emerald-50/40 border-emerald-200/80"
+                                : "bg-white border-slate-200/80 hover:border-blue-300 border-dashed"
+                            )}
+                          >
+                            {/* Upload Cloud / File Thumbnail */}
+                            <label className={cn(
+                              "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors select-none",
+                              isUploaded 
+                                ? "bg-emerald-100/70 text-emerald-700" 
+                                : "bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100 cursor-pointer"
+                            )}>
+                              {!isUploaded && (
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    if (file.size > 15 * 1024 * 1024) {
+                                      toast.error("File size must be under 15MB");
+                                      return;
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = (evt) => {
+                                      const result = evt.target?.result as string;
+                                      setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
+                                      toast.success(`${docName} uploaded!`);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }}
+                                />
+                              )}
+                              <Upload className="w-5 h-5" />
+                            </label>
 
-                        {isUploaded && (
-                          <div className="flex gap-1 mt-1 z-10">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPreviewDoc({ name: docName, url: docUrl });
-                              }}
-                              className="text-[9px] underline font-bold text-emerald-700 hover:text-emerald-900 bg-white/90 px-1.5 py-0.5 rounded border border-emerald-200"
-                            >
-                              View File
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setUploadedDocs((prev) => {
-                                  const next = { ...prev };
-                                  delete next[docName];
-                                  return next;
-                                });
-                                toast.info(`${docName} removed`);
-                              }}
-                              className="text-[9px] font-bold text-rose-600 hover:text-rose-900 ml-1 bg-white/90 px-1.5 py-0.5 rounded border border-rose-200"
-                            >
-                              Remove
-                            </button>
+                            {/* Info & Actions */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                              <span className="text-xs font-bold text-slate-800 truncate block leading-tight">
+                                {docName}
+                              </span>
+                              
+                              {isUploaded ? (
+                                <div className="flex items-center gap-3 mt-1.5 text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc({ name: docName, url: docUrl })}
+                                    className="text-blue-600 hover:text-blue-800 transition uppercase tracking-wider"
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const printWindow = window.open("", "_blank");
+                                      if (!printWindow) return;
+                                      printWindow.document.write(`
+                                        <html>
+                                          <head>
+                                            <title>Print ${docName}</title>
+                                            <style>
+                                              body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+                                              img, iframe { max-width: 100%; max-height: 100%; object-fit: contain; }
+                                            </style>
+                                          </head>
+                                          <body>
+                                      `);
+                                      if (docUrl.startsWith("data:application/pdf")) {
+                                        printWindow.document.write(`<iframe src="${docUrl}" width="100%" height="100%" style="border: none;"></iframe>`);
+                                      } else {
+                                        printWindow.document.write(`<img src="${docUrl}" onload="window.print(); window.close();" />`);
+                                      }
+                                      printWindow.document.write(`
+                                          </body>
+                                        </html>
+                                      `);
+                                      printWindow.document.close();
+                                      if (docUrl.startsWith("data:application/pdf")) {
+                                        setTimeout(() => {
+                                          printWindow.print();
+                                        }, 1000);
+                                      }
+                                    }}
+                                    className="text-emerald-600 hover:text-emerald-800 transition uppercase tracking-wider"
+                                  >
+                                    Print
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setUploadedDocs((prev) => {
+                                        const next = { ...prev };
+                                        delete next[docName];
+                                        return next;
+                                      });
+                                      toast.info(`${docName} removed`);
+                                    }}
+                                    className="text-rose-600 hover:text-rose-800 transition uppercase tracking-wider"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                                  PDF, JPG • max 5 MB
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* License Task Assignment & Internal Notes */}
