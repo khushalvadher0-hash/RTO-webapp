@@ -1883,9 +1883,9 @@ function TaskTable({
                     <th className="p-3">INSURANCE COMPANY</th>
                     <th className="p-3">POLICY NUMBER</th>
                     <th className="p-3">EXPIRY DATE</th>
-                    <th className="p-3">TOTAL CHARGES</th>
-                    <th className="p-3">ADVANCE PAYMENT</th>
-                    <th className="p-3">REMAINING PAYMENT</th>
+                    <th className="p-3">કુલ રકમ</th>
+                    <th className="p-3">કુલ જમા</th>
+                    <th className="p-3">બાકી</th>
                     <th className="p-3">PAYMENT STATUS</th>
                     <th className="p-3">STATUS OF TASK</th>
                     <th className="p-3">ASSIGNED TO</th>
@@ -1902,9 +1902,9 @@ function TaskTable({
                           </th>
                         ))
                       : <th className="p-3">SERVICE EXPIRE DATE</th>}
-                    <th className="p-3">TOTAL PAYMENT</th>
-                    <th className="p-3">ADVANCE PAYMENT</th>
-                    <th className="p-3">REMAINING PAYMENT</th>
+                    <th className="p-3">કુલ રકમ</th>
+                    <th className="p-3">કુલ જમા</th>
+                    <th className="p-3">બાકી</th>
                     <th className="p-3">PAYMENT STATUS</th>
                     <th className="p-3">STATUS OF TASK</th>
                     <th className="p-3">REFERENCE</th>
@@ -1923,8 +1923,8 @@ function TaskTable({
                     {activeSubModule !== "services" && <th className="p-3">INSURANCE EXPIRY</th>}
                     <th className="p-3">NATIONAL PERMIT EXPIRY</th>
                     <th className="p-3">GUJARAT PERMIT EXPIRY</th>
-                    <th className="p-3 font-bold text-slate-900">TOTAL CHARGES</th>
-                    <th className="p-3 font-bold text-emerald-700">TOTAL ADVANCE PAYMENT</th>
+                    <th className="p-3 font-bold text-slate-900">કુલ રકમ</th>
+                    <th className="p-3 font-bold text-emerald-700">કુલ જમા</th>
                     <th className="p-3">APPLICATION NO.</th>
                     <th className="p-3">APPLICATION TYPE</th>
                   </>

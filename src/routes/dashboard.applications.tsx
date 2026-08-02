@@ -363,9 +363,9 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">Joining Date</th>
                     <th className="py-3.5 px-4">Course End Date</th>
                     <th className="py-3.5 px-4">Duration</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Fees</th>
-                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Paid</th>
-                    <th className="py-3.5 px-4 font-bold text-amber-700">Remaining Fees</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">કુલ રકમ</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">કુલ જમા</th>
+                    <th className="py-3.5 px-4 font-bold text-amber-700">બાકી</th>
                     <th className="py-3.5 px-4">Payment Status</th>
                     <th className="py-3.5 px-4">Assigned Employee</th>
                     <th className="py-3.5 px-4">Status</th>
@@ -398,9 +398,9 @@ function ApplicationsPage() {
                         {srvName} Expire Date
                       </th>
                     ))}
-                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Payment</th>
-                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Payment</th>
-                    <th className="py-3.5 px-4 font-bold text-amber-700">Remaining Payment</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">કુલ રકમ</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">કુલ જમા</th>
+                    <th className="py-3.5 px-4 font-bold text-amber-700">બાકી</th>
                     <th className="py-3.5 px-4">Payment Status</th>
                     <th className="py-3.5 px-4 font-mono text-slate-600">Reference</th>
                   </>
@@ -413,8 +413,8 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">Expiry Date</th>
                     <th className="py-3.5 px-4">Total Premium</th>
                     <th className="py-3.5 px-4">Net Commission</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Charges</th>
-                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Paid</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">કુલ રકમ</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">કુલ જમા</th>
                   </>
                 ) : (
                   <>
@@ -432,8 +432,8 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">NP Authorization Expiry</th>
                     <th className="py-3.5 px-4">Registration Renewal Expiry</th>
                     <th className="py-3.5 px-4 text-center">Total Services</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-900">Total Charges</th>
-                    <th className="py-3.5 px-4 font-bold text-emerald-700">Advance Paid</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">કુલ રકમ</th>
+                    <th className="py-3.5 px-4 font-bold text-emerald-700">કુલ જમા</th>
                   </>
                 )}
                 <th className="py-3.5 px-4 text-center">Actions</th>
@@ -4144,7 +4144,7 @@ function ApplicationFormModal({
 
                 <div className="border-t border-slate-100 pt-4 mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="font-bold text-slate-800 block mb-1 text-xs uppercase">TOTAL FEES (₹) *</label>
+                    <label className="font-bold text-slate-800 block mb-1 text-xs uppercase">કુલ રકમ (₹) *</label>
                     <input
                       type="number"
                       placeholder="0"
@@ -4155,7 +4155,7 @@ function ApplicationFormModal({
                     />
                   </div>
                   <div>
-                    <label className="font-bold text-slate-800 block mb-1 text-xs uppercase">ADVANCE PAYMENT (₹)</label>
+                    <label className="font-bold text-slate-800 block mb-1 text-xs uppercase">કુલ જમા (₹)</label>
                     <input
                       type="number"
                       placeholder="0"
@@ -5040,17 +5040,18 @@ function ApplicationFormModal({
                 {selectedServices.map((srv) => {
                   const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
                   const pending = Math.max(0, item.totalAmount - item.advancePayment);
+                  const srvDisplayName = srv === "Hypothecation Removal" ? "Hypothecation Terminate" : srv;
 
                   return (
                     <div
                       key={srv}
                       className="p-3.5 bg-white border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-4 gap-3 items-center text-xs"
                     >
-                      <div className="font-bold text-slate-900">{srv}</div>
+                      <div className="font-bold text-slate-900">{srvDisplayName}</div>
 
                       <div>
                         <label className="font-semibold text-slate-500 block text-[10px] mb-0.5">
-                          TOTAL SERVICE FEE (₹)
+                          કુલ રકમ (₹)
                         </label>
                         <input
                           type="number"
@@ -5065,7 +5066,7 @@ function ApplicationFormModal({
 
                       <div>
                         <label className="font-semibold text-slate-500 block text-[10px] mb-0.5">
-                          ADVANCE PAYMENT (₹)
+                          કુલ જમા (₹)
                         </label>
                         <input
                           type="number"
@@ -5080,7 +5081,7 @@ function ApplicationFormModal({
 
                       <div>
                         <label className="font-semibold text-slate-500 block text-[10px] mb-0.5">
-                          PENDING AMOUNT
+                          બાકી
                         </label>
                         <div className="p-2 bg-slate-100 rounded-lg font-bold font-mono text-amber-700">
                           ₹{pending.toLocaleString("en-IN")}
@@ -5094,19 +5095,19 @@ function ApplicationFormModal({
               {/* Total Accounting Summary */}
               <div className="p-4 bg-slate-900 text-white rounded-xl flex flex-wrap justify-between items-center text-xs font-medium gap-4">
                 <div>
-                  <span className="text-slate-400">Total Charges:</span>{" "}
+                  <span className="text-slate-400">કુલ રકમ:</span>{" "}
                   <strong className="text-white text-sm">
                     ₹{overallTotals.totalAmt.toLocaleString("en-IN")}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-400">Total Advance Received:</span>{" "}
+                  <span className="text-slate-400">કુલ જમા:</span>{" "}
                   <strong className="text-emerald-400 text-sm">
                     ₹{overallTotals.totalAdv.toLocaleString("en-IN")}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-400">Net Balance Due:</span>{" "}
+                  <span className="text-slate-400">બાકી:</span>{" "}
                   <strong className="text-amber-400 text-sm">
                     ₹{overallTotals.pending.toLocaleString("en-IN")}
                   </strong>
@@ -5359,19 +5360,19 @@ function ApplicationDetailsModal({
               </p>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Total Fees</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">કુલ રકમ</span>
               <p className="text-xs font-semibold text-slate-900 mt-1">
                 ₹{(app.amount || app.serviceAccounting?.Insurance?.totalAmount || 0).toLocaleString("en-IN")}
               </p>
             </div>
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-              <span className="text-[10px] font-bold text-emerald-600 uppercase">Advance Paid</span>
+              <span className="text-[10px] font-bold text-emerald-600 uppercase">કુલ જમા</span>
               <p className="text-xs font-semibold text-emerald-800 mt-1">
                 ₹{(app.totalPaid || app.serviceAccounting?.Insurance?.advancePayment || 0).toLocaleString("en-IN")}
               </p>
             </div>
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-              <span className="text-[10px] font-bold text-amber-600 uppercase">Pending Due</span>
+              <span className="text-[10px] font-bold text-amber-600 uppercase">બાકી</span>
               <p className="text-xs font-semibold text-amber-800 mt-1">
                 ₹{(app.pendingAmount || app.serviceAccounting?.Insurance?.pendingAmount || 0).toLocaleString("en-IN")}
               </p>

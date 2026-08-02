@@ -553,9 +553,9 @@ export function ServiceDashboard({
                           {srv.toUpperCase()} EXPIRE DATE
                         </th>
                       ))}
-                      <th className="p-3">TOTAL PAYMENT</th>
-                      <th className="p-3">ADVANCE PAYMENT</th>
-                      <th className="p-3">REMAINING PAYMENT</th>
+                      <th className="p-3">કુલ રકમ</th>
+                      <th className="p-3">કુલ જમા</th>
+                      <th className="p-3">બાકી</th>
                       <th className="p-3">PAYMENT STATUS</th>
                       <th className="p-3">STATUS OF TASK</th>
                       <th className="p-3">REFERENCE</th>
@@ -578,8 +578,8 @@ export function ServiceDashboard({
                       <th className="p-3">GUJARAT PERMIT</th>
                       <th className="p-3">NP AUTHORIZATION</th>
                       <th className="p-3">REGISTRATION RENEWAL</th>
-                      <th className="p-3 font-bold text-slate-900">TOTAL CHARGES</th>
-                      <th className="p-3 font-bold text-emerald-700">ADVANCE PAID</th>
+                      <th className="p-3 font-bold text-slate-900">કુલ રકમ</th>
+                      <th className="p-3 font-bold text-emerald-700">કુલ જમા</th>
                       <th className="p-3">APPLICATION NUMBER</th>
                       <th className="p-3">APPLICATION TYPE</th>
                     </>
