@@ -75,7 +75,7 @@ function AccountingDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const sub = params.get("subModule");
-    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance" || sub === "form5")) {
       setActiveSubModule(sub as SubModuleType);
     }
   }, [location.search]);
@@ -696,9 +696,11 @@ function AccountingDashboardPage() {
         const srvs = (r.services || "").toLowerCase();
         const isLic = srvs.includes("license") || srvs.includes("licence") || srvs.includes("learning") || srvs.includes("dl") || srvs.includes("ll");
         const isIns = srvs.includes("insurance");
-        if (activeSubModule === "licence" && !isLic) return false;
-        if (activeSubModule === "insurance" && !isIns) return false;
-        if (activeSubModule === "services" && (isLic || isIns)) return false;
+        const isForm5 = srvs.includes("form 5") || srvs.includes("hgv");
+        if (activeSubModule === "form5" && !isForm5) return false;
+        if (activeSubModule === "licence" && (!isLic || isForm5)) return false;
+        if (activeSubModule === "insurance" && (!isIns || isForm5)) return false;
+        if (activeSubModule === "services" && (isLic || isIns || isForm5)) return false;
         if (activeSubModule === "driving_school") return false;
       }
 

@@ -349,7 +349,7 @@ function TasksPage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const sub = params.get("subModule");
-    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance" || sub === "form5")) {
       setActiveSubModule(sub as SubModuleType);
     }
   }, [location.search]);
@@ -710,7 +710,19 @@ function TasksPage() {
     let list = baseList;
 
     if (activeSubModule === "driving_school") return [];
-    if (activeSubModule === "insurance") {
+    if (activeSubModule === "form5") {
+      list = list.filter((t) => {
+        if ((t as any).subModule) return (t as any).subModule === "form5";
+        const linked = applications.find(
+          (a: any) =>
+            (t.applicationId && a.applicationId === t.applicationId) ||
+            a.id === (t as any).recordId ||
+            a.id === (t as any).applicationDocId
+        );
+        if (linked) return linked.subModule === "form5";
+        return false;
+      });
+    } else if (activeSubModule === "insurance") {
       list = list.filter((t) => {
         if ((t as any).subModule) return (t as any).subModule === "insurance";
         const linked = applications.find(
@@ -745,8 +757,8 @@ function TasksPage() {
             a.id === (t as any).recordId ||
             a.id === (t as any).applicationDocId
         );
-        if (linked) return linked.subModule !== "licence" && linked.subModule !== "insurance" && !linked.licenseDetails;
-        return (t.applicationType || "").toLowerCase() !== "licence" && (t.applicationType || "").toLowerCase() !== "insurance";
+        if (linked) return linked.subModule !== "licence" && linked.subModule !== "insurance" && linked.subModule !== "form5" && !linked.licenseDetails;
+        return (t.applicationType || "").toLowerCase() !== "licence" && (t.applicationType || "").toLowerCase() !== "insurance" && (t.applicationType || "").toLowerCase() !== "form5";
       });
     }
 
@@ -1929,7 +1941,19 @@ function TaskTable({
             <thead className="sticky top-0 bg-slate-50 text-gray-500 uppercase font-bold text-[9px] border-b z-10">
               <tr>
                 <th className="p-3 text-center">SR NO</th>
-                {activeSubModule === "insurance" ? (
+                {activeSubModule === "form5" ? (
+                  <>
+                    <th className="p-3">Name</th>
+                    <th className="p-3">Date Of Birth</th>
+                    <th className="p-3 font-bold text-slate-900">Application No</th>
+                    <th className="p-3">Adhar No</th>
+                    <th className="p-3">LL NO</th>
+                    <th className="p-3">DL NO</th>
+                    <th className="p-3">Expire date</th>
+                    <th className="p-3">nt validity</th>
+                    <th className="p-3">tr validity</th>
+                  </>
+                ) : activeSubModule === "insurance" ? (
                   <>
                     <th className="p-3">CLIENT NAME</th>
                     <th className="p-3">DOB</th>
@@ -1994,6 +2018,66 @@ function TaskTable({
                 const creationDate = t.createdDate || t.createdAt
                   ? new Date(t.createdDate || t.createdAt).toLocaleDateString("en-IN")
                   : "—";
+
+                if (activeSubModule === "form5") {
+                  const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;
+                  const linkedApp = applications?.find((a: any) => a.id === targetAppKey || a.applicationId === t.applicationId);
+                  const fd = (t as any).form5Details || linkedApp?.form5Details || {};
+
+                  const nameVal = fd.name || "—";
+                  const dobVal = fd.dateOfBirth || "—";
+                  const appNoVal = fd.applicationNo || "—";
+                  const aadhaarVal = fd.aadhaarNumber || "—";
+                  const llVal = fd.llNumber || "—";
+                  const dlVal = fd.dlNumber || "—";
+                  const llExpiryVal = fd.llExpiryDate || "—";
+                  const ntVal = fd.ntValidityDate || "—";
+                  const trVal = fd.trValidityDate || "—";
+
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-3 text-center font-mono text-slate-400 font-semibold">{srNo}</td>
+                      <td className="p-3 font-bold text-blue-900">{nameVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{dobVal}</td>
+                      <td className="p-3 font-mono text-slate-600 font-bold">{appNoVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{aadhaarVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{llVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{dlVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{llExpiryVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{ntVal}</td>
+                      <td className="p-3 font-mono text-slate-600">{trVal}</td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onView(t)}
+                            title="View Detail"
+                          >
+                            <Eye className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onEdit(t)}
+                            title="Edit Task"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onDuplicate(t)}
+                            title="Duplicate Task"
+                            className="text-emerald-600 hover:bg-emerald-50"
+                          >
+                            <Copy className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
 
                 if (activeSubModule === "insurance") {
                   const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;

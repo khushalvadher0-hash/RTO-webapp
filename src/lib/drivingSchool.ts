@@ -22,6 +22,7 @@ export interface DrivingSchoolApplication {
   studentName: string;
   mobileNumber: string;
   co?: string;
+  bloodGroup?: string;
   address?: string;
   dateOfBirth: string;
   gender?: "Male" | "Female" | "Other" | string;

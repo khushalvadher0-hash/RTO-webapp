@@ -63,7 +63,7 @@ function Overview() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const sub = params.get("subModule");
-    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance" || sub === "form5")) {
       setActiveSubModule(sub as SubModuleType);
     }
   }, [location.search]);

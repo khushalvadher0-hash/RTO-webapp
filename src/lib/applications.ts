@@ -272,6 +272,20 @@ export interface LicenseDetailsData {
   };
 }
 
+export interface Form5DetailsData {
+  form5Type: "new_hgv" | "renew_hgv" | "";
+  name?: string;
+  dlNumber?: string;
+  applicationNo?: string;
+  dateOfBirth?: string;
+  llNumber?: string;
+  llIssueDate?: string;
+  llExpiryDate?: string;
+  ntValidityDate?: string;
+  trValidityDate?: string;
+  aadhaarNumber?: string;
+}
+
 export interface ApplicationRecord {
   id: string;
   applicationId: string;
@@ -280,8 +294,9 @@ export interface ApplicationRecord {
   ownerName: string;
   mobileNumber: string;
   services: string[];
-  subModule?: "services" | "licence" | "driving_school" | "insurance";
+  subModule?: "services" | "licence" | "driving_school" | "insurance" | "form5";
   licenseDetails?: LicenseDetailsData;
+  form5Details?: Form5DetailsData;
   serviceAccounting?: Record<string, ServiceAccountingItem>;
   assignedEmployeeId?: string;
   assignedEmployeeName?: string;

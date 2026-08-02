@@ -1,8 +1,8 @@
 import React from "react";
-import { Wrench, Shield, GraduationCap, ShieldCheck } from "lucide-react";
+import { Wrench, Shield, GraduationCap, ShieldCheck, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type SubModuleType = "services" | "licence" | "driving_school" | "insurance";
+export type SubModuleType = "services" | "licence" | "driving_school" | "insurance" | "form5";
 
 interface SubModuleTabsProps {
   activeTab: SubModuleType;
@@ -15,6 +15,7 @@ export const SUB_MODULE_TABS: { id: SubModuleType; label: string; icon: React.Co
   { id: "licence", label: "Licence", icon: Shield },
   { id: "driving_school", label: "Driving School", icon: GraduationCap },
   { id: "insurance", label: "Insurance", icon: ShieldCheck },
+  { id: "form5", label: "Form 5", icon: FileText },
 ];
 
 export function SubModuleTabs({ activeTab, onChange, className }: SubModuleTabsProps) {

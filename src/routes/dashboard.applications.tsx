@@ -36,6 +36,7 @@ import {
   type VehicleMaster,
   type ServiceAccountingItem,
   type AccountingRecord,
+  type Form5DetailsData,
 } from "@/lib/applications";
 import { getSession } from "@/lib/auth";
 import {
@@ -131,7 +132,7 @@ function ApplicationsPage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const sub = params.get("subModule");
-    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance")) {
+    if (sub && (sub === "services" || sub === "licence" || sub === "driving_school" || sub === "insurance" || sub === "form5")) {
       setActiveSubModule(sub as SubModuleType);
     }
   }, [location.search]);
@@ -197,6 +198,8 @@ function ApplicationsPage() {
   const filteredApps = applications.filter((app) => {
     if (activeSubModule === "driving_school") return false;
 
+    const isForm5App = app.subModule === "form5";
+
     const isLicenceApp =
       app.subModule === "licence" ||
       app.applicationType === "Licence" ||
@@ -212,12 +215,14 @@ function ApplicationsPage() {
       app.subModule === "insurance" ||
       (app.services || []).includes("Insurance");
 
-    if (activeSubModule === "licence") {
-      if (!isLicenceApp) return false;
+    if (activeSubModule === "form5") {
+      if (!isForm5App) return false;
+    } else if (activeSubModule === "licence") {
+      if (!isLicenceApp || isForm5App) return false;
     } else if (activeSubModule === "insurance") {
-      if (!isInsuranceApp) return false;
+      if (!isInsuranceApp || isForm5App) return false;
     } else if (activeSubModule === "services") {
-      if (isLicenceApp || isInsuranceApp) return false;
+      if (isLicenceApp || isInsuranceApp || isForm5App) return false;
     }
 
     const term = searchTerm.toLowerCase();
@@ -373,6 +378,18 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">Payment Status</th>
                     <th className="py-3.5 px-4">Assigned Employee</th>
                     <th className="py-3.5 px-4">Status</th>
+                  </>
+                ) : activeSubModule === "form5" ? (
+                  <>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Name</th>
+                    <th className="py-3.5 px-4">Date Of Birth</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-900">Application No</th>
+                    <th className="py-3.5 px-4">Adhar No</th>
+                    <th className="py-3.5 px-4">LL NO</th>
+                    <th className="py-3.5 px-4">DL NO</th>
+                    <th className="py-3.5 px-4">Expire date</th>
+                    <th className="py-3.5 px-4">nt validity</th>
+                    <th className="py-3.5 px-4">tr validity</th>
                   </>
                 ) : activeSubModule === "licence" ? (
                   <>
@@ -541,6 +558,7 @@ function ApplicationsPage() {
                                   employeeNotes: ds.employeeNotes,
                                   documents: ds.documents,
                                   status: ds.status,
+                                  bloodGroup: ds.bloodGroup,
                                 } as any);
                                 setIsModalOpen(true);
                               }}
@@ -579,6 +597,72 @@ function ApplicationsPage() {
                 </tr>
               ) : (
                 filteredApps.map((app, index) => {
+                  if (activeSubModule === "form5") {
+                    const fd = app.form5Details || {};
+                    const nameVal = fd.name || "—";
+                    const dobVal = fd.dateOfBirth || "—";
+                    const appNoVal = fd.applicationNo || "—";
+                    const aadhaarVal = fd.aadhaarNumber || "—";
+                    const llVal = fd.llNumber || "—";
+                    const dlVal = fd.dlNumber || "—";
+                    const llExpiryVal = fd.llExpiryDate || "—";
+                    const ntVal = fd.ntValidityDate || "—";
+                    const trVal = fd.trValidityDate || "—";
+
+                    return (
+                      <tr
+                        key={app.id}
+                        onClick={() => setViewingApp(app)}
+                        className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 text-center text-slate-400 font-mono">{index + 1}</td>
+                        <td className="py-3.5 px-4 font-bold text-slate-900">{nameVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{dobVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600 font-bold">{appNoVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{aadhaarVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{llVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{dlVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{llExpiryVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{ntVal}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{trVal}</td>
+                        <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => setViewingApp(app)}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-blue-600 transition-all"
+                              title="View Application Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingApp(app);
+                                if (app.form5Details) {
+                                  setForm5Details(app.form5Details);
+                                }
+                                setIsModalOpen(true);
+                              }}
+                              className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600 transition-all"
+                              title="Edit Application"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDeletingApp(app);
+                                setDeletePasscode("");
+                              }}
+                              className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-600 transition-all"
+                              title="Delete Application"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   if (activeSubModule === "insurance") {
                     const appRaw = app as any;
                     const v = appRaw.vehicleDetails || appRaw.vehicleMaster || appRaw || {};
@@ -1077,17 +1161,18 @@ function ApplicationFormModal({
   const [showLicenseDocsSection, setShowLicenseDocsSection] = useState(true);
 
   // Driving School State
-  const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">("Male");
-  const [dsHasDrivingLicence, setDsHasDrivingLicence] = useState<boolean>(false);
-  const [dsDlNumber, setDsDlNumber] = useState<string>("");
-  const [dsJoiningDate, setDsJoiningDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [dsCourseStartDate, setDsCourseStartDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">((editingApp as any)?.gender || "Male");
+  const [dsHasDrivingLicence, setDsHasDrivingLicence] = useState<boolean>((editingApp as any)?.hasDrivingLicence || false);
+  const [dsDlNumber, setDsDlNumber] = useState<string>((editingApp as any)?.drivingLicenceNumber || "");
+  const [dsBloodGroup, setDsBloodGroup] = useState<string>((editingApp as any)?.bloodGroup || "");
+  const [dsJoiningDate, setDsJoiningDate] = useState<string>((editingApp as any)?.joiningDate || new Date().toISOString().split("T")[0]);
+  const [dsCourseStartDate, setDsCourseStartDate] = useState<string>((editingApp as any)?.courseStartDate || new Date().toISOString().split("T")[0]);
   const [dsCourseEndDate, setDsCourseEndDate] = useState<string>(
-    new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0]
+    (editingApp as any)?.courseEndDate || new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0]
   );
-  const [dsCourseType, setDsCourseType] = useState<string>("15 Days");
-  const [dsTotalCourseFees, setDsTotalCourseFees] = useState<number | string>(9500);
-  const [dsAdvancePaid, setDsAdvancePaid] = useState<number | string>(4000);
+  const [dsCourseType, setDsCourseType] = useState<string>((editingApp as any)?.courseType || "15 Days");
+  const [dsTotalCourseFees, setDsTotalCourseFees] = useState<number | string>((editingApp as any)?.totalCourseFees || 9500);
+  const [dsAdvancePaid, setDsAdvancePaid] = useState<number | string>((editingApp as any)?.advancePaid || 4000);
 
   // License Applicant Details
   const [dateOfBirth, setDateOfBirth] = useState(editingApp?.licenseDetails?.dateOfBirth || "");
@@ -1189,6 +1274,20 @@ function ApplicationFormModal({
   }>({
     selected: editingApp?.licenseDetails?.generalLicenceServices?.selectedServices || [],
     accounting: editingApp?.licenseDetails?.generalLicenceServices?.serviceAccounting || {},
+  });
+
+  const [form5Details, setForm5Details] = useState<Form5DetailsData>({
+    form5Type: editingApp?.form5Details?.form5Type || "",
+    name: editingApp?.form5Details?.name || editingApp?.ownerName || "",
+    dlNumber: editingApp?.form5Details?.dlNumber || "",
+    applicationNo: editingApp?.form5Details?.applicationNo || "",
+    dateOfBirth: editingApp?.form5Details?.dateOfBirth || editingApp?.licenseDetails?.dateOfBirth || "",
+    llNumber: editingApp?.form5Details?.llNumber || "",
+    llIssueDate: editingApp?.form5Details?.llIssueDate || "",
+    llExpiryDate: editingApp?.form5Details?.llExpiryDate || "",
+    ntValidityDate: editingApp?.form5Details?.ntValidityDate || "",
+    trValidityDate: editingApp?.form5Details?.trValidityDate || "",
+    aadhaarNumber: editingApp?.form5Details?.aadhaarNumber || "",
   });
 
   const [saving, setSaving] = useState(false);
@@ -1663,6 +1762,9 @@ function ApplicationFormModal({
           totalAdv += Number(item.advanceAmount) || 0;
         });
       }
+    } else if (activeSubModule === "form5") {
+      totalAmt = 0;
+      totalAdv = 0;
     } else {
       selectedServices.forEach((srv) => {
         const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
@@ -1720,7 +1822,7 @@ function ApplicationFormModal({
         await saveDrivingSchoolApplication({
           studentName: ownerName.trim(),
           mobileNumber: phone.trim(),
-          co: fatherHusbandName.trim() || coName.trim(),
+          bloodGroup: dsBloodGroup,
           address: address.trim(),
           dateOfBirth,
           gender: dsGender,
@@ -1741,7 +1843,7 @@ function ApplicationFormModal({
           documents: uploadedDocs,
           vehicleNumber: vehicleNumber.trim() || undefined,
           status: "Active",
-        });
+        }, editingApp?.id);
 
         toast.success("Driving School Application Created Successfully!");
         setSaving(false);
@@ -1762,6 +1864,11 @@ function ApplicationFormModal({
       }
       if (!insTotalFees) {
         toast.error("Total Fees is required!");
+        return;
+      }
+    } else if (activeSubModule === "form5") {
+      if (!form5Details.name?.trim()) {
+        toast.error("Name is mandatory for Form 5 Applications!");
         return;
       }
     } else if (activeSubModule === "licence") {
@@ -1785,6 +1892,8 @@ function ApplicationFormModal({
     const finalVehNo =
       activeSubModule === "insurance"
         ? (insVehicleRegNumber.trim() || `INS-${Date.now().toString().slice(-6)}`)
+        : activeSubModule === "form5"
+        ? `F5-${Date.now().toString().slice(-6)}`
         : (vehicleNumber.trim() || `LIC-${Date.now().toString().slice(-6)}`);
     const cleanVehNo = finalVehNo.toUpperCase().replace(/[\s-]/g, "");
 
@@ -1898,6 +2007,8 @@ function ApplicationFormModal({
     const finalServicesList =
       activeSubModule === "licence"
         ? selectedLicServices
+        : activeSubModule === "form5"
+        ? [form5Details.form5Type === "new_hgv" ? "Form 5 New HGV" : "Form 5A Renew HGV"]
         : activeSubModule === "insurance"
         ? ["Insurance"]
         : selectedServices;
@@ -1970,7 +2081,7 @@ function ApplicationFormModal({
       await saveApplicationAndVehicle(
         {
           subModule: activeSubModule,
-          dateOfBirth: activeSubModule === "licence" || activeSubModule === "insurance" ? dateOfBirth : undefined,
+          dateOfBirth: activeSubModule === "form5" ? form5Details.dateOfBirth : (activeSubModule === "licence" || activeSubModule === "insurance" ? dateOfBirth : undefined),
           licenseDetails: activeSubModule === "licence" ? {
             subModule: activeSubModule,
             dateOfBirth,
@@ -1984,9 +2095,10 @@ function ApplicationFormModal({
               serviceAccounting: generalLicServices.accounting,
             },
           } : undefined,
+          form5Details: activeSubModule === "form5" ? form5Details : undefined,
           vehicleId: finalVehNo.toUpperCase().replace(/[\s-]/g, ""),
           vehicleNumber: finalVehNo,
-          ownerName,
+          ownerName: activeSubModule === "form5" ? (form5Details.name || "") : ownerName,
           mobileNumber: phone,
           services: finalServicesList,
           serviceAccounting: serviceAccountingPayload,
@@ -2063,6 +2175,13 @@ function ApplicationFormModal({
     "Learning Licence",
     "Election Card",
     "Hazardous Card",
+  ];
+
+  const form5DocumentItems = [
+    "Document 1",
+    "Document 2",
+    "Document 3",
+    "Document 4",
   ];
 
   return (
@@ -3933,6 +4052,411 @@ function ApplicationFormModal({
             </div>
           )}
 
+          {/* FORM 5 SUB MODULE FORM */}
+          {activeSubModule === "form5" && (
+            <div className="space-y-6">
+              {/* Type Selection */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                    <FileCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Application Type Selection</h3>
+                    <p className="text-[11px] text-slate-400">Select any one HGV application option.</p>
+                  </div>
+                </div>
+                <div className="flex gap-8 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
+                    <input
+                      type="checkbox"
+                      checked={form5Details.form5Type === "new_hgv"}
+                      onChange={(e) => {
+                        setForm5Details(prev => ({ 
+                          ...prev, 
+                          form5Type: e.target.checked ? "new_hgv" : "" 
+                        }));
+                      }}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Form 5 New HGV</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
+                    <input
+                      type="checkbox"
+                      checked={form5Details.form5Type === "renew_hgv"}
+                      onChange={(e) => {
+                        setForm5Details(prev => ({ 
+                          ...prev, 
+                          form5Type: e.target.checked ? "renew_hgv" : "" 
+                        }));
+                      }}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Form 5A Renew HGV</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Details Section */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Form 5 Applicant Details</h3>
+                    <p className="text-[11px] text-slate-400">Fill the required credentials below.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">NAME *</label>
+                    <input
+                      type="text"
+                      placeholder="Applicant's name"
+                      value={form5Details.name || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setForm5Details(prev => ({ ...prev, name: val }));
+                        setOwnerName(val);
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">DATE OF BIRTH</label>
+                    <input
+                      type="date"
+                      value={form5Details.dateOfBirth || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setForm5Details(prev => ({ ...prev, dateOfBirth: val }));
+                        setDateOfBirth(val);
+                      }}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
+                    <input
+                      type="text"
+                      placeholder="Enter application number"
+                      value={form5Details.applicationNo || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, applicationNo: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">AADHAAR NO.</label>
+                    <input
+                      type="text"
+                      placeholder="12-digit Aadhaar number"
+                      value={form5Details.aadhaarNumber || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">LL NO.</label>
+                    <input
+                      type="text"
+                      placeholder="LL Number"
+                      value={form5Details.llNumber || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, llNumber: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">LL ISSUE DATE</label>
+                    <input
+                      type="date"
+                      value={form5Details.llIssueDate || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, llIssueDate: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">LL EXPIRY DATE</label>
+                    <input
+                      type="date"
+                      value={form5Details.llExpiryDate || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, llExpiryDate: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">DL NO.</label>
+                    <input
+                      type="text"
+                      placeholder="DL Number"
+                      value={form5Details.dlNumber || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, dlNumber: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">NT VALIDITY</label>
+                    <input
+                      type="date"
+                      value={form5Details.ntValidityDate || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, ntValidityDate: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">TR VALIDITY</label>
+                    <input
+                      type="date"
+                      value={form5Details.trValidityDate || ""}
+                      onChange={(e) => setForm5Details(prev => ({ ...prev, trValidityDate: e.target.value }))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Form 5 Documents Section */}
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                <div 
+                  className="flex items-center justify-between p-6 cursor-pointer select-none bg-white hover:bg-slate-50/50 transition-colors"
+                  onClick={() => setShowLicenseDocsSection(!showLicenseDocsSection)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                      <FolderOpen className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Documents</h3>
+                      <p className="text-[11px] text-slate-400">Upload supporting documents</p>
+                    </div>
+                  </div>
+                  {showLicenseDocsSection ? (
+                    <ChevronUp className="w-5 h-5 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                  )}
+                </div>
+
+                {showLicenseDocsSection && (
+                  <div className="p-6 pt-0 border-t border-slate-100 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {form5DocumentItems.map((docName) => {
+                        const docUrl = uploadedDocs[docName];
+                        const isUploaded = !!docUrl;
+                        return (
+                          <div
+                            key={docName}
+                            className={cn(
+                              "p-4 rounded-2xl border transition-all flex items-center gap-3.5 relative min-h-[70px]",
+                              isUploaded
+                                ? "bg-emerald-50/40 border-emerald-200/80"
+                                : "bg-white border-slate-200/80 hover:border-blue-300 border-dashed"
+                            )}
+                          >
+                            {/* Upload Cloud Icon */}
+                            <label className={cn(
+                              "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors select-none",
+                              isUploaded 
+                                ? "bg-emerald-100/70 text-emerald-700" 
+                                : "bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100 cursor-pointer"
+                            )}>
+                              {!isUploaded && (
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    if (file.size > 15 * 1024 * 1024) {
+                                      toast.error("File size must be under 15MB");
+                                      return;
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = (evt) => {
+                                      const result = evt.target?.result as string;
+                                      setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
+                                      toast.success(`${docName} uploaded!`);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }}
+                                />
+                              )}
+                              <Upload className="w-5 h-5" />
+                            </label>
+
+                            {/* Info & Actions */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                              <span className="text-xs font-bold text-slate-800 truncate block leading-tight">
+                                {docName}
+                              </span>
+                              
+                              {isUploaded ? (
+                                <div className="flex items-center gap-3 mt-1.5 text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc({ name: docName, url: docUrl })}
+                                    className="text-blue-600 hover:text-blue-800 transition uppercase tracking-wider"
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const printWindow = window.open("", "_blank");
+                                      if (!printWindow) return;
+                                      printWindow.document.write(`
+                                        <html>
+                                          <head>
+                                            <title>Print ${docName}</title>
+                                            <style>
+                                              body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+                                              img, iframe { max-width: 100%; max-height: 100%; object-fit: contain; }
+                                            </style>
+                                          </head>
+                                          <body>
+                                      `);
+                                      if (docUrl.startsWith("data:application/pdf")) {
+                                        printWindow.document.write(`<iframe src="${docUrl}" width="100%" height="100%" style="border: none;"></iframe>`);
+                                      } else {
+                                        printWindow.document.write(`<img src="${docUrl}" onload="window.print(); window.close();" />`);
+                                      }
+                                      printWindow.document.write(`
+                                          </body>
+                                        </html>
+                                      `);
+                                      printWindow.document.close();
+                                      if (docUrl.startsWith("data:application/pdf")) {
+                                        setTimeout(() => {
+                                          printWindow.print();
+                                        }, 1000);
+                                      }
+                                    }}
+                                    className="text-emerald-600 hover:text-emerald-800 transition uppercase tracking-wider"
+                                  >
+                                    Print
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setUploadedDocs((prev) => {
+                                        const next = { ...prev };
+                                        delete next[docName];
+                                        return next;
+                                      });
+                                      toast.info(`${docName} removed`);
+                                    }}
+                                    className="text-rose-600 hover:text-rose-800 transition uppercase tracking-wider"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                                  PDF, JPG • max 5 MB
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Task Assignment & Internal Notes */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Task Assignment & Internal Notes</h3>
+                    <p className="text-[11px] text-slate-400">Assign employee, set priority, due date, reminder and remarks</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      EMPLOYEE REMARKS
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Notes visible to internal team only..."
+                      value={employeeRemarks}
+                      onChange={(e) => setEmployeeRemarks(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">DUE DATE</label>
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">REMINDER</label>
+                      <input
+                        type="date"
+                        value={reminder}
+                        onChange={(e) => setReminder(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">PRIORITY</label>
+                      <select
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value as any)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Urgent">Urgent</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        ASSIGNED EMPLOYEE
+                      </label>
+                      <select
+                        value={assignedEmployee}
+                        onChange={(e) => setAssignedEmployee(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        {activeEmployees.map((emp) => (
+                          <option key={emp.id} value={emp.name}>
+                            {emp.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={createTaskAuto}
+                        onChange={(e) => setCreateTaskAuto(e.target.checked)}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Create Task Automatically</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* DRIVING SCHOOL FORM (MATCHING SCREENSHOT 1) */}
           {activeSubModule === "driving_school" && (
             <div className="space-y-6">
@@ -3976,14 +4500,22 @@ function ApplicationFormModal({
                   </div>
 
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">C/O</label>
-                    <input
-                      type="text"
-                      placeholder="Father / Guardian name"
-                      value={fatherHusbandName}
-                      onChange={(e) => setFatherHusbandName(e.target.value)}
+                    <label className="font-semibold text-slate-700 block mb-1">BLOOD GROUP</label>
+                    <select
+                      value={dsBloodGroup}
+                      onChange={(e) => setDsBloodGroup(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                    />
+                    >
+                      <option value="">Select Blood Group</option>
+                      <option value="A+">A+</option>
+                      <option value="A-">A-</option>
+                      <option value="B+">B+</option>
+                      <option value="B-">B-</option>
+                      <option value="O+">O+</option>
+                      <option value="O-">O-</option>
+                      <option value="AB+">AB+</option>
+                      <option value="AB-">AB-</option>
+                    </select>
                   </div>
 
                   <div className="md:col-span-2">
@@ -4044,7 +4576,7 @@ function ApplicationFormModal({
                         onChange={() => setDsHasDrivingLicence(true)}
                         className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                       />
-                      <span>With Driving Licence</span>
+                      <span>already with Driving license</span>
                     </label>
 
                     <label
@@ -5993,6 +6525,63 @@ function ApplicationDetailsModal({
               })}
             </div>
           </div>
+
+          {/* Form 5 Details Card */}
+          {app.subModule === "form5" && app.form5Details && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" /> Form 5 Details
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <span className="text-slate-400">Application Option:</span>
+                  <p className="font-bold text-blue-800">
+                    {app.form5Details.form5Type === "new_hgv" ? "Form 5 New HGV" : "Form 5A Renew HGV"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Name:</span>
+                  <p className="font-semibold">{app.form5Details.name || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Date Of Birth:</span>
+                  <p className="font-semibold">{app.form5Details.dateOfBirth || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Application No:</span>
+                  <p className="font-semibold font-mono">{app.form5Details.applicationNo || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Adhar No:</span>
+                  <p className="font-semibold font-mono">{app.form5Details.aadhaarNumber || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">LL NO:</span>
+                  <p className="font-semibold font-mono">{app.form5Details.llNumber || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">LL Issue Date:</span>
+                  <p className="font-semibold">{app.form5Details.llIssueDate || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">LL Expiry Date:</span>
+                  <p className="font-semibold">{app.form5Details.llExpiryDate || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">DL NO:</span>
+                  <p className="font-semibold font-mono">{app.form5Details.dlNumber || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">nt validity:</span>
+                  <p className="font-semibold">{app.form5Details.ntValidityDate || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">tr validity:</span>
+                  <p className="font-semibold">{app.form5Details.trValidityDate || "—"}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Vehicle Insurance breakdown */}
           {v.insuranceDetails && (
