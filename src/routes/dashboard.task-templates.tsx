@@ -43,7 +43,7 @@ const SERVICE_OPTIONS = [
   "Fitness",
   "Tax",
   "PUC",
-  "National Permit",
+  "National Permit(Gujrat Permit)",
   "Gujarat Permit",
   "License Renewal",
   "RC Transfer",

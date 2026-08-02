@@ -38,6 +38,7 @@ export const SERVICE_SPECIFIC_DOCUMENT_TYPES: Record<ServiceType, string[]> = {
   Fitness: ["RC Book", "Previous Fitness Certificate"],
   "Gujarat Permit": ["RC Book", "Permit Documents"],
   "National Permit": ["RC Book", "Permit Documents"],
+  "National Permit(Gujrat Permit)": ["RC Book", "Permit Documents"],
   Tax: ["RC Book", "Tax Documents"],
   PUC: ["RC Book", "PUC Certificate"],
   "License New": ["Aadhaar Card", "PAN Card", "Photo", "Required License Documents"],

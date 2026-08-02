@@ -159,7 +159,7 @@ export interface VehicleMaster {
     netCommission?: number;
   };
   permitDetails?: {
-    permitType?: "Gujarat Permit" | "National Permit" | "National Permit Authorization" | string;
+    permitType?: "Gujarat Permit" | "National Permit" | "National Permit(Gujrat Permit)" | "National Permit Authorization" | string;
     issueDate?: string;
     expiryDate?: string;
     gujaratPermitIssueDate?: string;
@@ -333,7 +333,7 @@ export function computePermitExpiry(permitType: string, issueDate: string): stri
   const date = new Date(issueDate);
   if (isNaN(date.getTime())) return "";
 
-  if (permitType === "Gujarat Permit" || permitType === "National Permit") {
+  if (permitType === "Gujarat Permit" || permitType === "National Permit" || permitType === "National Permit(Gujrat Permit)") {
     date.setFullYear(date.getFullYear() + 5);
   } else if (permitType === "National Permit Authorization") {
     date.setFullYear(date.getFullYear() + 1);

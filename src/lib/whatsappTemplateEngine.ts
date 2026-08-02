@@ -17,8 +17,8 @@ export const templates: Record<string, TemplateFn> = {
     `Dear ${d.clientName},\n\nThe fitness certificate for vehicle ${d.vehicleNumber} is due on ${d.dueDate}.\n\nPlease contact us for renewal.\n\nThank you.`,
   "Gujarat Permit Renewal Due": (d) =>
     `Dear ${d.clientName},\n\nYour Gujarat Permit for vehicle ${d.vehicleNumber} is due on ${d.dueDate}.\n\nPlease contact us for renewal assistance.`,
-  "National Permit Renewal Due": (d) =>
-    `Dear ${d.clientName},\n\nYour National Permit for vehicle ${d.vehicleNumber} is due on ${d.dueDate}.\n\nPlease contact us for renewal assistance.`,
+  "National Permit(Gujrat Permit) Renewal Due": (d) =>
+    `Dear ${d.clientName},\n\nYour National Permit(Gujrat Permit) for vehicle ${d.vehicleNumber} is due on ${d.dueDate}.\n\nPlease contact us for renewal assistance.`,
   "Tax Due Reminder": (d) =>
     `Dear ${d.clientName},\n\nVehicle tax for ${d.vehicleNumber} is due on ${d.dueDate}.\n\nKindly arrange payment to avoid penalties.`,
   "PUC Renewal Reminder": (d) =>

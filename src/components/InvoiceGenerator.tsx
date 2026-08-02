@@ -313,7 +313,7 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
     "Insurance",
     "Fitness",
     "Gujarat Permit",
-    "National Permit",
+    "National Permit(Gujrat Permit)",
     "Tax",
     "PUC",
     "License New",

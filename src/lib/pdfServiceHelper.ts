@@ -10,6 +10,7 @@ export function generateServicePDF(
     Fitness: "fitness",
     "Gujarat Permit": "gujarat-permit",
     "National Permit": "national-permit",
+    "National Permit(Gujrat Permit)": "national-permit",
     Tax: "tax",
     PUC: "puc",
     "License New": "license-new",

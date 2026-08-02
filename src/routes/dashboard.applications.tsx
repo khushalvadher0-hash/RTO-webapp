@@ -98,9 +98,9 @@ const SERVICE_GROUPS = [
     category: "PERMITS",
     items: [
       "Gujarat Permit",
-      "National Permit",
+      "National Permit(Gujrat Permit)",
       "Gujarat Permit Renewal",
-      "National Permit Renewal",
+      "National Permit(Gujrat Permit) Renewal",
     ],
   },
   {
@@ -426,7 +426,7 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">Tax Expiry</th>
                     <th className="py-3.5 px-4">Fitness Expiry</th>
                     {activeSubModule !== "services" && <th className="py-3.5 px-4">Insurance Expiry</th>}
-                    <th className="py-3.5 px-4">National Permit Expiry</th>
+                    <th className="py-3.5 px-4">National Permit(Gujrat Permit) Expiry</th>
                     <th className="py-3.5 px-4">Gujarat Permit Expiry</th>
                     <th className="py-3.5 px-4">NP Authorization Expiry</th>
                     <th className="py-3.5 px-4">Registration Renewal Expiry</th>
@@ -1123,14 +1123,14 @@ function ApplicationFormModal({
 
   const [nationalPermitIssueDate, setNationalPermitIssueDate] = useState(
     editingApp?.vehicleDetails?.permitDetails?.nationalPermitIssueDate ||
-      (editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit"
+      ((editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit" || editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit(Gujrat Permit)")
         ? editingApp?.vehicleDetails?.permitDetails?.issueDate
         : "") ||
       ""
   );
   const [nationalPermitExpiryDate, setNationalPermitExpiryDate] = useState(
     editingApp?.vehicleDetails?.permitDetails?.nationalPermitExpiryDate ||
-      (editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit"
+      ((editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit" || editingApp?.vehicleDetails?.permitDetails?.permitType === "National Permit(Gujrat Permit)")
         ? editingApp?.vehicleDetails?.permitDetails?.expiryDate
         : "") ||
       ""
@@ -1343,8 +1343,8 @@ function ApplicationFormModal({
         const p = existing.permitDetails;
         const gIss = p.gujaratPermitIssueDate || (p.permitType === "Gujarat Permit" ? p.issueDate : "") || "";
         const gExp = p.gujaratPermitExpiryDate || (p.permitType === "Gujarat Permit" ? p.expiryDate : "") || "";
-        const nIss = p.nationalPermitIssueDate || (p.permitType === "National Permit" ? p.issueDate : "") || "";
-        const nExp = p.nationalPermitExpiryDate || (p.permitType === "National Permit" ? p.expiryDate : "") || "";
+        const nIss = p.nationalPermitIssueDate || (p.permitType === "National Permit" || p.permitType === "National Permit(Gujrat Permit)" ? p.issueDate : "") || "";
+        const nExp = p.nationalPermitExpiryDate || (p.permitType === "National Permit" || p.permitType === "National Permit(Gujrat Permit)" ? p.expiryDate : "") || "";
         const naIss = p.nationalAuthIssueDate || (p.permitType === "National Permit Authorization" ? p.issueDate : "") || "";
         const naExp = p.nationalAuthExpiryDate || (p.permitType === "National Permit Authorization" ? p.expiryDate : "") || "";
 
@@ -1379,7 +1379,7 @@ function ApplicationFormModal({
 
   const handleNationalIssueChange = (dateVal: string) => {
     setNationalPermitIssueDate(dateVal);
-    setNationalPermitExpiryDate(computePermitExpiry("National Permit", dateVal));
+    setNationalPermitExpiryDate(computePermitExpiry("National Permit(Gujrat Permit)", dateVal));
   };
 
   const handleNationalAuthIssueChange = (dateVal: string) => {
@@ -1825,7 +1825,7 @@ function ApplicationFormModal({
     "Tax Receipt",
     "Fitness",
     "Gujarat Permit",
-    "National Permit",
+    "National Permit(Gujrat Permit)",
     "National Permit Authorization",
     "PUC",
     "Insurance",
@@ -4512,7 +4512,7 @@ function ApplicationFormModal({
                 {/* 2. National Permit (5 Yrs Gap) */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-800 text-xs">National Permit</span>
+                    <span className="font-bold text-slate-800 text-xs">National Permit(Gujrat Permit)</span>
                     <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
                       Fixed 5 Years Expiry Gap
                     </span>

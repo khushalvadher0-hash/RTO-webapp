@@ -568,7 +568,7 @@ export function ServiceDashboard({
                       <th className="p-3">TAX EXPIRY</th>
                       <th className="p-3">FITNESS EXPIRY</th>
                       {activeSubModule !== "services" && <th className="p-3">INSURANCE EXPIRY</th>}
-                      <th className="p-3">NATIONAL PERMIT</th>
+                      <th className="p-3">NATIONAL PERMIT(GUJRAT PERMIT)</th>
                       <th className="p-3">GUJARAT PERMIT</th>
                       <th className="p-3">NP AUTHORIZATION</th>
                       <th className="p-3">REGISTRATION RENEWAL</th>

@@ -110,7 +110,7 @@ function inferServiceTypeFromWork(work?: string, application?: string): string |
     [["insurance", "policy"], "Insurance"],
     [["fitness", "emission", "fitness test"], "Fitness"],
     [["gujarat permit"], "Gujarat Permit"],
-    [["national permit"], "National Permit"],
+    [["national permit"], "National Permit(Gujrat Permit)"],
     [["tax"], "Tax"],
     [["puc", "pollution"], "PUC"],
     // License handled below to distinguish New vs Renew

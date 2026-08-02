@@ -42,8 +42,15 @@ export const SERVICE_CONFIGS: Record<ServiceType, ServiceConfig> = {
   },
   "National Permit": {
     type: "National Permit",
-    label: "National Permit",
+    label: "National Permit(Gujrat Permit)",
     description: "National level vehicle permits",
+    icon: "🌐",
+    color: "bg-red-500",
+  },
+  "National Permit(Gujrat Permit)": {
+    type: "National Permit(Gujrat Permit)" as any,
+    label: "National Permit(Gujrat Permit)",
+    description: "Gujrat Permit details",
     icon: "🌐",
     color: "bg-red-500",
   },

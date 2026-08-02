@@ -311,9 +311,9 @@ function Overview() {
         });
       }
 
-      // 5. National Permit
+      // 5. National Permit(Gujrat Permit)
       const natPermitExpiry = v.permitDetails?.nationalPermitExpiryDate ||
-        (v.permitDetails?.permitType === "National Permit" ? v.permitDetails?.expiryDate : "");
+        (v.permitDetails?.permitType === "National Permit" || v.permitDetails?.permitType === "National Permit(Gujrat Permit)" ? v.permitDetails?.expiryDate : "");
       if (shouldTrackPermit && natPermitExpiry) {
         const days = computeDaysRemaining(natPermitExpiry);
         natPermitList.push({
@@ -382,7 +382,7 @@ function Overview() {
         color: "text-purple-600 bg-purple-50 border-purple-100",
       },
       {
-        title: "National Permit Due",
+        title: "National Permit(Gujrat Permit) Due",
         icon: Building2,
         items: natPermitList.sort(sortFn),
         color: "text-indigo-600 bg-indigo-50 border-indigo-100",

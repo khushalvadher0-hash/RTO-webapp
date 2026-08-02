@@ -22,6 +22,7 @@ export type TargetCategory =
   | "Fitness"
   | "Gujarat Permit"
   | "National Permit"
+  | "National Permit(Gujrat Permit)"
   | "Tax"
   | "License New"
   | "License Renew"

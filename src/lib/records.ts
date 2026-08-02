@@ -45,6 +45,7 @@ export type ServiceType =
   | "Fitness"
   | "Gujarat Permit"
   | "National Permit"
+  | "National Permit(Gujrat Permit)"
   | "Tax"
   | "PUC"
   | "License New"
@@ -88,6 +89,7 @@ export const SERVICE_TYPES: ServiceType[] = [
   "Fitness",
   "Gujarat Permit",
   "National Permit",
+  "National Permit(Gujrat Permit)",
   "Tax",
   "PUC",
   "License New",
@@ -105,7 +107,7 @@ export const SERVICE_ROUTE_MAP: Record<string, ServiceType> = {
   insurance: "Insurance",
   fitness: "Fitness",
   "gujarat-permit": "Gujarat Permit",
-  "national-permit": "National Permit",
+  "national-permit": "National Permit(Gujrat Permit)",
   tax: "Tax",
   puc: "PUC",
   // Backwards-compatibility: /service/license -> License New
@@ -352,7 +354,8 @@ export const serviceLabel = (type?: ServiceType): string => {
     Insurance: "🛡️ Insurance",
     Fitness: "💪 Fitness",
     "Gujarat Permit": "📍 Gujarat Permit",
-    "National Permit": "🇮🇳 National Permit",
+    "National Permit": "🇮🇳 National Permit(Gujrat Permit)",
+    "National Permit(Gujrat Permit)": "🇮🇳 National Permit(Gujrat Permit)",
     Tax: "💰 Tax",
     PUC: "🌍 PUC",
     "License New": "🔖 License (New)",
@@ -371,6 +374,7 @@ export const serviceColor = (type?: ServiceType): string => {
     Fitness: "bg-green-500",
     "Gujarat Permit": "bg-purple-600",
     "National Permit": "bg-purple-700",
+    "National Permit(Gujrat Permit)": "bg-purple-700",
     Tax: "bg-yellow-500",
     PUC: "bg-emerald-500",
     "License New": "bg-cyan-500",

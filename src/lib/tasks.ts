@@ -1454,8 +1454,8 @@ export const DEFAULT_TEMPLATES_SPEC = [
     ],
   },
   {
-    templateName: "National Permit",
-    serviceType: "National Permit",
+    templateName: "National Permit(Gujrat Permit)",
+    serviceType: "National Permit(Gujrat Permit)" as any,
     subtasks: [
       "Collect Documents",
       "Verify Permit Status",

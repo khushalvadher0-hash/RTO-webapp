@@ -128,7 +128,7 @@ export function computeVehicleDocFollowUps(
       insurance: "Insurance Copy",
       fitness: "Fitness Certificate",
       gujarat_permit: "Gujarat Permit",
-      national_permit: "National Permit",
+      national_permit: "National Permit(Gujrat Permit)",
       tax: "Tax Documents",
       puc: "PUC Certificate",
       other: "Other Vehicle Documents",
