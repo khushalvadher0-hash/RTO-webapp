@@ -19,6 +19,8 @@ import {
   Clock,
   ArrowRight,
   Plus,
+  Printer,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +44,98 @@ interface ExpiryItem {
   expiryDate: string;
   daysRemaining: number;
   isCritical: boolean;
+}
+
+function exportCardToExcel(title: string, items: ExpiryItem[]) {
+  const headers = ["Vehicle/Application ID", "Owner/Applicant Name", "Phone", "Category/Class", "Expiry Date", "Days Remaining"];
+  const rows = items.map((item) => [
+    `"${item.vehicleNumber}"`,
+    `"${item.ownerName}"`,
+    `"${item.phone}"`,
+    `"${item.vehicleClass || ""}"`,
+    `"${item.expiryDate}"`,
+    item.daysRemaining <= 0 ? `"${Math.abs(item.daysRemaining)} days overdue"` : `"${item.daysRemaining} days left"`
+  ]);
+  const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${title.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function exportCardToPDF(title: string, items: ExpiryItem[]) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${title} Report</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; color: #1e293b; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { color: #0f172a; font-size: 22px; margin: 0; }
+        .meta { color: #64748b; font-size: 12px; margin-top: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+        th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
+        th { background-color: #f8fafc; font-weight: bold; color: #475569; }
+        .overdue { color: #be123c; font-weight: bold; }
+        .left { color: #15803d; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <h1>${title} Report</h1>
+          <div class="meta">Generated on ${new Date().toLocaleDateString()} | Total Records: ${items.length}</div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle/Application ID</th>
+            <th>Owner/Applicant Name</th>
+            <th>Phone</th>
+            <th>Category/Class</th>
+            <th>Expiry Date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items
+            .map(
+              (item) => `
+            <tr>
+              <td><strong>${item.vehicleNumber}</strong></td>
+              <td>${item.ownerName}</td>
+              <td>${item.phone}</td>
+              <td>${item.vehicleClass || "—"}</td>
+              <td>${item.expiryDate}</td>
+              <td class="${item.daysRemaining <= 0 ? "overdue" : "left"}">
+                ${item.daysRemaining <= 0 ? `${Math.abs(item.daysRemaining)} days overdue` : `${item.daysRemaining} days left`}
+              </td>
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <script>
+        window.onload = function() { 
+          window.print(); 
+          setTimeout(function() { window.close(); }, 500);
+        }
+      </script>
+    </body>
+    </html>
+  `;
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 function computeDaysRemaining(expiryStr: string): number {
@@ -232,6 +326,47 @@ function Overview() {
         { title: "LL License Expiry", icon: Calendar, items: llList.sort(sortFn), color: "text-purple-600 bg-purple-50 border-purple-100" },
         { title: "DL License Expiry", icon: Building2, items: dlList.sort(sortFn), color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
         { title: "Hazardous License Expiry", icon: AlertCircle, items: hazardousList.sort(sortFn), color: "text-rose-600 bg-rose-50 border-rose-100" },
+      ];
+    }
+
+    if (activeSubModule === "form5") {
+      const ntList: ExpiryItem[] = [];
+      const trList: ExpiryItem[] = [];
+      const llList: ExpiryItem[] = [];
+
+      applications.forEach((app) => {
+        if (app.subModule === "form5" && app.form5Details) {
+          const fd = app.form5Details;
+          const ownerName = fd.name || app.ownerName || "Applicant";
+          const phone = app.mobileNumber || "—";
+          const baseInfo = {
+            vehicleNumber: fd.applicationNo || app.applicationId || app.id,
+            ownerName,
+            phone,
+            vehicleClass: fd.form5Type === "new_hgv" ? "Form 5 New HGV" : "Form 5A Renew HGV",
+          };
+
+          if (fd.llExpiryDate) {
+            const days = computeDaysRemaining(fd.llExpiryDate);
+            llList.push({ ...baseInfo, expiryDate: fd.llExpiryDate, daysRemaining: days, isCritical: days <= 15 });
+          }
+          if (fd.ntValidityDate) {
+            const days = computeDaysRemaining(fd.ntValidityDate);
+            ntList.push({ ...baseInfo, expiryDate: fd.ntValidityDate, daysRemaining: days, isCritical: days <= 15 });
+          }
+          if (fd.trValidityDate) {
+            const days = computeDaysRemaining(fd.trValidityDate);
+            trList.push({ ...baseInfo, expiryDate: fd.trValidityDate, daysRemaining: days, isCritical: days <= 15 });
+          }
+        }
+      });
+
+      const sortFn = (a: ExpiryItem, b: ExpiryItem) => a.daysRemaining - b.daysRemaining;
+
+      return [
+        { title: "Form 5 NT License Validity", icon: Shield, items: ntList.sort(sortFn), color: "text-blue-600 bg-blue-50 border-blue-100" },
+        { title: "Form 5 TR License Validity", icon: FileCheck, items: trList.sort(sortFn), color: "text-amber-600 bg-amber-50 border-amber-100" },
+        { title: "Form 5 LL License Expiry", icon: Calendar, items: llList.sort(sortFn), color: "text-purple-600 bg-purple-50 border-purple-100" },
       ];
     }
 
@@ -462,6 +597,25 @@ function Overview() {
                       </p>
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => exportCardToPDF(cat.title, cat.items)}
+                      className="p-1 rounded hover:bg-slate-200/60 text-slate-400 hover:text-slate-600 transition"
+                      title="Print / Download PDF"
+                      disabled={cat.items.length === 0}
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => exportCardToExcel(cat.title, cat.items)}
+                      className="p-1 rounded hover:bg-slate-200/60 text-slate-400 hover:text-slate-600 transition"
+                      title="Export to Excel"
+                      disabled={cat.items.length === 0}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Items List */}
@@ -510,9 +664,10 @@ function Overview() {
                 <div className="p-3 bg-slate-50/80 border-t border-slate-100 text-center">
                   <Link
                     to="/dashboard/applications"
+                    search={{ subModule: activeSubModule }}
                     className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
                   >
-                    View all {cat.items.length} vehicles <ArrowRight className="w-3 h-3" />
+                    View all {cat.items.length} {activeSubModule === "licence" || activeSubModule === "form5" ? "applicants" : "vehicles"} <ArrowRight className="w-3 h-3" />
                   </Link>
                 </div>
               </div>

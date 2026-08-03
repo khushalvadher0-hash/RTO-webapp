@@ -31,6 +31,7 @@ import {
   saveDrivingSchoolVehicleRecord,
   saveDrivingSchoolDailyReportRecord,
   deleteDrivingSchoolVehicleRecord,
+  deleteDrivingSchoolDailyReportRecord,
   type DrivingSchoolVehicle,
   type DrivingSchoolDailyReport,
 } from "@/lib/drivingSchoolVehicles";
@@ -55,6 +56,8 @@ export function DrivingSchoolVehiclesView() {
   const [vehicleInfoOpen, setVehicleInfoOpen] = useState(false);
   const [selectedVehicleForInfo, setSelectedVehicleForInfo] = useState<DrivingSchoolVehicle | null>(null);
   const [infoVehicleReports, setInfoVehicleReports] = useState<DrivingSchoolDailyReport[]>([]);
+  const [activeLightboxImg, setActiveLightboxImg] = useState<string | null>(null);
+  const [editingReportId, setEditingReportId] = useState<string | null>(null);
 
   // Camera OCR Modal State
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
@@ -212,20 +215,37 @@ export function DrivingSchoolVehiclesView() {
   };
 
   // Open Daily Report Modal
-  const openDailyReportModal = (veh: DrivingSchoolVehicle) => {
+  const openDailyReportModal = (veh: DrivingSchoolVehicle, report?: DrivingSchoolDailyReport) => {
     setSelectedVehicleForReport(veh);
-    setReportDate(new Date().toISOString().split("T")[0]);
-    setReportStudentId("");
-    setReportStudentName(activeStudents[0]?.studentName || "");
-    setReportStartOdometer(veh.currentOdometer || 0);
-    setReportEndOdometer((veh.currentOdometer || 0) + 38);
-    setReportStartPhoto("");
-    setReportEndPhoto("");
-    setReportGeneralAmount("");
-    setReportGeneralDesc("");
-    setReportFuelType(veh.fuelType || "Petrol");
-    setReportFuelAmount("");
-    setReportNotes("");
+    if (report) {
+      setEditingReportId(report.id);
+      setReportDate(report.reportDate || "");
+      setReportStudentId(report.studentId || "");
+      setReportStudentName(report.studentName || "");
+      setReportStartOdometer(report.startOdometer || 0);
+      setReportEndOdometer(report.endOdometer || 0);
+      setReportStartPhoto(report.startOdometerPhoto || "");
+      setReportEndPhoto(report.endOdometerPhoto || "");
+      setReportGeneralAmount(report.generalExpenseAmount || "");
+      setReportGeneralDesc(report.generalExpenseDescription || "");
+      setReportFuelType(report.fuelType || veh.fuelType || "Petrol");
+      setReportFuelAmount(report.fuelAmount || "");
+      setReportNotes(report.notes || "");
+    } else {
+      setEditingReportId(null);
+      setReportDate(new Date().toISOString().split("T")[0]);
+      setReportStudentId("");
+      setReportStudentName(activeStudents[0]?.studentName || "");
+      setReportStartOdometer(veh.currentOdometer || 0);
+      setReportEndOdometer((veh.currentOdometer || 0) + 38);
+      setReportStartPhoto("");
+      setReportEndPhoto("");
+      setReportGeneralAmount("");
+      setReportGeneralDesc("");
+      setReportFuelType(veh.fuelType || "Petrol");
+      setReportFuelAmount("");
+      setReportNotes("");
+    }
     setDailyReportOpen(true);
   };
 
@@ -265,9 +285,9 @@ export function DrivingSchoolVehiclesView() {
         fuelType: reportFuelType,
         fuelAmount: Number(reportFuelAmount) || 0,
         notes: reportNotes,
-      });
+      }, editingReportId || undefined);
 
-      toast.success("Daily Vehicle Report saved successfully!");
+      toast.success(editingReportId ? "Daily Vehicle Report updated successfully!" : "Daily Vehicle Report saved successfully!");
       setDailyReportOpen(false);
     } catch (err) {
       console.error("Error saving daily report:", err);
@@ -347,6 +367,35 @@ export function DrivingSchoolVehiclesView() {
       console.error("Document upload failed:", err);
       toast.error("Failed to upload document");
       setUploadingDocKey(null);
+    }
+  };
+
+  const handleDeleteVehicleDocument = async (docKey: string) => {
+    if (!selectedVehicleForInfo) return;
+    if (!window.confirm("Are you sure you want to delete this document?")) return;
+    try {
+      const updatedDocs = {
+        ...(selectedVehicleForInfo.documents || {}),
+      };
+      delete updatedDocs[docKey];
+
+      await saveDrivingSchoolVehicleRecord(
+        {
+          ...selectedVehicleForInfo,
+          documents: updatedDocs,
+        },
+        selectedVehicleForInfo.id
+      );
+
+      setSelectedVehicleForInfo({
+        ...selectedVehicleForInfo,
+        documents: updatedDocs,
+      });
+
+      toast.success("Document deleted successfully!");
+    } catch (err: any) {
+      console.error("Document deletion failed:", err);
+      toast.error("Failed to delete document");
     }
   };
 
@@ -1018,24 +1067,34 @@ export function DrivingSchoolVehiclesView() {
 
                         <div className="flex items-center gap-1 w-full mt-1">
                           {hasDoc && (
-                            <a
-                              href={docUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex-1 py-1 px-1 rounded text-[9px] font-bold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 flex items-center justify-center gap-0.5"
-                              title="View Document"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Eye className="w-3 h-3" /> View
-                            </a>
+                            <>
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex-1 py-1 px-0.5 rounded text-[8px] font-bold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 flex items-center justify-center gap-0.5"
+                                title="View Document"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Eye className="w-2.5 h-2.5" /> View
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVehicleDocument(docItem.key)}
+                                className="py-1 px-1.5 rounded text-[8px] font-bold bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 flex items-center justify-center gap-0.5"
+                                title="Delete Document"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            </>
                           )}
                           <label className={cn(
-                            "flex-1 py-1 px-1 rounded text-[9px] font-bold cursor-pointer text-center flex items-center justify-center gap-0.5 transition-colors",
+                            "py-1 px-1 rounded text-[8px] font-bold cursor-pointer text-center flex items-center justify-center gap-0.5 transition-colors",
                             hasDoc
-                              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                              ? "flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
                               : "bg-blue-600 text-white hover:bg-blue-700 w-full"
                           )}>
-                            <Upload className="w-3 h-3" />
+                            <Upload className="w-2.5 h-2.5" />
                             {hasDoc ? "Replace" : "Upload"}
                             <input
                               type="file"
@@ -1094,15 +1153,18 @@ export function DrivingSchoolVehiclesView() {
                       <th className="p-3">DATE</th>
                       <th className="p-3">STUDENT</th>
                       <th className="p-3">DISTANCE</th>
+                      <th className="p-3">START ODO PHOTO</th>
+                      <th className="p-3">END ODO PHOTO</th>
                       <th className="p-3">FUEL</th>
                       <th className="p-3">GENERAL EXPENSE</th>
-                      <th className="p-3 text-right">TOTAL EXPENSE</th>
+                      <th className="p-3">TOTAL EXPENSE</th>
+                      <th className="p-3 text-right">ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {infoVehicleReports.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400">
+                        <td colSpan={9} className="p-6 text-center text-slate-400">
                           No daily vehicle report history recorded yet.
                         </td>
                       </tr>
@@ -1114,9 +1176,63 @@ export function DrivingSchoolVehiclesView() {
                             <td className="p-3 font-mono">{r.reportDate}</td>
                             <td className="p-3 font-semibold text-slate-900">{r.studentName}</td>
                             <td className="p-3 font-mono font-bold">{r.distanceTravelled} km</td>
+                            <td className="p-3">
+                              {r.startOdometerPhoto ? (
+                                <img
+                                  src={r.startOdometerPhoto}
+                                  alt="Start Odometer"
+                                  className="w-10 h-7 object-cover rounded border border-slate-200 hover:scale-110 transition cursor-pointer"
+                                  onClick={() => setActiveLightboxImg(r.startOdometerPhoto || null)}
+                                />
+                              ) : (
+                                <span className="text-[10px] text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {r.endOdometerPhoto ? (
+                                <img
+                                  src={r.endOdometerPhoto}
+                                  alt="End Odometer"
+                                  className="w-10 h-7 object-cover rounded border border-slate-200 hover:scale-110 transition cursor-pointer"
+                                  onClick={() => setActiveLightboxImg(r.endOdometerPhoto || null)}
+                                />
+                              ) : (
+                                <span className="text-[10px] text-slate-400">—</span>
+                              )}
+                            </td>
                             <td className="p-3 font-mono">₹{r.fuelAmount || 0}</td>
                             <td className="p-3 font-mono">₹{r.generalExpenseAmount || 0}</td>
-                            <td className="p-3 text-right font-mono font-bold text-slate-900">₹{totExp}</td>
+                            <td className="p-3 font-mono font-bold text-slate-900">₹{totExp}</td>
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openDailyReportModal(selectedVehicleForInfo, r)}
+                                  className="p-1 rounded text-blue-600 hover:bg-blue-50 transition"
+                                  title="Edit Report"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (window.confirm("Are you sure you want to delete this daily report?")) {
+                                      try {
+                                        await deleteDrivingSchoolDailyReportRecord(r.id);
+                                        toast.success("Daily report deleted successfully!");
+                                      } catch (err) {
+                                        console.error("Failed to delete daily report:", err);
+                                        toast.error("Failed to delete daily report");
+                                      }
+                                    }
+                                  }}
+                                  className="p-1 rounded text-rose-600 hover:bg-rose-50 transition"
+                                  title="Delete Report"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })
@@ -1372,6 +1488,27 @@ export function DrivingSchoolVehiclesView() {
         suggestedValue={cameraSuggestedValue}
         onCapture={handleCameraCapture}
       />
+
+      {activeLightboxImg && (
+        <div
+          onClick={() => setActiveLightboxImg(null)}
+          className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={activeLightboxImg}
+              alt="Odometer Large View"
+              className="max-w-full max-h-[80vh] object-contain rounded-lg border border-slate-700 shadow-2xl"
+            />
+            <button
+              onClick={() => setActiveLightboxImg(null)}
+              className="absolute top-4 right-4 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

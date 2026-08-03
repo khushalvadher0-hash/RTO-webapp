@@ -264,22 +264,32 @@ export async function deleteDrivingSchoolVehicleRecord(id: string): Promise<void
   await deleteDoc(doc(db, DRIVING_SCHOOL_VEHICLES_COL, id));
 }
 
-// 6. Save Daily Report (Auto updates Vehicle's currentOdometer)
+// 6. Save / Update Daily Report (Auto updates Vehicle's currentOdometer)
 export async function saveDrivingSchoolDailyReportRecord(
-  reportData: Omit<DrivingSchoolDailyReport, "id" | "createdAt" | "updatedAt">
+  reportData: Partial<DrivingSchoolDailyReport> & { vehicleId: string; vehicleNumber: string; studentName: string; startOdometer: number; endOdometer: number },
+  existingId?: string
 ): Promise<string> {
   const session = getSession();
   const now = new Date().toISOString();
 
-  const docRef = doc(collection(db, DRIVING_SCHOOL_DAILY_REPORTS_COL));
-  const finalId = docRef.id;
+  const finalId = existingId || reportData.id;
+  const isUpdate = !!finalId;
+  let targetId = finalId;
+  let docRef;
+
+  if (!isUpdate || !targetId) {
+    docRef = doc(collection(db, DRIVING_SCHOOL_DAILY_REPORTS_COL));
+    targetId = docRef.id;
+  } else {
+    docRef = doc(db, DRIVING_SCHOOL_DAILY_REPORTS_COL, targetId);
+  }
 
   // Upload start & end odometer photos if base64/File
   let startOdoPhotoUrl = reportData.startOdometerPhoto || "";
   if (startOdoPhotoUrl && (startOdoPhotoUrl.startsWith("data:") || (startOdoPhotoUrl as any) instanceof File)) {
     startOdoPhotoUrl = await uploadImageToStorage(
       startOdoPhotoUrl,
-      `vehicles/${reportData.vehicleId}/reports/${finalId}_start_${Date.now()}.jpg`
+      `vehicles/${reportData.vehicleId}/reports/${targetId}_start_${Date.now()}.jpg`
     );
   }
 
@@ -287,28 +297,46 @@ export async function saveDrivingSchoolDailyReportRecord(
   if (endOdoPhotoUrl && (endOdoPhotoUrl.startsWith("data:") || (endOdoPhotoUrl as any) instanceof File)) {
     endOdoPhotoUrl = await uploadImageToStorage(
       endOdoPhotoUrl,
-      `vehicles/${reportData.vehicleId}/reports/${finalId}_end_${Date.now()}.jpg`
+      `vehicles/${reportData.vehicleId}/reports/${targetId}_end_${Date.now()}.jpg`
     );
   }
 
   const distance = Math.max(0, (Number(reportData.endOdometer) || 0) - (Number(reportData.startOdometer) || 0));
 
-  const payload = removeUndefined({
-    ...reportData,
-    id: finalId,
-    startOdometerPhoto: startOdoPhotoUrl,
-    endOdometerPhoto: endOdoPhotoUrl,
-    startOdometer: Number(reportData.startOdometer) || 0,
-    endOdometer: Number(reportData.endOdometer) || 0,
-    distanceTravelled: distance,
-    generalExpenseAmount: Number(reportData.generalExpenseAmount) || 0,
-    fuelAmount: Number(reportData.fuelAmount) || 0,
-    createdAt: now,
-    updatedAt: now,
-    createdBy: session?.name || "System",
-  });
+  if (!isUpdate) {
+    const payload = removeUndefined({
+      ...reportData,
+      id: targetId,
+      startOdometerPhoto: startOdoPhotoUrl,
+      endOdometerPhoto: endOdoPhotoUrl,
+      startOdometer: Number(reportData.startOdometer) || 0,
+      endOdometer: Number(reportData.endOdometer) || 0,
+      distanceTravelled: distance,
+      generalExpenseAmount: Number(reportData.generalExpenseAmount) || 0,
+      fuelAmount: Number(reportData.fuelAmount) || 0,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: session?.name || "System",
+    });
 
-  await setDoc(docRef, payload);
+    await setDoc(docRef, payload);
+  } else {
+    const payload = removeUndefined({
+      ...reportData,
+      id: targetId,
+      startOdometerPhoto: startOdoPhotoUrl,
+      endOdometerPhoto: endOdoPhotoUrl,
+      startOdometer: Number(reportData.startOdometer) || 0,
+      endOdometer: Number(reportData.endOdometer) || 0,
+      distanceTravelled: distance,
+      generalExpenseAmount: Number(reportData.generalExpenseAmount) || 0,
+      fuelAmount: Number(reportData.fuelAmount) || 0,
+      updatedAt: now,
+      updatedBy: session?.name || "System",
+    });
+
+    await setDoc(docRef, payload, { merge: true });
+  }
 
   // Auto-update currentOdometer on Vehicle document
   if (reportData.vehicleId && reportData.endOdometer > 0) {
@@ -323,6 +351,12 @@ export async function saveDrivingSchoolDailyReportRecord(
     );
   }
 
-  return finalId;
+  return targetId;
+}
+
+// 7. Delete Daily Report
+export async function deleteDrivingSchoolDailyReportRecord(id: string): Promise<void> {
+  if (!id) return;
+  await deleteDoc(doc(db, DRIVING_SCHOOL_DAILY_REPORTS_COL, id));
 }
 

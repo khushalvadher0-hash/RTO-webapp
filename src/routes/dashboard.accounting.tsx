@@ -61,6 +61,7 @@ import {
   subscribeDrivingSchoolApplications,
   type DrivingSchoolApplication,
 } from "@/lib/drivingSchool";
+import { subscribeAllDailyReports, type DrivingSchoolDailyReport } from "@/lib/drivingSchoolVehicles";
 
 export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingDashboardPage,
@@ -140,6 +141,7 @@ function AccountingDashboardPage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [drivingSchoolApps, setDrivingSchoolApps] = useState<DrivingSchoolApplication[]>([]);
   const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
+  const [dailyReports, setDailyReports] = useState<DrivingSchoolDailyReport[]>([]);
 
   // Subscriptions
   useEffect(() => {
@@ -162,6 +164,9 @@ function AccountingDashboardPage() {
     });
     const unsubDSApps = subscribeDrivingSchoolApplications(setDrivingSchoolApps);
     const unsubAcc = subscribeAccountingRecords(setAccountingMap);
+    const unsubReports = subscribeAllDailyReports((list) => {
+      setDailyReports(list);
+    });
 
     return () => {
       unsubFinance();
@@ -173,6 +178,7 @@ function AccountingDashboardPage() {
       unsubApps();
       unsubDSApps();
       unsubAcc();
+      unsubReports();
     };
   }, []);
 
@@ -497,7 +503,10 @@ function AccountingDashboardPage() {
         }
       }
 
-      const balAmt = acc?.remainingPayment ?? Math.max(0, totAmt - totPaid);
+      const rtoExpense = Number(app.rtoExpense) || 0;
+      totAmt += rtoExpense;
+
+      const balAmt = acc?.remainingPayment !== undefined ? acc.remainingPayment + rtoExpense : Math.max(0, totAmt - totPaid);
       const paymentStatus = acc?.paymentStatus ?? (balAmt === 0 && totAmt > 0 ? "Paid" : totPaid > 0 ? "Partially Paid" : "Pending");
 
       const srvCount = srvList.length;
@@ -577,6 +586,18 @@ function AccountingDashboardPage() {
         };
       });
 
+      if (rtoExpense > 0) {
+        serviceList.push({
+          id: `${app.id}-rto-expense`,
+          serviceType: "RTO Expense",
+          amount: rtoExpense,
+          received: 0,
+          outstanding: rtoExpense,
+          status: "Completed",
+          dueDate: app.updatedAt?.slice(0, 10) || "",
+        });
+      }
+
       rows.push({
         id: appKey,
         subModule: app.subModule || (app.licenseDetails ? "licence" : "services"),
@@ -591,6 +612,7 @@ function AccountingDashboardPage() {
         invoiceAmount: totAmt,
         receivedAmount: totPaid,
         balanceAmount: balAmt,
+        rtoExpense: rtoExpense,
         collectionDate: app.expiryDate || app.createdAt?.slice(0, 10) || "",
         paymentStatus: paymentStatus,
         askBhaylubha: false,
@@ -634,11 +656,59 @@ function AccountingDashboardPage() {
     // Add Driving School Applications into Accounting Rows
     drivingSchoolApps.forEach((ds) => {
       const acc = accountingMap.get(ds.id) || accountingMap.get(ds.applicationId);
-      const totFee = acc?.totalPayment ?? (Number(ds.totalCourseFees) || 0);
+      const baseTotFee = acc?.totalPayment ?? (Number(ds.totalCourseFees) || 0);
       const advFee = acc?.advancePayment ?? (Number(ds.advancePaid) || 0);
-      const remFee = acc?.remainingPayment ?? (typeof ds.remainingFees === "number" ? ds.remainingFees : Math.max(0, totFee - advFee));
+
+      // Sum daily report expenses for this student
+      let fuelExpense = 0;
+      let generalExpense = 0;
+      dailyReports.forEach((rep) => {
+        if (rep.studentId === ds.id || (rep.studentName && rep.studentName === ds.studentName)) {
+          fuelExpense += Number(rep.fuelAmount) || 0;
+          generalExpense += Number(rep.generalExpenseAmount) || 0;
+        }
+      });
+
+      const totFee = baseTotFee + fuelExpense + generalExpense;
+      const remFee = acc?.remainingPayment !== undefined ? acc.remainingPayment + fuelExpense + generalExpense : Math.max(0, totFee - advFee);
       const pStatus: "Paid" | "Partially Paid" | "Pending" =
         remFee <= 0 && totFee > 0 ? "Paid" : advFee > 0 ? "Partially Paid" : "Pending";
+
+      const serviceList = [
+        {
+          id: `${ds.id}-course`,
+          serviceType: ds.courseType || "Driving School Course",
+          amount: baseTotFee,
+          received: advFee,
+          outstanding: Math.max(0, baseTotFee - advFee),
+          status: ds.status || "Active",
+          dueDate: ds.courseEndDate || "",
+        },
+      ];
+
+      if (fuelExpense > 0) {
+        serviceList.push({
+          id: `${ds.id}-fuel`,
+          serviceType: "Fuel Expense",
+          amount: fuelExpense,
+          received: 0,
+          outstanding: fuelExpense,
+          status: "Completed",
+          dueDate: "",
+        });
+      }
+
+      if (generalExpense > 0) {
+        serviceList.push({
+          id: `${ds.id}-general`,
+          serviceType: "General Expense",
+          amount: generalExpense,
+          received: 0,
+          outstanding: generalExpense,
+          status: "Completed",
+          dueDate: "",
+        });
+      }
 
       rows.push({
         id: `ds-${ds.id}`,
@@ -659,17 +729,7 @@ function AccountingDashboardPage() {
         askBhaylubha: false,
         assignedEmployee: ds.assignedEmployee || "Unassigned",
         services: ds.courseType || "Driving School Course",
-        serviceList: [
-          {
-            id: ds.id,
-            serviceType: ds.courseType || "Driving School Course",
-            amount: totFee,
-            received: advFee,
-            outstanding: remFee,
-            status: ds.status || "Active",
-            dueDate: ds.courseEndDate || "",
-          },
-        ],
+        serviceList: serviceList,
         hasInvoice: true,
         daysOverdue: 0,
       });
@@ -829,6 +889,9 @@ function AccountingDashboardPage() {
     let totalReceivable = 0;
     let totalReceived = 0;
     let overdueCollections = 0;
+    let totalRtoExpense = 0;
+    let totalFuelExpense = 0;
+    let totalGeneralExpense = 0;
 
     filteredRecords.forEach((r) => {
       const amt = r.invoiceAmount || 0;
@@ -840,6 +903,10 @@ function AccountingDashboardPage() {
 
       if (pending > 0 && r.collectionDate && r.collectionDate < todayStr) {
         overdueCollections += pending;
+      }
+
+      if (r.rtoExpense) {
+        totalRtoExpense += r.rtoExpense;
       }
     });
 
@@ -853,14 +920,33 @@ function AccountingDashboardPage() {
       })
       .reduce((sum, p) => sum + (p.amount || 0), 0);
 
+    if (activeSubModule === "driving_school") {
+      const visibleStudentIds = new Set(filteredRecords.map(r => r.clientId));
+      dailyReports.forEach((rep) => {
+        if (rep.studentId && visibleStudentIds.has(rep.studentId)) {
+          totalFuelExpense += Number(rep.fuelAmount) || 0;
+          totalGeneralExpense += Number(rep.generalExpenseAmount) || 0;
+        } else if (rep.studentName) {
+          const hasMatch = filteredRecords.some(r => r.clientName === rep.studentName);
+          if (hasMatch) {
+            totalFuelExpense += Number(rep.fuelAmount) || 0;
+            totalGeneralExpense += Number(rep.generalExpenseAmount) || 0;
+          }
+        }
+      });
+    }
+
     return {
       totalReceivable,
       totalReceived,
       outstandingAmount,
       todayCollections,
       overdueCollections,
+      totalRtoExpense,
+      totalFuelExpense,
+      totalGeneralExpense,
     };
-  }, [filteredRecords, paymentEntries]);
+  }, [filteredRecords, paymentEntries, activeSubModule, dailyReports]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {
@@ -1396,7 +1482,9 @@ function AccountingDashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
+        activeSubModule === "driving_school" ? "lg:grid-cols-7" : (activeSubModule === "services" || activeSubModule === "licence") ? "lg:grid-cols-6" : "lg:grid-cols-5"
+      }`}>
         <Card className="border border-slate-100 shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
@@ -1452,6 +1540,47 @@ function AccountingDashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {(activeSubModule === "services" || activeSubModule === "licence") && (
+          <Card className="border border-slate-100 shadow-sm bg-amber-50/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Total RTO Expense</p>
+                <h3 className="text-xl font-bold mt-1 text-amber-600">₹{metrics.totalRtoExpense.toLocaleString("en-IN")}</h3>
+              </div>
+              <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                <TrendingUp className="size-5" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activeSubModule === "driving_school" && (
+          <>
+            <Card className="border border-slate-100 shadow-sm bg-orange-50/10">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Total Fuel Expense</p>
+                  <h3 className="text-xl font-bold mt-1 text-orange-600">₹{metrics.totalFuelExpense.toLocaleString("en-IN")}</h3>
+                </div>
+                <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                  <DollarSign className="size-5" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border border-slate-100 shadow-sm bg-blue-50/10">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Total General Expense</p>
+                  <h3 className="text-xl font-bold mt-1 text-blue-600">₹{metrics.totalGeneralExpense.toLocaleString("en-IN")}</h3>
+                </div>
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                  <DollarSign className="size-5" />
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Shared Filters Panel */}
