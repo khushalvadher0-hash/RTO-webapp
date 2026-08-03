@@ -1,5 +1,5 @@
 import { createFileRoute, useLocation } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   FileText,
   Search,
@@ -53,6 +53,27 @@ import { createInvoice } from "@/lib/billing";
 import { getInsuranceGstPercentage } from "@/lib/capitalize-settings";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Timestamp } from "firebase/firestore";
+
+const toDateString = (ts: any) => {
+  if (!ts) return "";
+  if (typeof ts === "string") return ts.split("T")[0];
+  if (ts.toDate && typeof ts.toDate === "function") {
+    try {
+      return ts.toDate().toISOString().split("T")[0];
+    } catch (e) {
+      return "";
+    }
+  }
+  if (ts.seconds) {
+    try {
+      return new Date(ts.seconds * 1000).toISOString().split("T")[0];
+    } catch (e) {
+      return "";
+    }
+  }
+  return "";
+};
 
 export const DEFAULT_APP_TYPES = [
   "Home",
@@ -404,7 +425,9 @@ function ApplicationsPage() {
         ds.studentName.toLowerCase().includes(term) ||
         (ds.mobileNumber && ds.mobileNumber.includes(term)) ||
         (ds.courseType && ds.courseType.toLowerCase().includes(term)) ||
-        (ds.applicationId && ds.applicationId.toLowerCase().includes(term));
+        (ds.applicationId && ds.applicationId.toLowerCase().includes(term)) ||
+        (ds.drivingLicence && ds.drivingLicence.classes && ds.drivingLicence.classes.some((c: string) => c.toLowerCase().includes(term))) ||
+        (ds.learningLicence && ds.learningLicence.classes && ds.learningLicence.classes.some((c: string) => c.toLowerCase().includes(term)));
 
       const matchPayment = paymentFilter === "all" || ds.paymentStatus === paymentFilter;
       const matchCourse = dsCourseFilter === "all" || ds.courseType === dsCourseFilter;
@@ -665,6 +688,13 @@ function ApplicationsPage() {
                     return (
                       <tr
                         key={ds.id}
+                        onClick={() => {
+                          setViewingApp({
+                            ...ds,
+                            ownerName: ds.studentName,
+                            subModule: "driving_school",
+                          } as any);
+                        }}
                         className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                       >
                         <td className="py-3.5 px-4 text-center text-slate-400 font-mono">{index + 1}</td>
@@ -710,6 +740,7 @@ function ApplicationsPage() {
                             <button
                               onClick={() => {
                                 setEditingApp({
+                                  ...ds,
                                   id: ds.id,
                                   applicationId: ds.applicationId || ds.id,
                                   vehicleNumber: ds.vehicleNumber || "",
@@ -731,6 +762,11 @@ function ApplicationsPage() {
                                   documents: ds.documents,
                                   status: ds.status,
                                   bloodGroup: ds.bloodGroup,
+                                  gender: ds.gender,
+                                  address: ds.address,
+                                  drivingLicenceStatus: ds.drivingLicenceStatus,
+                                  drivingLicence: ds.drivingLicence,
+                                  learningLicence: ds.learningLicence,
                                 } as any);
                                 setIsModalOpen(true);
                               }}
@@ -1314,6 +1350,163 @@ function InlineDocUpload({
   );
 }
 
+function VehicleClassMultiSelect({
+  selectedClasses,
+  onChange,
+  label,
+}: {
+  selectedClasses: string[];
+  onChange: (classes: string[]) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const options = useMemo(() => [
+    "MCWG", "MCWOG", "LMV", "LMV-NT", "LMV-TR", "HMV", "HGMV", "HPMV", "HPV",
+    "Transport", "Tractor", "Trailer", "Road Roller", "Excavator", "Crane", "Other"
+  ], []);
+
+  const filtered = useMemo(() => {
+    return options.filter(opt => opt.toLowerCase().includes(search.toLowerCase()));
+  }, [options, search]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleToggle = (opt: string) => {
+    if (selectedClasses.includes(opt)) {
+      onChange(selectedClasses.filter(c => c !== opt));
+    } else {
+      onChange([...selectedClasses, opt]);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === "Enter" || e.key === "ArrowDown" || e.key === " ") {
+        e.preventDefault();
+        setOpen(true);
+        setActiveIndex(0);
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
+      setOpen(false);
+      setActiveIndex(-1);
+      e.preventDefault();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex(prev => (filtered.length > 0 ? (prev + 1) % filtered.length : -1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex(prev => (filtered.length > 0 ? (prev - 1 + filtered.length) % filtered.length : -1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (activeIndex >= 0 && activeIndex < filtered.length) {
+        handleToggle(filtered[activeIndex]);
+      }
+    }
+  };
+
+  return (
+    <div className="relative text-xs w-full" ref={containerRef}>
+      <label className="font-semibold text-slate-700 block mb-1 uppercase tracking-wider">{label} <span className="text-rose-500">*</span></label>
+      <div
+        tabIndex={0}
+        onClick={() => {
+          setOpen(!open);
+          if (!open) setActiveIndex(0);
+        }}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "min-h-[42px] p-1.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-1.5 items-center cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all",
+          open && "border-blue-300 bg-white"
+        )}
+      >
+        {selectedClasses.length === 0 ? (
+          <span className="text-slate-400 pl-2">Select vehicle classes...</span>
+        ) : (
+          selectedClasses.map(cls => (
+            <span
+              key={cls}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-lg border border-blue-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(selectedClasses.filter(c => c !== cls));
+              }}
+            >
+              {cls}
+              <span className="text-blue-500 hover:text-blue-700 font-bold ml-0.5">×</span>
+            </span>
+          ))
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-[250px] overflow-y-auto">
+          <input
+            type="text"
+            placeholder="Search classes..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setActiveIndex(0);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={handleKeyDown}
+            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-blue-300"
+          />
+          <div className="grid grid-cols-2 gap-1.5">
+            {filtered.length === 0 ? (
+              <div className="col-span-2 p-2 text-center text-slate-400 italic">No classes found</div>
+            ) : (
+              filtered.map((opt, idx) => {
+                const isSelected = selectedClasses.includes(opt);
+                const isActive = idx === activeIndex;
+                return (
+                  <label
+                    key={opt}
+                    className={cn(
+                      "flex items-center gap-2 p-2 rounded-xl border cursor-pointer font-semibold text-[11px] transition-all select-none",
+                      isSelected 
+                        ? "bg-blue-50 border-blue-200 text-blue-900" 
+                        : "bg-slate-50 border-slate-100 hover:bg-slate-100 text-slate-700",
+                      isActive && "ring-2 ring-blue-400"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggle(opt);
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}}
+                      className="w-3.5 h-3.5 text-blue-600 rounded cursor-pointer"
+                    />
+                    <span>{opt}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApplicationFormModal({
   initialSubModule = "services",
   editingApp,
@@ -1342,8 +1535,24 @@ function ApplicationFormModal({
     }
   });
   const [dsGender, setDsGender] = useState<"Male" | "Female" | "Other">((editingApp as any)?.gender || "Male");
-  const [dsHasDrivingLicence, setDsHasDrivingLicence] = useState<boolean>((editingApp as any)?.hasDrivingLicence || false);
-  const [dsDlNumber, setDsDlNumber] = useState<string>((editingApp as any)?.drivingLicenceNumber || "");
+  
+  const initialDlStatus = (editingApp as any)?.drivingLicenceStatus 
+    ? (editingApp as any).drivingLicenceStatus 
+    : (((editingApp as any)?.hasDrivingLicence || (editingApp as any)?.drivingLicence) ? "WITH_DL" : "WITHOUT_DL");
+  const [dsDlStatus, setDsDlStatus] = useState<"WITH_DL" | "WITHOUT_DL">(initialDlStatus);
+
+  // WITH DL state variables
+  const [dsDlNumber, setDsDlNumber] = useState<string>((editingApp as any)?.drivingLicence?.number || (editingApp as any)?.drivingLicenceNumber || "");
+  const [dsDlIssueDate, setDsDlIssueDate] = useState<string>(toDateString((editingApp as any)?.drivingLicence?.issueDate));
+  const [dsDlExpiryDate, setDsDlExpiryDate] = useState<string>(toDateString((editingApp as any)?.drivingLicence?.expiryDate));
+  const [dsDlClasses, setDsDlClasses] = useState<string[]>((editingApp as any)?.drivingLicence?.classes || []);
+
+  // WITHOUT DL state variables
+  const [dsLlNumber, setDsLlNumber] = useState<string>((editingApp as any)?.learningLicence?.number || "");
+  const [dsLlIssueDate, setDsLlIssueDate] = useState<string>(toDateString((editingApp as any)?.learningLicence?.issueDate));
+  const [dsLlExpiryDate, setDsLlExpiryDate] = useState<string>(toDateString((editingApp as any)?.learningLicence?.expiryDate));
+  const [dsLlClasses, setDsLlClasses] = useState<string[]>((editingApp as any)?.learningLicence?.classes || []);
+
   const [dsBloodGroup, setDsBloodGroup] = useState<string>((editingApp as any)?.bloodGroup || "");
   const [dsJoiningDate, setDsJoiningDate] = useState<string>((editingApp as any)?.joiningDate || new Date().toISOString().split("T")[0]);
   const [dsCourseStartDate, setDsCourseStartDate] = useState<string>((editingApp as any)?.courseStartDate || new Date().toISOString().split("T")[0]);
@@ -1353,6 +1562,21 @@ function ApplicationFormModal({
   const [dsCourseType, setDsCourseType] = useState<string>((editingApp as any)?.courseType || courseTypes[0] || "15 Days");
   const [dsTotalCourseFees, setDsTotalCourseFees] = useState<number | string>((editingApp as any)?.totalCourseFees || 9500);
   const [dsAdvancePaid, setDsAdvancePaid] = useState<number | string>((editingApp as any)?.advancePaid || 4000);
+
+  const handleDlStatusChange = (newStatus: "WITH_DL" | "WITHOUT_DL") => {
+    setDsDlStatus(newStatus);
+    if (newStatus === "WITHOUT_DL") {
+      setDsDlNumber("");
+      setDsDlIssueDate("");
+      setDsDlExpiryDate("");
+      setDsDlClasses([]);
+    } else {
+      setDsLlNumber("");
+      setDsLlIssueDate("");
+      setDsLlExpiryDate("");
+      setDsLlClasses([]);
+    }
+  };
 
   // License Applicant Details
   const [dateOfBirth, setDateOfBirth] = useState(editingApp?.licenseDetails?.dateOfBirth || "");
@@ -1991,6 +2215,43 @@ function ApplicationFormModal({
         return;
       }
 
+      // Driving Licence Status Validation
+      if (dsDlStatus === "WITH_DL") {
+        if (!dsDlNumber.trim()) {
+          toast.error("Driving Licence Number is mandatory!");
+          return;
+        }
+        if (!dsDlIssueDate) {
+          toast.error("Licence Issue Date is mandatory!");
+          return;
+        }
+        if (!dsDlExpiryDate) {
+          toast.error("Licence Expiry Date is mandatory!");
+          return;
+        }
+        if (dsDlClasses.length === 0) {
+          toast.error("At least one Class Of Vehicle must be selected!");
+          return;
+        }
+      } else {
+        if (!dsLlNumber.trim()) {
+          toast.error("Learning Licence Number is mandatory!");
+          return;
+        }
+        if (!dsLlIssueDate) {
+          toast.error("Learning Licence Issue Date is mandatory!");
+          return;
+        }
+        if (!dsLlExpiryDate) {
+          toast.error("Learning Licence Expiry Date is mandatory!");
+          return;
+        }
+        if (dsLlClasses.length === 0) {
+          toast.error("At least one Class Of Vehicle must be selected!");
+          return;
+        }
+      }
+
       setSaving(true);
       try {
         const totFee = Number(dsTotalCourseFees) || 0;
@@ -1999,6 +2260,20 @@ function ApplicationFormModal({
         const pStatus: "Paid" | "Partial" | "Pending" =
           remFee <= 0 ? "Paid" : advFee > 0 ? "Partial" : "Pending";
 
+        const dlPayload = dsDlStatus === "WITH_DL" ? {
+          number: dsDlNumber.trim(),
+          issueDate: Timestamp.fromDate(new Date(dsDlIssueDate + "T00:00:00")),
+          expiryDate: Timestamp.fromDate(new Date(dsDlExpiryDate + "T00:00:00")),
+          classes: dsDlClasses,
+        } : null;
+
+        const llPayload = dsDlStatus === "WITHOUT_DL" ? {
+          number: dsLlNumber.trim(),
+          issueDate: Timestamp.fromDate(new Date(dsLlIssueDate + "T00:00:00")),
+          expiryDate: Timestamp.fromDate(new Date(dsLlExpiryDate + "T00:00:00")),
+          classes: dsLlClasses,
+        } : null;
+
         await saveDrivingSchoolApplication({
           studentName: ownerName.trim(),
           mobileNumber: phone.trim(),
@@ -2006,8 +2281,11 @@ function ApplicationFormModal({
           address: address.trim(),
           dateOfBirth,
           gender: dsGender,
-          hasDrivingLicence: dsHasDrivingLicence,
-          drivingLicenceNumber: dsHasDrivingLicence ? dsDlNumber.trim() : "",
+          hasDrivingLicence: dsDlStatus === "WITH_DL",
+          drivingLicenceNumber: dsDlStatus === "WITH_DL" ? dsDlNumber.trim() : "",
+          drivingLicenceStatus: dsDlStatus,
+          drivingLicence: dlPayload,
+          learningLicence: llPayload,
           joiningDate: dsJoiningDate,
           courseStartDate: dsCourseStartDate,
           courseEndDate: dsCourseEndDate,
@@ -4744,7 +5022,7 @@ function ApplicationFormModal({
                     <label
                       className={cn(
                         "flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer font-medium transition-all select-none",
-                        dsHasDrivingLicence
+                        dsDlStatus === "WITH_DL"
                           ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold"
                           : "bg-slate-50/80 border-slate-200 text-slate-700 hover:bg-slate-100"
                       )}
@@ -4752,17 +5030,17 @@ function ApplicationFormModal({
                       <input
                         type="radio"
                         name="dsDlStatus"
-                        checked={dsHasDrivingLicence}
-                        onChange={() => setDsHasDrivingLicence(true)}
+                        checked={dsDlStatus === "WITH_DL"}
+                        onChange={() => handleDlStatusChange("WITH_DL")}
                         className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                       />
-                      <span>already with Driving license</span>
+                      <span>With Driving Licence</span>
                     </label>
 
                     <label
                       className={cn(
                         "flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer font-medium transition-all select-none",
-                        !dsHasDrivingLicence
+                        dsDlStatus === "WITHOUT_DL"
                           ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold"
                           : "bg-slate-50/80 border-slate-200 text-slate-700 hover:bg-slate-100"
                       )}
@@ -4770,26 +5048,103 @@ function ApplicationFormModal({
                       <input
                         type="radio"
                         name="dsDlStatus"
-                        checked={!dsHasDrivingLicence}
-                        onChange={() => setDsHasDrivingLicence(false)}
+                        checked={dsDlStatus === "WITHOUT_DL"}
+                        onChange={() => handleDlStatusChange("WITHOUT_DL")}
                         className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                       />
                       <span>Without Driving Licence</span>
                     </label>
                   </div>
 
-                  {dsHasDrivingLicence && (
-                    <div className="mt-3">
-                      <label className="font-semibold text-slate-700 block mb-1 text-xs">
-                        DRIVING LICENCE NUMBER
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. GJ01 20260001234"
-                        value={dsDlNumber}
-                        onChange={(e) => setDsDlNumber(e.target.value)}
-                        className="w-full p-3 bg-white border border-blue-300 rounded-xl font-mono text-xs font-semibold text-slate-900"
-                      />
+                  {dsDlStatus === "WITH_DL" && (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          DRIVING LICENCE NUMBER <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. GJ01 20260001234"
+                          value={dsDlNumber}
+                          onChange={(e) => setDsDlNumber(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          LICENCE ISSUE DATE <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={dsDlIssueDate}
+                          onChange={(e) => setDsDlIssueDate(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          LICENCE EXPIRY DATE <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={dsDlExpiryDate}
+                          onChange={(e) => setDsDlExpiryDate(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div>
+                        <VehicleClassMultiSelect
+                          selectedClasses={dsDlClasses}
+                          onChange={setDsDlClasses}
+                          label="CLASS OF VEHICLE"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {dsDlStatus === "WITHOUT_DL" && (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          LEARNING LICENCE NUMBER <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. LL-GJ01-2026"
+                          value={dsLlNumber}
+                          onChange={(e) => setDsLlNumber(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          LEARNING LICENCE ISSUE DATE <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={dsLlIssueDate}
+                          onChange={(e) => setDsLlIssueDate(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          LEARNING LICENCE EXPIRY DATE <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={dsLlExpiryDate}
+                          onChange={(e) => setDsLlExpiryDate(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div>
+                        <VehicleClassMultiSelect
+                          selectedClasses={dsLlClasses}
+                          onChange={setDsLlClasses}
+                          label="CLASS OF VEHICLE"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -6592,6 +6947,21 @@ function ApplicationFormModal({
   );
 }
 
+const displayDate = (ts: any) => {
+  if (!ts) return "—";
+  if (typeof ts === "string") {
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? ts : d.toLocaleDateString("en-IN");
+  }
+  if (ts.toDate && typeof ts.toDate === "function") {
+    return ts.toDate().toLocaleDateString("en-IN");
+  }
+  if (ts.seconds) {
+    return new Date(ts.seconds * 1000).toLocaleDateString("en-IN");
+  }
+  return "—";
+};
+
 function ApplicationDetailsModal({
   app,
   onClose,
@@ -6705,6 +7075,103 @@ function ApplicationDetailsModal({
               })}
             </div>
           </div>
+
+          {/* Driving School Details Card */}
+          {app.subModule === "driving_school" && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <GraduationCap className="w-4 h-4 text-blue-600" /> Driving School Details
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <span className="text-slate-400">Student Name:</span>
+                  <p className="font-semibold">{app.studentName || app.ownerName || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Mobile Number:</span>
+                  <p className="font-semibold font-mono">{app.mobileNumber || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Date Of Birth:</span>
+                  <p className="font-semibold">{app.dateOfBirth || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Gender:</span>
+                  <p className="font-semibold">{app.gender || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Blood Group:</span>
+                  <p className="font-semibold">{app.bloodGroup || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Address:</span>
+                  <p className="font-semibold">{app.address || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Licence Status:</span>
+                  <p className="font-bold text-blue-800">
+                    {app.drivingLicenceStatus === "WITH_DL" ? "With Driving Licence" : "Without Driving Licence"}
+                  </p>
+                </div>
+              </div>
+
+              {app.drivingLicenceStatus === "WITH_DL" && app.drivingLicence && (
+                <div className="border-t border-slate-200/60 pt-3 mt-3">
+                  <h4 className="font-bold text-slate-800 mb-2">Driving Licence Details</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                    <div>
+                      <span className="text-slate-400">DL Number:</span>
+                      <p className="font-semibold font-mono">{app.drivingLicence.number || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Issue Date:</span>
+                      <p className="font-semibold">{displayDate(app.drivingLicence.issueDate)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Expiry Date:</span>
+                      <p className="font-semibold">{displayDate(app.drivingLicence.expiryDate)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Class Of Vehicle:</span>
+                      <p className="font-semibold">
+                        {app.drivingLicence.classes && Array.isArray(app.drivingLicence.classes) 
+                          ? app.drivingLicence.classes.join(", ") 
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {app.drivingLicenceStatus === "WITHOUT_DL" && app.learningLicence && (
+                <div className="border-t border-slate-200/60 pt-3 mt-3">
+                  <h4 className="font-bold text-slate-800 mb-2">Learning Licence Details</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                    <div>
+                      <span className="text-slate-400">LL Number:</span>
+                      <p className="font-semibold font-mono">{app.learningLicence.number || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Issue Date:</span>
+                      <p className="font-semibold">{displayDate(app.learningLicence.issueDate)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Expiry Date:</span>
+                      <p className="font-semibold">{displayDate(app.learningLicence.expiryDate)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Class Of Vehicle:</span>
+                      <p className="font-semibold">
+                        {app.learningLicence.classes && Array.isArray(app.learningLicence.classes) 
+                          ? app.learningLicence.classes.join(", ") 
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Form 5 Details Card */}
           {app.subModule === "form5" && app.form5Details && (

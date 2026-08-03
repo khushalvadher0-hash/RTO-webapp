@@ -28,6 +28,9 @@ export interface DrivingSchoolApplication {
   gender?: "Male" | "Female" | "Other" | string;
   hasDrivingLicence?: boolean;
   drivingLicenceNumber?: string;
+  drivingLicenceStatus?: "WITH_DL" | "WITHOUT_DL";
+  drivingLicence?: { number: string; issueDate: any; expiryDate: any; classes: string[] } | null;
+  learningLicence?: { number: string; issueDate: any; expiryDate: any; classes: string[] } | null;
   joiningDate?: string;
   courseStartDate?: string;
   courseEndDate?: string;
