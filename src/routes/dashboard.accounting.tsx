@@ -1431,200 +1431,174 @@ function AccountingDashboardPage() {
 
   // PDF exports
   const generateSummaryPDF = () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: "landscape" });
+    
+    // Sub Module Title Formatting
+    const subModuleNames: Record<string, string> = {
+      services: "Vahaan Sub-Module",
+      licence: "Licence Sub-Module",
+      driving_school: "Driving School Sub-Module",
+      insurance: "Insurance Sub-Module",
+      form5: "Form 5 Sub-Module",
+    };
+    const subTitle = subModuleNames[activeSubModule] || `${activeSubModule.toUpperCase()} Sub-Module`;
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text("Accounting Summary Statement", 14, 20);
+    doc.text(`Accounting Summary Statement — ${subTitle}`, 14, 18);
+    
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Date Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
+    doc.setFontSize(9);
+    doc.text(`Generated On: ${new Date().toLocaleString("en-IN")}`, 14, 24);
 
-    const values = [
-      ["Total Receivable (Charges)", `INR ${metrics.totalReceivable.toLocaleString("en-IN")}`],
-      ["Total Received (Advance)", `INR ${metrics.totalReceived.toLocaleString("en-IN")}`],
-      ["Outstanding Amount", `INR ${metrics.outstandingAmount.toLocaleString("en-IN")}`],
-      ["Today's Collections", `INR ${metrics.todayCollections.toLocaleString("en-IN")}`],
-      ["Overdue Collections", `INR ${metrics.overdueCollections.toLocaleString("en-IN")}`],
+    // Section 1: Financial Metrics Summary Table
+    let y = 32;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Financial Overview Summary", 14, y);
+    y += 4;
+
+    const summaryHeaders = ["Total Receivable", "Total Received", "Outstanding", "Today's Collection", "Overdue"];
+    const summaryData = [
+      `Rs.${metrics.totalReceivable.toLocaleString("en-IN")}`,
+      `Rs.${metrics.totalReceived.toLocaleString("en-IN")}`,
+      `Rs.${metrics.outstandingAmount.toLocaleString("en-IN")}`,
+      `Rs.${metrics.todayCollections.toLocaleString("en-IN")}`,
+      `Rs.${metrics.overdueCollections.toLocaleString("en-IN")}`,
     ];
 
-    if (activeSubModule === "services") {
-      values.push(["Total RTO Expense", `INR ${metrics.totalRtoExpense.toLocaleString("en-IN")}`]);
+    if (activeSubModule === "services" || activeSubModule === "licence") {
+      summaryHeaders.push("RTO Expense");
+      summaryData.push(`Rs.${metrics.totalRtoExpense.toLocaleString("en-IN")}`);
       if (isAdmin) {
-        values.push(["Net Profit", `INR ${metrics.totalProfit.toLocaleString("en-IN")}`]);
+        summaryHeaders.push("Net Profit");
+        summaryData.push(`Rs.${metrics.totalProfit.toLocaleString("en-IN")}`);
       }
+    } else if (activeSubModule === "driving_school") {
+      summaryHeaders.push("Fuel Exp.");
+      summaryData.push(`Rs.${metrics.totalFuelExpense.toLocaleString("en-IN")}`);
+      summaryHeaders.push("Gen. Exp.");
+      summaryData.push(`Rs.${metrics.totalGeneralExpense.toLocaleString("en-IN")}`);
     }
 
-    let y = 40;
-    values.forEach(([label, value]) => {
-      doc.setFont("helvetica", "bold");
-      doc.text(label, 14, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(value, 120, y);
-      y += 10;
+    // Draw Summary Grid Table
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    let xOffset = 14;
+    const colWidth = 269 / summaryHeaders.length;
+
+    // Header cells
+    summaryHeaders.forEach((header) => {
+      doc.setFillColor(241, 245, 249); // light blue-gray
+      doc.rect(xOffset, y, colWidth, 7, "F");
+      doc.rect(xOffset, y, colWidth, 7, "S");
+      doc.text(header, xOffset + 2, y + 5);
+      xOffset += colWidth;
     });
 
-    doc.save("ACCOUNTING_SUMMARY.pdf");
-  };
-
-  const generateCollectionsPDF = () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("Scheduled Collections Report", 14, 20);
-    doc.setFontSize(10);
+    y += 7;
+    xOffset = 14;
     doc.setFont("helvetica", "normal");
-    doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
+    summaryData.forEach((val) => {
+      doc.rect(xOffset, y, colWidth, 8, "S");
+      doc.text(val, xOffset + 2, y + 5);
+      xOffset += colWidth;
+    });
 
-    let y = 40;
+    y += 15;
+
+    // Section 2: Detailed Entries Table
     doc.setFont("helvetica", "bold");
-    doc.text("Client Name", 14, y);
-    doc.text("Vehicle", 65, y);
-    doc.text("Date", 95, y);
-    doc.text("Charges", 120, y);
-    doc.text("Advance", 145, y);
-    doc.text("Receipt", 170, y);
-    doc.text("Outstanding", 195, y);
-    doc.text("Expense", 225, y);
-    if (isAdmin) {
-      doc.text("Profit", 250, y);
-    }
-    doc.text("Status", 275, y);
-    doc.line(14, y + 2, 285, y + 2);
-    y += 10;
+    doc.setFontSize(11);
+    doc.text("Accounting Details Breakdown", 14, y);
+    y += 4;
 
+    // Table Columns Configuration
+    const cols = [
+      { name: "Client Name", width: 38 },
+      { name: "Vehicle / App No", width: 28 },
+      { name: "Services", width: 44 },
+      { name: "Date", width: 22 },
+      { name: "Charges", width: 18 },
+      { name: "Advance", width: 18 },
+      { name: "Receipt", width: 18 },
+      { name: "Outstanding", width: 22 },
+      { name: "Expense", width: 18 },
+      ...(isAdmin && (activeSubModule === "services" || activeSubModule === "licence") ? [{ name: "Profit", width: 18 }] : []),
+      { name: "Employee", width: 20 },
+      { name: "Status", width: 18 }
+    ];
+
+    // Compute column X coordinates
+    let currentX = 14;
+    const colLefts = cols.map(c => {
+      const x = currentX;
+      currentX += c.width;
+      return x;
+    });
+
+    // Draw Column Headers
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    cols.forEach((col, idx) => {
+      doc.text(col.name, colLefts[idx], y);
+    });
+    doc.line(14, y + 2, 283, y + 2);
+    
     doc.setFont("helvetica", "normal");
+    y += 8;
+
     filteredRecords.forEach((r) => {
       if (y > 185) {
         doc.addPage();
         y = 20;
+        
+        // Re-draw headers on new page
+        doc.setFont("helvetica", "bold");
+        cols.forEach((col, idx) => {
+          doc.text(col.name, colLefts[idx], y);
+        });
+        doc.line(14, y + 2, 283, y + 2);
+        doc.setFont("helvetica", "normal");
+        y += 8;
       }
-      doc.text(r.clientName.slice(0, 22), 14, y);
-      doc.text(r.vehicleNumber || "—", 65, y);
-      doc.text(r.collectionDate || "—", 95, y);
-      doc.text((r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN"), 120, y);
-      doc.text((r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN"), 145, y);
-      doc.text((r.rtoReceipt ?? 0).toLocaleString("en-IN"), 170, y);
-      doc.text((r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN"), 195, y);
-      doc.text((r.rtoExpense ?? 0).toLocaleString("en-IN"), 225, y);
-      if (isAdmin) {
-        doc.text((r.profit ?? 0).toLocaleString("en-IN"), 250, y);
-      }
-      doc.text(r.paymentStatus || "—", 275, y);
-      y += 8;
-    });
 
-    doc.save("COLLECTIONS_REPORT.pdf");
-  };
-
-  const generateOutstandingPDF = () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("Outstanding Balance Report", 14, 20);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
-
-    let y = 40;
-    doc.setFont("helvetica", "bold");
-    doc.text("Client Name", 14, y);
-    doc.text("Vehicle", 65, y);
-    doc.text("Date", 95, y);
-    doc.text("Charges", 120, y);
-    doc.text("Advance", 145, y);
-    doc.text("Receipt", 170, y);
-    doc.text("Outstanding", 195, y);
-    doc.text("Expense", 225, y);
-    if (isAdmin) {
-      doc.text("Profit", 250, y);
-    }
-    doc.text("Status", 275, y);
-    doc.line(14, y + 2, 285, y + 2);
-    y += 10;
-
-    doc.setFont("helvetica", "normal");
-    const outstandingRecords = filteredRecords.filter(r => (r.outstanding ?? r.balanceAmount ?? 0) > 0);
-    outstandingRecords.forEach((r) => {
-      if (y > 185) {
-        doc.addPage();
-        y = 20;
-      }
-      doc.text(r.clientName.slice(0, 22), 14, y);
-      doc.text(r.vehicleNumber || "—", 65, y);
-      doc.text(r.collectionDate || "—", 95, y);
-      doc.text((r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN"), 120, y);
-      doc.text((r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN"), 145, y);
-      doc.text((r.rtoReceipt ?? 0).toLocaleString("en-IN"), 170, y);
-      doc.text((r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN"), 195, y);
-      doc.text((r.rtoExpense ?? 0).toLocaleString("en-IN"), 225, y);
-      if (isAdmin) {
-        doc.text((r.profit ?? 0).toLocaleString("en-IN"), 250, y);
-      }
-      doc.text(r.paymentStatus || "—", 275, y);
-      y += 8;
-    });
-
-    doc.save("OUTSTANDING_REPORT.pdf");
-  };
-
-  const generatePaymentsPDF = () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("Payment Entries Logs", 14, 20);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
-
-    let y = 40;
-    doc.setFont("helvetica", "bold");
-    doc.text("Date", 14, y);
-    doc.text("Client", 35, y);
-    doc.text("Method", 80, y);
-    doc.text("Amount", 100, y);
-    doc.text("Charges", 120, y);
-    doc.text("Advance", 145, y);
-    doc.text("Receipt", 170, y);
-    doc.text("Outstanding", 195, y);
-    doc.text("Expense", 225, y);
-    if (isAdmin) {
-      doc.text("Profit", 250, y);
-    }
-    doc.line(14, y + 2, 285, y + 2);
-    y += 10;
-
-    doc.setFont("helvetica", "normal");
-    filteredPayments.forEach((p) => {
-      if (y > 185) {
-        doc.addPage();
-        y = 20;
-      }
-      const r = financeRecords.find((rec) => rec.invoiceId === p.invoiceId);
-      const clientName = r?.clientName || p.clientName || "—";
+      const clientVal = (r.clientName || "—").slice(0, 18);
+      const vehicleVal = (r.vehicleNumber || "—").slice(0, 12);
+      const servicesVal = (r.services || "—").slice(0, 22);
+      const dateVal = r.collectionDate || "—";
       
-      const totalCharges = r?.totalCharges ?? r?.invoiceAmount ?? 0;
-      const advancePaid = r?.advancePaid ?? r?.receivedAmount ?? 0;
-      const rtoReceipt = r?.rtoReceipt ?? 0;
-      const outstanding = r?.outstanding ?? r?.balanceAmount ?? 0;
-      const rtoExpense = r?.rtoExpense ?? 0;
-      const profit = r?.profit ?? 0;
+      const charges = `Rs.${(r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN")}`;
+      const advance = `Rs.${(r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN")}`;
+      const receipt = `Rs.${(r.rtoReceipt ?? 0).toLocaleString("en-IN")}`;
+      const outstanding = `Rs.${(r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN")}`;
+      const expense = `Rs.${(r.rtoExpense ?? 0).toLocaleString("en-IN")}`;
+      const profit = `Rs.${(r.profit ?? 0).toLocaleString("en-IN")}`;
+      const employee = (r.assignedEmployee || "—").slice(0, 10);
+      const status = r.paymentStatus || "—";
 
-      doc.text(p.receivedAt?.slice(0, 10) || "—", 14, y);
-      doc.text(clientName.slice(0, 18), 35, y);
-      doc.text(p.method || "—", 80, y);
-      doc.text(p.amount.toLocaleString("en-IN"), 100, y);
-      doc.text(totalCharges.toLocaleString("en-IN"), 120, y);
-      doc.text(advancePaid.toLocaleString("en-IN"), 145, y);
-      doc.text(rtoReceipt.toLocaleString("en-IN"), 170, y);
-      doc.text(outstanding.toLocaleString("en-IN"), 195, y);
-      doc.text(rtoExpense.toLocaleString("en-IN"), 225, y);
-      if (isAdmin) {
-        doc.text(profit.toLocaleString("en-IN"), 250, y);
+      let cIdx = 0;
+      doc.text(clientVal, colLefts[cIdx++], y);
+      doc.text(vehicleVal, colLefts[cIdx++], y);
+      doc.text(servicesVal, colLefts[cIdx++], y);
+      doc.text(dateVal, colLefts[cIdx++], y);
+      doc.text(charges, colLefts[cIdx++], y);
+      doc.text(advance, colLefts[cIdx++], y);
+      doc.text(receipt, colLefts[cIdx++], y);
+      doc.text(outstanding, colLefts[cIdx++], y);
+      doc.text(expense, colLefts[cIdx++], y);
+      if (isAdmin && (activeSubModule === "services" || activeSubModule === "licence")) {
+        doc.text(profit, colLefts[cIdx++], y);
       }
-      y += 8;
+      doc.text(employee, colLefts[cIdx++], y);
+      doc.text(status, colLefts[cIdx++], y);
+      
+      doc.line(14, y + 2, 283, y + 2);
+      
+      y += 7;
     });
 
-    doc.save("PAYMENT_ENTRIES.pdf");
+    doc.save(`ACCOUNTING_SUMMARY_${subTitle.replace(/\s+/g, "_").toUpperCase()}.pdf`);
   };
 
   return (
@@ -1645,16 +1619,6 @@ function AccountingDashboardPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={generateSummaryPDF} className="text-xs bg-slate-50 border-slate-200">
             <FileText className="size-4 mr-1 text-red-600" /> Summary PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={generateCollectionsPDF} className="text-xs bg-slate-50 border-slate-200">
-            <FileText className="size-4 mr-1 text-red-600" /> Collections PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={generateOutstandingPDF} className="text-xs bg-slate-50 border-slate-200">
-            <FileText className="size-4 mr-1 text-red-600" /> Outstanding PDF
-          </Button>
-
-          <Button variant="outline" size="sm" onClick={generatePaymentsPDF} className="text-xs bg-slate-50 border-slate-200">
-            <FileText className="size-4 mr-1 text-red-600" /> Payments Log PDF
           </Button>
         </div>
       </div>
