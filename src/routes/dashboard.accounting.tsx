@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Search,
@@ -128,6 +128,12 @@ function AccountingDashboardPage() {
   const [approvalRemarks, setApprovalRemarks] = useState("");
   const [approving, setApproving] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<FinanceRecord | null>(null);
+
+  // Expense Modal States
+  const [editExpenseRecord, setEditExpenseRecord] = useState<any | null>(null);
+  const [editExpenseValue, setEditExpenseValue] = useState("");
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [savingExpense, setSavingExpense] = useState(false);
 
   // PDF Viewer
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -399,10 +405,18 @@ function AccountingDashboardPage() {
 
     const rows: any[] = [];
     vehicleGroups.forEach((group) => {
+      const acc = accountingMap.get(group.invoiceId) || accountingMap.get(group.id);
+      const rtoReceipt = acc?.rtoReceipt !== undefined ? Number(acc.rtoReceipt) : 0;
+      const rtoExpense = acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : 0;
+      const totalCharges = acc?.totalCharges !== undefined ? Number(acc.totalCharges) : group.totalAmount;
+      const advancePaid = acc?.advancePaid !== undefined ? Number(acc.advancePaid) : group.totalReceived;
+      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const profit = outstanding - rtoExpense;
+
       const paymentStatus =
-        group.totalOutstanding === 0
+        outstanding === 0
           ? "Paid"
-          : group.totalReceived > 0
+          : advancePaid > 0
             ? "Partially Paid"
             : "Pending";
 
@@ -421,9 +435,16 @@ function AccountingDashboardPage() {
 
       rows.push({
         ...group,
-        invoiceAmount: group.totalAmount,
-        receivedAmount: group.totalReceived,
-        balanceAmount: group.totalOutstanding,
+        applicationDocId: group.invoiceId || group.id,
+        totalCharges,
+        advancePaid,
+        rtoReceipt,
+        outstanding,
+        rtoExpense,
+        profit,
+        invoiceAmount: totalCharges,
+        receivedAmount: advancePaid,
+        balanceAmount: outstanding,
         paymentStatus,
         daysOverdue,
         services: serviceTypesStr,
@@ -503,11 +524,15 @@ function AccountingDashboardPage() {
         }
       }
 
-      const rtoExpense = Number(app.rtoExpense) || 0;
-      totAmt += rtoExpense;
+      const rtoReceipt = acc?.rtoReceipt !== undefined ? Number(acc.rtoReceipt) : 0;
+      const rtoExpense = acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : (Number(app.rtoExpense) || 0);
+      const totalCharges = acc?.totalCharges !== undefined ? Number(acc.totalCharges) : totAmt;
+      const advancePaid = acc?.advancePaid !== undefined ? Number(acc.advancePaid) : totPaid;
+      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const profit = outstanding - rtoExpense;
 
-      const balAmt = acc?.remainingPayment !== undefined ? acc.remainingPayment + rtoExpense : Math.max(0, totAmt - totPaid);
-      const paymentStatus = acc?.paymentStatus ?? (balAmt === 0 && totAmt > 0 ? "Paid" : totPaid > 0 ? "Partially Paid" : "Pending");
+      const balAmt = outstanding;
+      const paymentStatus = acc?.paymentStatus ?? (balAmt === 0 && totalCharges > 0 ? "Paid" : advancePaid > 0 ? "Partially Paid" : "Pending");
 
       const srvCount = srvList.length;
       const serviceList = srvList.map((srv: string) => {
@@ -558,18 +583,18 @@ function AccountingDashboardPage() {
           srvReceived = Number(app.serviceAccounting[srv].advancePayment || app.serviceAccounting[srv].advance) || 0;
         }
 
-        // Fallback for amount: if srvAmount is 0 and totAmt > 0 & srvCount > 0
-        if (srvAmount === 0 && totAmt > 0 && srvCount > 0) {
-          srvAmount = Math.round((totAmt / srvCount) * 100) / 100;
+        // Fallback for amount: if srvAmount is 0 and totalCharges > 0 & srvCount > 0
+        if (srvAmount === 0 && totalCharges > 0 && srvCount > 0) {
+          srvAmount = Math.round((totalCharges / srvCount) * 100) / 100;
         }
 
-        // Fallback for received: proportion totPaid according to srvAmount vs totAmt
-        if (totPaid > 0) {
-          if (totAmt > 0 && srvAmount > 0) {
-            const ratio = srvAmount / totAmt;
-            srvReceived = Math.round((totPaid * ratio) * 100) / 100;
+        // Fallback for received: proportion advancePaid according to srvAmount vs totalCharges
+        if (advancePaid > 0) {
+          if (totalCharges > 0 && srvAmount > 0) {
+            const ratio = srvAmount / totalCharges;
+            srvReceived = Math.round((advancePaid * ratio) * 100) / 100;
           } else if (srvCount > 0) {
-            srvReceived = Math.round((totPaid / srvCount) * 100) / 100;
+            srvReceived = Math.round((advancePaid / srvCount) * 100) / 100;
           }
         }
 
@@ -602,6 +627,7 @@ function AccountingDashboardPage() {
         id: appKey,
         subModule: app.subModule || (app.licenseDetails ? "licence" : "services"),
         applicationId: app.applicationId || app.id,
+        applicationDocId: app.id,
         vehicleId: app.vehicleId || app.vehicleNumber,
         clientId: app.id,
         clientName: app.ownerName || "Unknown Owner",
@@ -609,10 +635,15 @@ function AccountingDashboardPage() {
         vehicleNumber: app.vehicleNumber || "—",
         invoiceId: app.invoiceId || app.id,
         invoiceNumber: app.invoiceNumber || app.applicationId || "Application Invoice",
-        invoiceAmount: totAmt,
-        receivedAmount: totPaid,
-        balanceAmount: balAmt,
-        rtoExpense: rtoExpense,
+        invoiceAmount: totalCharges,
+        receivedAmount: advancePaid,
+        balanceAmount: outstanding,
+        totalCharges,
+        advancePaid,
+        rtoReceipt,
+        outstanding,
+        rtoExpense,
+        profit,
         collectionDate: app.expiryDate || app.createdAt?.slice(0, 10) || "",
         paymentStatus: paymentStatus,
         askBhaylubha: false,
@@ -893,6 +924,8 @@ function AccountingDashboardPage() {
     let totalFuelExpense = 0;
     let totalGeneralExpense = 0;
 
+    let totalProfit = 0;
+
     filteredRecords.forEach((r) => {
       const amt = r.invoiceAmount || 0;
       const rec = r.receivedAmount || 0;
@@ -907,6 +940,10 @@ function AccountingDashboardPage() {
 
       if (r.rtoExpense) {
         totalRtoExpense += r.rtoExpense;
+      }
+
+      if (r.subModule === "services" || !r.subModule) {
+        totalProfit += Number(r.profit) || 0;
       }
     });
 
@@ -945,6 +982,7 @@ function AccountingDashboardPage() {
       totalRtoExpense,
       totalFuelExpense,
       totalGeneralExpense,
+      totalProfit,
     };
   }, [filteredRecords, paymentEntries, activeSubModule, dailyReports]);
 
@@ -1141,6 +1179,85 @@ function AccountingDashboardPage() {
     }
   };
 
+  const handleEditExpenseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) return toast.error("Access Denied: Only Admin can edit RTO Expense.");
+    if (!editExpenseRecord) return;
+
+    const expenseVal = Number(editExpenseValue);
+    if (isNaN(expenseVal) || expenseVal < 0) {
+      return toast.error("Expense cannot be negative.");
+    }
+
+    setSavingExpense(true);
+    try {
+      let docId = editExpenseRecord.applicationDocId || editExpenseRecord.invoiceId || editExpenseRecord.clientId || editExpenseRecord.id || editExpenseRecord.applicationId;
+      if (typeof docId === "string" && docId.startsWith("app-fin-")) {
+        docId = docId.replace("app-fin-", "");
+      }
+      if (!docId) throw new Error("Missing document ID.");
+
+      const accRef = doc(db, "registry_accounting", docId);
+      const accSnap = await getDoc(accRef);
+      let existingAccData: any = {};
+      let totalCharges = editExpenseRecord.totalCharges || 0;
+      let advancePaid = editExpenseRecord.advancePaid || 0;
+      let rtoReceipt = editExpenseRecord.rtoReceipt || 0;
+
+      if (accSnap.exists()) {
+        existingAccData = accSnap.data();
+        totalCharges = Number(existingAccData.totalCharges) || 0;
+        advancePaid = Number(existingAccData.advancePaid) || 0;
+        rtoReceipt = Number(existingAccData.rtoReceipt) || 0;
+      }
+
+      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const profit = outstanding - expenseVal;
+
+      await setDoc(accRef, {
+        ...existingAccData,
+        id: docId,
+        applicationId: existingAccData.applicationId || editExpenseRecord.applicationId || docId,
+        applicationDocId: editExpenseRecord.applicationDocId || docId,
+        taskId: existingAccData.taskId || editExpenseRecord.taskId || "",
+        vehicleNumber: existingAccData.vehicleNumber || editExpenseRecord.vehicleNumber || "",
+        ownerName: existingAccData.ownerName || editExpenseRecord.clientName || editExpenseRecord.ownerName || "",
+        employeeId: existingAccData.employeeId || editExpenseRecord.employeeId || "",
+        employeeName: existingAccData.employeeName || editExpenseRecord.assignedEmployee || "Unassigned",
+        totalCharges,
+        advancePaid,
+        rtoReceipt,
+        outstanding,
+        rtoExpense: expenseVal,
+        profit,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      // If there's an associated task/service record, we should sync rtoExpense to it if it exists
+      try {
+        const sRef = doc(db, "registry_services_v2", docId);
+        const sSnap = await getDoc(sRef);
+        if (sSnap.exists()) {
+          await updateDoc(sRef, {
+            rtoExpense: expenseVal,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.warn("Service RTO Expense sync issue:", e);
+      }
+
+      toast.success("RTO Expense updated successfully!");
+      setShowExpenseModal(false);
+      setEditExpenseRecord(null);
+      setEditExpenseValue("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update RTO Expense");
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
   const startDeletePayment = (payment: PaymentHistoryItem) => {
     if (!isAdmin) return toast.error("Access Denied: Only Admin can delete payments.");
     setPaymentToDelete(payment);
@@ -1323,12 +1440,19 @@ function AccountingDashboardPage() {
     doc.text(`Date Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
 
     const values = [
-      ["Total Receivable", `INR ${metrics.totalReceivable.toLocaleString("en-IN")}`],
-      ["Total Received", `INR ${metrics.totalReceived.toLocaleString("en-IN")}`],
+      ["Total Receivable (Charges)", `INR ${metrics.totalReceivable.toLocaleString("en-IN")}`],
+      ["Total Received (Advance)", `INR ${metrics.totalReceived.toLocaleString("en-IN")}`],
       ["Outstanding Amount", `INR ${metrics.outstandingAmount.toLocaleString("en-IN")}`],
       ["Today's Collections", `INR ${metrics.todayCollections.toLocaleString("en-IN")}`],
       ["Overdue Collections", `INR ${metrics.overdueCollections.toLocaleString("en-IN")}`],
     ];
+
+    if (activeSubModule === "services") {
+      values.push(["Total RTO Expense", `INR ${metrics.totalRtoExpense.toLocaleString("en-IN")}`]);
+      if (isAdmin) {
+        values.push(["Net Profit", `INR ${metrics.totalProfit.toLocaleString("en-IN")}`]);
+      }
+    }
 
     let y = 40;
     values.forEach(([label, value]) => {
@@ -1343,70 +1467,160 @@ function AccountingDashboardPage() {
   };
 
   const generateCollectionsPDF = () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: "landscape" });
     doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
     doc.text("Scheduled Collections Report", 14, 20);
     doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
     doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
 
     let y = 40;
     doc.setFont("helvetica", "bold");
     doc.text("Client Name", 14, y);
-    doc.text("Invoice No", 70, y);
-    doc.text("Date", 110, y);
-    doc.text("Amount", 150, y);
-    doc.text("Balance", 180, y);
-    doc.line(14, y + 2, 196, y + 2);
+    doc.text("Vehicle", 65, y);
+    doc.text("Date", 95, y);
+    doc.text("Charges", 120, y);
+    doc.text("Advance", 145, y);
+    doc.text("Receipt", 170, y);
+    doc.text("Outstanding", 195, y);
+    doc.text("Expense", 225, y);
+    if (isAdmin) {
+      doc.text("Profit", 250, y);
+    }
+    doc.text("Status", 275, y);
+    doc.line(14, y + 2, 285, y + 2);
     y += 10;
 
     doc.setFont("helvetica", "normal");
     filteredRecords.forEach((r) => {
-      if (y > 270) {
+      if (y > 185) {
         doc.addPage();
         y = 20;
       }
-      doc.text(r.clientName.slice(0, 24), 14, y);
-      doc.text(r.invoiceNumber, 70, y);
-      doc.text(r.collectionDate || "—", 110, y);
-      doc.text(r.invoiceAmount.toLocaleString("en-IN"), 150, y);
-      doc.text(r.balanceAmount.toLocaleString("en-IN"), 180, y);
+      doc.text(r.clientName.slice(0, 22), 14, y);
+      doc.text(r.vehicleNumber || "—", 65, y);
+      doc.text(r.collectionDate || "—", 95, y);
+      doc.text((r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN"), 120, y);
+      doc.text((r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN"), 145, y);
+      doc.text((r.rtoReceipt ?? 0).toLocaleString("en-IN"), 170, y);
+      doc.text((r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN"), 195, y);
+      doc.text((r.rtoExpense ?? 0).toLocaleString("en-IN"), 225, y);
+      if (isAdmin) {
+        doc.text((r.profit ?? 0).toLocaleString("en-IN"), 250, y);
+      }
+      doc.text(r.paymentStatus || "—", 275, y);
       y += 8;
     });
 
     doc.save("COLLECTIONS_REPORT.pdf");
   };
 
+  const generateOutstandingPDF = () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("Outstanding Balance Report", 14, 20);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
 
+    let y = 40;
+    doc.setFont("helvetica", "bold");
+    doc.text("Client Name", 14, y);
+    doc.text("Vehicle", 65, y);
+    doc.text("Date", 95, y);
+    doc.text("Charges", 120, y);
+    doc.text("Advance", 145, y);
+    doc.text("Receipt", 170, y);
+    doc.text("Outstanding", 195, y);
+    doc.text("Expense", 225, y);
+    if (isAdmin) {
+      doc.text("Profit", 250, y);
+    }
+    doc.text("Status", 275, y);
+    doc.line(14, y + 2, 285, y + 2);
+    y += 10;
+
+    doc.setFont("helvetica", "normal");
+    const outstandingRecords = filteredRecords.filter(r => (r.outstanding ?? r.balanceAmount ?? 0) > 0);
+    outstandingRecords.forEach((r) => {
+      if (y > 185) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.text(r.clientName.slice(0, 22), 14, y);
+      doc.text(r.vehicleNumber || "—", 65, y);
+      doc.text(r.collectionDate || "—", 95, y);
+      doc.text((r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN"), 120, y);
+      doc.text((r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN"), 145, y);
+      doc.text((r.rtoReceipt ?? 0).toLocaleString("en-IN"), 170, y);
+      doc.text((r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN"), 195, y);
+      doc.text((r.rtoExpense ?? 0).toLocaleString("en-IN"), 225, y);
+      if (isAdmin) {
+        doc.text((r.profit ?? 0).toLocaleString("en-IN"), 250, y);
+      }
+      doc.text(r.paymentStatus || "—", 275, y);
+      y += 8;
+    });
+
+    doc.save("OUTSTANDING_REPORT.pdf");
+  };
 
   const generatePaymentsPDF = () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: "landscape" });
     doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
     doc.text("Payment Entries Logs", 14, 20);
     doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
     doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
 
     let y = 40;
     doc.setFont("helvetica", "bold");
     doc.text("Date", 14, y);
-    doc.text("Client", 40, y);
-    doc.text("Invoice No", 90, y);
-    doc.text("Amount", 130, y);
-    doc.text("Method", 160, y);
-    doc.line(14, y + 2, 196, y + 2);
+    doc.text("Client", 35, y);
+    doc.text("Method", 80, y);
+    doc.text("Amount", 100, y);
+    doc.text("Charges", 120, y);
+    doc.text("Advance", 145, y);
+    doc.text("Receipt", 170, y);
+    doc.text("Outstanding", 195, y);
+    doc.text("Expense", 225, y);
+    if (isAdmin) {
+      doc.text("Profit", 250, y);
+    }
+    doc.line(14, y + 2, 285, y + 2);
     y += 10;
 
     doc.setFont("helvetica", "normal");
     filteredPayments.forEach((p) => {
-      if (y > 270) {
+      if (y > 185) {
         doc.addPage();
         y = 20;
       }
-      const clientName = financeRecords.find((r) => r.invoiceId === p.invoiceId)?.clientName || p.clientName || "—";
+      const r = financeRecords.find((rec) => rec.invoiceId === p.invoiceId);
+      const clientName = r?.clientName || p.clientName || "—";
+      
+      const totalCharges = r?.totalCharges ?? r?.invoiceAmount ?? 0;
+      const advancePaid = r?.advancePaid ?? r?.receivedAmount ?? 0;
+      const rtoReceipt = r?.rtoReceipt ?? 0;
+      const outstanding = r?.outstanding ?? r?.balanceAmount ?? 0;
+      const rtoExpense = r?.rtoExpense ?? 0;
+      const profit = r?.profit ?? 0;
+
       doc.text(p.receivedAt?.slice(0, 10) || "—", 14, y);
-      doc.text(clientName.slice(0, 20), 40, y);
-      doc.text(p.invoiceId === "non-invoiced" ? "Direct" : p.invoiceId?.slice(0, 12) || "—", 90, y);
-      doc.text(p.amount.toLocaleString("en-IN"), 130, y);
-      doc.text(p.method || "—", 160, y);
+      doc.text(clientName.slice(0, 18), 35, y);
+      doc.text(p.method || "—", 80, y);
+      doc.text(p.amount.toLocaleString("en-IN"), 100, y);
+      doc.text(totalCharges.toLocaleString("en-IN"), 120, y);
+      doc.text(advancePaid.toLocaleString("en-IN"), 145, y);
+      doc.text(rtoReceipt.toLocaleString("en-IN"), 170, y);
+      doc.text(outstanding.toLocaleString("en-IN"), 195, y);
+      doc.text(rtoExpense.toLocaleString("en-IN"), 225, y);
+      if (isAdmin) {
+        doc.text(profit.toLocaleString("en-IN"), 250, y);
+      }
       y += 8;
     });
 
@@ -1435,6 +1649,9 @@ function AccountingDashboardPage() {
           <Button variant="outline" size="sm" onClick={generateCollectionsPDF} className="text-xs bg-slate-50 border-slate-200">
             <FileText className="size-4 mr-1 text-red-600" /> Collections PDF
           </Button>
+          <Button variant="outline" size="sm" onClick={generateOutstandingPDF} className="text-xs bg-slate-50 border-slate-200">
+            <FileText className="size-4 mr-1 text-red-600" /> Outstanding PDF
+          </Button>
 
           <Button variant="outline" size="sm" onClick={generatePaymentsPDF} className="text-xs bg-slate-50 border-slate-200">
             <FileText className="size-4 mr-1 text-red-600" /> Payments Log PDF
@@ -1449,7 +1666,7 @@ function AccountingDashboardPage() {
 
       {/* Summary Cards */}
       <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
-        activeSubModule === "driving_school" ? "lg:grid-cols-6" : (activeSubModule === "services" || activeSubModule === "licence") ? "lg:grid-cols-5" : "lg:grid-cols-4"
+        activeSubModule === "driving_school" || (activeSubModule === "services" && isAdmin) ? "lg:grid-cols-6" : (activeSubModule === "services" || activeSubModule === "licence") ? "lg:grid-cols-5" : "lg:grid-cols-4"
       }`}>
         <Card className="border border-slate-100 shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
@@ -1505,6 +1722,22 @@ function AccountingDashboardPage() {
                 <h3 className="text-xl font-bold mt-1 text-amber-600">₹{metrics.totalRtoExpense.toLocaleString("en-IN")}</h3>
               </div>
               <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                <TrendingUp className="size-5" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activeSubModule === "services" && isAdmin && (
+          <Card className="border border-slate-100 shadow-sm bg-emerald-50/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Net Profit</p>
+                <h3 className={`text-xl font-bold mt-1 ${metrics.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  ₹{metrics.totalProfit.toLocaleString("en-IN")}
+                </h3>
+              </div>
+              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
                 <TrendingUp className="size-5" />
               </div>
             </CardContent>
@@ -1697,9 +1930,12 @@ function AccountingDashboardPage() {
                         <th className="p-3">Vehicle Number</th>
                         <th className="p-3">Services</th>
                         <th className="p-3">Collection Date</th>
-                        <th className="p-3 text-right">Total Amount</th>
-                        <th className="p-3 text-right">Received Amount</th>
-                        <th className="p-3 text-right">Outstanding Balance</th>
+                        <th className="p-3 text-right">Total Charges</th>
+                        <th className="p-3 text-right">Advance Paid</th>
+                        <th className="p-3 text-right">RTO Receipt</th>
+                        <th className="p-3 text-right">Outstanding</th>
+                        <th className="p-3 text-right">RTO Expense</th>
+                        {isAdmin && <th className="p-3 text-right">Profit</th>}
                         <th className="p-3">Assigned Employee</th>
                         <th className="p-3">Status</th>
                         <th className="p-3 text-center">Actions</th>
@@ -1753,9 +1989,16 @@ function AccountingDashboardPage() {
                                   <span className="text-slate-400">Not Scheduled</span>
                                 )}
                               </td>
-                              <td className="p-3 text-right font-mono font-bold text-slate-900">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-3 text-right font-mono font-bold text-emerald-600">₹{r.receivedAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-slate-900">₹{(r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-emerald-600">₹{(r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-blue-600">₹{(r.rtoReceipt ?? 0).toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-rose-600">₹{(r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN")}</td>
+                              <td className="p-3 text-right font-mono font-bold text-amber-600">₹{(r.rtoExpense ?? 0).toLocaleString("en-IN")}</td>
+                              {isAdmin && (
+                                <td className={`p-3 text-right font-mono font-bold ${Number(r.profit ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                                  ₹{Number(r.profit ?? 0).toLocaleString("en-IN")}
+                                </td>
+                              )}
                               <td className="p-3 text-slate-600">{r.assignedEmployee || "—"}</td>
                               <td className="p-3">
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
@@ -1785,6 +2028,20 @@ function AccountingDashboardPage() {
                                   >
                                     Record Payment
                                   </Button>
+                                  {isAdmin && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setEditExpenseRecord(r);
+                                        setEditExpenseValue(String(r.rtoExpense || 0));
+                                        setShowExpenseModal(true);
+                                      }}
+                                      className="text-amber-600 hover:text-amber-900 text-xs px-2 py-1 h-auto font-semibold"
+                                    >
+                                      Edit Expense
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -1823,39 +2080,42 @@ function AccountingDashboardPage() {
                               </td>
                             </tr>
 
-                            {/* Expandable Service Details */}
-                            {isExpanded && r.serviceList && r.serviceList.length > 0 && (
-                              <tr className="bg-slate-50/90">
-                                <td colSpan={10} className="p-3 pl-8">
-                                  <div className="rounded-lg border bg-white p-3 space-y-2 shadow-sm">
-                                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between border-b pb-1">
-                                      <span>Services Breakdown — Vehicle {r.vehicleNumber}</span>
-                                      <span className="font-mono text-[10px] text-muted-foreground">{r.serviceList.length} service(s)</span>
-                                    </div>
-                                    <div className="space-y-1 text-xs">
-                                      {r.serviceList.map((ser: any) => (
-                                        <div key={ser.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-1.5 border-b last:border-b-0 text-slate-700 gap-1 font-mono">
-                                          <span className="font-semibold text-slate-900 font-sans">{ser.serviceType}</span>
-                                          <div className="flex items-center gap-4 text-right text-[11px]">
-                                            <span>Amount: <strong className="text-slate-900">₹{ser.amount.toLocaleString("en-IN")}</strong></span>
-                                            <span>Received: <strong className="text-emerald-600">₹{ser.received.toLocaleString("en-IN")}</strong></span>
-                                            <span>Outstanding: <strong className="text-rose-600">₹{ser.outstanding.toLocaleString("en-IN")}</strong></span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <div className="pt-2 text-xs font-bold font-mono flex justify-between border-t border-slate-200 text-slate-900">
-                                      <span>Vehicle Total</span>
-                                      <div className="flex items-center gap-4 text-right">
-                                        <span>Total: ₹{r.invoiceAmount.toLocaleString("en-IN")}</span>
-                                        <span className="text-emerald-600">Received: ₹{r.receivedAmount.toLocaleString("en-IN")}</span>
-                                        <span className="text-rose-600">Outstanding: ₹{r.balanceAmount.toLocaleString("en-IN")}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
+                             {/* Expandable Service Details */}
+                             {isExpanded && r.serviceList && r.serviceList.length > 0 && (
+                               <tr className="bg-slate-50/90">
+                                 <td colSpan={isAdmin ? 13 : 12} className="p-3 pl-8">
+                                   <div className="rounded-lg border bg-white p-3 space-y-2 shadow-sm">
+                                     <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between border-b pb-1">
+                                       <span>Services Breakdown — Vehicle {r.vehicleNumber}</span>
+                                       <span className="font-mono text-[10px] text-muted-foreground">{r.serviceList.length} service(s)</span>
+                                     </div>
+                                     <div className="space-y-1 text-xs">
+                                       {r.serviceList.map((ser: any) => (
+                                         <div key={ser.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-1.5 border-b last:border-b-0 text-slate-700 gap-1 font-mono">
+                                           <span className="font-semibold text-slate-900 font-sans">{ser.serviceType}</span>
+                                           <div className="flex items-center gap-4 text-right text-[11px]">
+                                             <span>Amount: <strong className="text-slate-900">₹{ser.amount.toLocaleString("en-IN")}</strong></span>
+                                             <span>Received: <strong className="text-emerald-600">₹{ser.received.toLocaleString("en-IN")}</strong></span>
+                                             <span>Outstanding: <strong className="text-rose-600">₹{ser.outstanding.toLocaleString("en-IN")}</strong></span>
+                                           </div>
+                                         </div>
+                                       ))}
+                                     </div>
+                                     <div className="pt-2 text-xs font-bold font-mono flex justify-between border-t border-slate-200 text-slate-900">
+                                       <span>Vehicle Total</span>
+                                       <div className="flex items-center gap-4 text-right">
+                                         <span>Charges: ₹{(r.totalCharges ?? r.invoiceAmount ?? 0).toLocaleString("en-IN")}</span>
+                                         <span className="text-emerald-600">Advance: ₹{(r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN")}</span>
+                                         <span className="text-blue-600">Receipt: ₹{(r.rtoReceipt ?? 0).toLocaleString("en-IN")}</span>
+                                         <span className="text-rose-600">Outstanding: ₹{(r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN")}</span>
+                                         <span className="text-amber-600">Expense: ₹{(r.rtoExpense ?? 0).toLocaleString("en-IN")}</span>
+                                         {isAdmin && <span className={Number(r.profit ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600"}>Profit: ₹{Number(r.profit ?? 0).toLocaleString("en-IN")}</span>}
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </td>
+                               </tr>
+                             )}
                           </React.Fragment>
                         );
                       })}
@@ -2504,6 +2764,61 @@ function AccountingDashboardPage() {
       {/* Invoice Viewer Modal */}
       {selectedInvoice && (
         <InvoiceViewer invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+      )}
+
+      {/* Edit RTO Expense Dialog (Admin Only) */}
+      {showExpenseModal && editExpenseRecord && (
+        <Dialog open={showExpenseModal} onOpenChange={setShowExpenseModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-gray-800">
+                Edit RTO Expense
+              </DialogTitle>
+              <DialogDescription>
+                Manually record RTO Expense for client <strong>{editExpenseRecord.clientName}</strong> (Vehicle: {editExpenseRecord.vehicleNumber}).
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleEditExpenseSubmit} className="space-y-4 mt-2">
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-gray-500">RTO Expense (₹) *</Label>
+                <Input
+                  type="number"
+                  placeholder="Enter RTO Expense amount"
+                  required
+                  min={0}
+                  value={editExpenseValue}
+                  onChange={(e) => setEditExpenseValue(e.target.value)}
+                  className="bg-white text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 border rounded-md text-xs">
+                <div>
+                  <span className="text-[9px] font-bold uppercase text-gray-400 block">Total Charges</span>
+                  <span className="font-semibold text-slate-800">₹{editExpenseRecord.totalCharges?.toLocaleString("en-IN") || 0}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold uppercase text-gray-400 block">Outstanding</span>
+                  <span className="font-semibold text-slate-800">₹{editExpenseRecord.outstanding?.toLocaleString("en-IN") || 0}</span>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-3 border-t">
+                <Button type="button" variant="outline" onClick={() => {
+                  setShowExpenseModal(false);
+                  setEditExpenseRecord(null);
+                  setEditExpenseValue("");
+                }}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={savingExpense}>
+                  {savingExpense ? "Saving..." : "Save Expense"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Admin PIN Dialog for Deletion */}

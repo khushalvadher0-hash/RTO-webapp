@@ -1011,6 +1011,59 @@ function TasksPage() {
     setSavingComplete(true);
     try {
       const expNum = parseFloat(completeRtoExpense) || 0;
+
+      // Sync to registry_accounting first for transaction / validation check
+      const appDocId = (completeModalTask as any).applicationDocId || completeModalTask.recordId || completeModalTask.id.replace("task-app-", "");
+      if (appDocId) {
+        const accRef = doc(db, "registry_accounting", appDocId);
+        const accSnap = await getDoc(accRef);
+        
+        let totalCharges = 0;
+        let advancePaid = 0;
+        let rtoExpense = 0;
+        let existingAccData: any = {};
+        
+        if (accSnap.exists()) {
+          existingAccData = accSnap.data();
+          totalCharges = Number(existingAccData.totalCharges) || 0;
+          advancePaid = Number(existingAccData.advancePaid) || 0;
+          rtoExpense = Number(existingAccData.rtoExpense) || 0;
+        } else {
+          totalCharges = Number((completeModalTask as any).totalCharges) || 0;
+          advancePaid = Number((completeModalTask as any).advancePaid) || 0;
+        }
+
+        const rtoReceipt = expNum;
+        if (rtoReceipt < 0) {
+          throw new Error("RTO Receipt cannot be negative.");
+        }
+        if (rtoReceipt > totalCharges) {
+          throw new Error(`RTO Receipt (₹${rtoReceipt}) cannot exceed Outstanding + Advance (₹${totalCharges}).`);
+        }
+
+        const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
+        const profit = outstanding - rtoExpense;
+
+        await setDoc(accRef, {
+          ...existingAccData,
+          id: appDocId,
+          applicationId: existingAccData.applicationId || (completeModalTask as any).applicationId || appDocId,
+          applicationDocId: appDocId,
+          taskId: completeModalTask.id,
+          vehicleNumber: existingAccData.vehicleNumber || (completeModalTask as any).vehicleNumber || "",
+          ownerName: existingAccData.ownerName || (completeModalTask as any).ownerName || (completeModalTask as any).clientName || "",
+          employeeId: completeModalTask.assignedEmployeeId || completeModalTask.assignedEmployeeUid || existingAccData.employeeId || "",
+          employeeName: completeModalTask.assignedEmployeeName || completeModalTask.assignee || existingAccData.employeeName || "Unassigned",
+          totalCharges,
+          advancePaid,
+          rtoReceipt,
+          outstanding,
+          rtoExpense,
+          profit,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+
       await updateTask(
         completeModalTask.id,
         {
@@ -1054,7 +1107,6 @@ function TasksPage() {
 
       // Sync back to registry_applications_v1 application doc
       try {
-        const appDocId = (completeModalTask as any).applicationDocId || completeModalTask.recordId || completeModalTask.id.replace("task-app-", "");
         if (appDocId) {
           const appRef = doc(db, "registry_applications_v1", appDocId);
           const appSnap = await getDoc(appRef);
@@ -1071,13 +1123,11 @@ function TasksPage() {
       }
 
       // If Change Date of Birth In DL service task, update DOB in application record
-      if (completeNewDob && (completeModalTask.recordId || (completeModalTask as any).applicationDocId || completeModalTask.applicationId)) {
+      if (completeNewDob && appDocId) {
         try {
-          const appDocId = (completeModalTask as any).applicationDocId || completeModalTask.recordId || completeModalTask.id.replace("task-app-", "");
           const appRef = doc(db, "registry_applications_v1", appDocId);
           const appSnap = await getDoc(appRef);
           if (appSnap.exists()) {
-            const appData = appSnap.data() as any;
             await updateDoc(appRef, {
               "licenseDetails.dateOfBirth": completeNewDob,
               updatedAt: new Date().toISOString(),
@@ -1097,7 +1147,7 @@ function TasksPage() {
       setCompleteNewDob("");
       setCompleteRemarks("");
     } catch (err: any) {
-      toast.error("Failed to complete task");
+      toast.error(err.message || "Failed to complete task");
     } finally {
       setSavingComplete(false);
     }

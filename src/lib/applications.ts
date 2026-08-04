@@ -34,8 +34,13 @@ export interface AccountingRecord {
   selectedServices?: string[] | string;
   totalCharges?: number;
   advancePaid?: number;
+  rtoReceipt?: number;
   outstanding?: number;
   rtoExpense?: number;
+  profit?: number;
+  taskId?: string;
+  employeeId?: string;
+  employeeName?: string;
   totalPayment: number;
   advancePayment: number;
   remainingPayment: number;
@@ -555,15 +560,20 @@ export async function saveApplicationAndVehicle(
       vehicleNumber: appData.vehicleNumber || "",
       employee: appData.assignedEmployeeName || "Unassigned",
       assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+      employeeId: appData.assignedEmployeeId || "",
+      employeeName: appData.assignedEmployeeName || "Unassigned",
+      taskId: newTaskRef.id,
       serviceCount: servicesList.length,
       selectedServices: servicesList,
-      totalCharges: totAmt,
-      advancePaid: advAmt,
-      outstanding: remAmt,
+      totalCharges: Math.max(0, totAmt),
+      advancePaid: Math.max(0, advAmt),
+      rtoReceipt: 0,
+      outstanding: Math.max(0, totAmt - advAmt),
       rtoExpense: 0,
+      profit: Math.max(0, totAmt - advAmt),
       totalPayment: totAmt,
       advancePayment: advAmt,
-      remainingPayment: remAmt,
+      remainingPayment: Math.max(0, totAmt - advAmt),
       paymentStatus: pStatus,
       createdAt: now,
       updatedAt: now,
@@ -605,6 +615,17 @@ export async function saveApplicationAndVehicle(
     await setDoc(vehicleRef, vehiclePayload, { merge: true });
     await setDoc(appRef, updatePayload, { merge: true });
 
+    const accRef = doc(db, ACCOUNTING_COL, finalAppId);
+    const accSnap = await getDoc(accRef);
+    const existingAcc = accSnap.exists() ? accSnap.data() : null;
+    const rtoReceipt = existingAcc?.rtoReceipt !== undefined ? Number(existingAcc.rtoReceipt) || 0 : 0;
+    const rtoExpense = existingAcc?.rtoExpense !== undefined ? Number(existingAcc.rtoExpense) || 0 : 0;
+    
+    // Outstanding = Total Charges - Advance Paid - RTO Receipt
+    const outstanding = Math.max(0, totAmt - advAmt - rtoReceipt);
+    // Profit = Outstanding - RTO Expense
+    const profit = outstanding - rtoExpense;
+
     await saveAccountingRecord({
       id: finalAppId,
       applicationId: generatedAppIdStr,
@@ -616,17 +637,22 @@ export async function saveApplicationAndVehicle(
       vehicleNumber: appData.vehicleNumber || "",
       employee: appData.assignedEmployeeName || "Unassigned",
       assignedEmployeeName: appData.assignedEmployeeName || "Unassigned",
+      employeeId: existingAcc?.employeeId || appData.assignedEmployeeId || "",
+      employeeName: existingAcc?.employeeName || appData.assignedEmployeeName || "Unassigned",
+      taskId: existingAcc?.taskId || "",
       serviceCount: servicesList.length,
       selectedServices: servicesList,
-      totalCharges: totAmt,
-      advancePaid: advAmt,
-      outstanding: remAmt,
-      rtoExpense: 0,
+      totalCharges: Math.max(0, totAmt),
+      advancePaid: Math.max(0, advAmt),
+      rtoReceipt,
+      outstanding,
+      rtoExpense,
+      profit,
       totalPayment: totAmt,
       advancePayment: advAmt,
-      remainingPayment: remAmt,
+      remainingPayment: outstanding,
       paymentStatus: pStatus,
-      createdAt: now,
+      createdAt: existingAcc?.createdAt || now,
       updatedAt: now,
     });
   }
