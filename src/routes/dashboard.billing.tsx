@@ -242,11 +242,7 @@ function BillingDashboard() {
               label="Total Collected"
               value={formatCurrency(metrics.totalCollected)}
             />
-            <MetricCard
-              icon={AlertCircle}
-              label="Outstanding"
-              value={formatCurrency(metrics.outstandingAmount)}
-            />
+
             <MetricCard
               icon={TrendingUp}
               label="Collection Rate"

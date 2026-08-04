@@ -4806,11 +4806,7 @@ function ClientRelationshipPanel({ clientId }: { clientId: string }) {
         {client.email && <div><strong>Email:</strong> {client.email}</div>}
         {client.address && <div><strong>Address:</strong> {client.address}</div>}
         {client.companyName && <div><strong>Company:</strong> {client.companyName}</div>}
-        {outstandingAmount > 0 && (
-          <div className="text-rose-600 font-semibold mt-1">
-            Outstanding Balance: ₹{outstandingAmount.toLocaleString("en-IN")}
-          </div>
-        )}
+
       </div>
 
       {/* Vehicles */}

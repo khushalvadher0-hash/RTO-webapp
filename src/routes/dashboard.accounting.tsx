@@ -81,7 +81,7 @@ function AccountingDashboardPage() {
     }
   }, [location.search]);
 
-  const [activeTab, setActiveTab] = useState<"collections" | "outstanding" | "payments" | "ledger">("collections");
+  const [activeTab, setActiveTab] = useState<"collections" | "payments" | "ledger">("collections");
   const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
   const [paymentEntries, setPaymentEntries] = useState<PaymentHistoryItem[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -1376,39 +1376,7 @@ function AccountingDashboardPage() {
     doc.save("COLLECTIONS_REPORT.pdf");
   };
 
-  const generateOutstandingPDF = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("Outstanding Payments Statement", 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, 14, 26);
 
-    let y = 40;
-    doc.setFont("helvetica", "bold");
-    doc.text("Client Name", 14, y);
-    doc.text("Invoice", 70, y);
-    doc.text("Due Date", 110, y);
-    doc.text("Paid", 150, y);
-    doc.text("Outstanding", 180, y);
-    doc.line(14, y + 2, 196, y + 2);
-    y += 10;
-
-    doc.setFont("helvetica", "normal");
-    filteredRecords.filter(r => r.balanceAmount > 0).forEach((r) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 20;
-      }
-      doc.text(r.clientName.slice(0, 24), 14, y);
-      doc.text(r.invoiceNumber, 70, y);
-      doc.text(r.collectionDate || "—", 110, y);
-      doc.text(r.receivedAmount.toLocaleString("en-IN"), 150, y);
-      doc.text(r.balanceAmount.toLocaleString("en-IN"), 180, y);
-      y += 8;
-    });
-
-    doc.save("OUTSTANDING_PAYMENTS.pdf");
-  };
 
   const generatePaymentsPDF = () => {
     const doc = new jsPDF();
@@ -1467,9 +1435,7 @@ function AccountingDashboardPage() {
           <Button variant="outline" size="sm" onClick={generateCollectionsPDF} className="text-xs bg-slate-50 border-slate-200">
             <FileText className="size-4 mr-1 text-red-600" /> Collections PDF
           </Button>
-          <Button variant="outline" size="sm" onClick={generateOutstandingPDF} className="text-xs bg-slate-50 border-slate-200">
-            <FileText className="size-4 mr-1 text-red-600" /> Outstanding PDF
-          </Button>
+
           <Button variant="outline" size="sm" onClick={generatePaymentsPDF} className="text-xs bg-slate-50 border-slate-200">
             <FileText className="size-4 mr-1 text-red-600" /> Payments Log PDF
           </Button>
@@ -1483,7 +1449,7 @@ function AccountingDashboardPage() {
 
       {/* Summary Cards */}
       <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
-        activeSubModule === "driving_school" ? "lg:grid-cols-7" : (activeSubModule === "services" || activeSubModule === "licence") ? "lg:grid-cols-6" : "lg:grid-cols-5"
+        activeSubModule === "driving_school" ? "lg:grid-cols-6" : (activeSubModule === "services" || activeSubModule === "licence") ? "lg:grid-cols-5" : "lg:grid-cols-4"
       }`}>
         <Card className="border border-slate-100 shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
@@ -1507,17 +1473,7 @@ function AccountingDashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border border-slate-100 shadow-sm">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase">Outstanding Amount</p>
-              <h3 className="text-xl font-bold mt-1 text-rose-600">₹{metrics.outstandingAmount.toLocaleString("en-IN")}</h3>
-            </div>
-            <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
-              <TrendingUp className="size-5" />
-            </div>
-          </CardContent>
-        </Card>
+
         <Card className="border border-slate-100 shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
@@ -1705,7 +1661,7 @@ function AccountingDashboardPage() {
       {/* Tabs */}
       <div className="space-y-4">
         <div className="flex border-b border-slate-200">
-          {(["collections", "outstanding", "payments", "ledger"] as const).map((tab) => (
+          {(["collections", "payments", "ledger"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1911,151 +1867,7 @@ function AccountingDashboardPage() {
           </Card>
         )}
 
-        {/* Tab 2: Outstanding Payments */}
-        {activeTab === "outstanding" && (
-          <Card className="shadow-sm border border-slate-100">
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="flex items-center justify-center h-48">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-              ) : filteredRecords.filter(r => r.balanceAmount > 0).length === 0 ? (
-                <div className="text-center py-20 text-muted-foreground text-sm">
-                  No outstanding payment records found.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
-                        <th className="p-3">Client</th>
-                        <th className="p-3">Vehicle Number</th>
-                        <th className="p-3 text-right">Amount</th>
-                        <th className="p-3 text-right">Outstanding</th>
-                        <th className="p-3">Collection Date</th>
-                        <th className="p-3">Days Due</th>
-                        <th className="p-3 text-center">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y text-gray-700">
-                      {filteredRecords.filter(r => r.balanceAmount > 0).map((r) => {
-                        const inv = invoicesMap.get(r.invoiceId);
-                        const cDetails = clientDetailsMap.get(r.clientId);
-                        const mobile = inv?.clientMobile || cDetails?.mobile || "";
-                        const isExpanded = !!expandedVehicles[r.id];
 
-                        let daysOverdue = 0;
-                        if (r.collectionDate) {
-                          const due = new Date(r.collectionDate);
-                          const today = new Date();
-                          today.setHours(0,0,0,0);
-                          due.setHours(0,0,0,0);
-                          if (today.getTime() > due.getTime()) {
-                            daysOverdue = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-                          }
-                        }
-
-                        return (
-                          <React.Fragment key={r.id}>
-                            <tr className="hover:bg-slate-50 transition">
-                              <td className="p-3 font-semibold text-gray-900">
-                                <div className="flex items-center gap-1.5">
-                                  {r.serviceList && r.serviceList.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleVehicleExpand(r.id)}
-                                      className="text-xs font-mono font-bold px-1.5 py-0.5 border rounded bg-slate-100 hover:bg-slate-200 text-slate-700 shrink-0"
-                                      title="Expand/Collapse Services"
-                                    >
-                                      {isExpanded ? "▼" : "▶"}
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      setLedgerClientId(r.clientId);
-                                      setShowLedgerModal(true);
-                                    }}
-                                    className="text-blue-600 hover:underline font-bold text-left"
-                                  >
-                                    {r.clientName}
-                                  </button>
-                                </div>
-                              </td>
-                              <td className="p-3 font-mono font-bold text-slate-800">{r.vehicleNumber}</td>
-                              <td className="p-3 text-right font-mono font-bold text-slate-900">₹{r.invoiceAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-3 text-right font-mono font-bold text-rose-600">₹{r.balanceAmount.toLocaleString("en-IN")}</td>
-                              <td className="p-3 font-mono">{r.collectionDate || "—"}</td>
-                              <td className="p-3 text-red-600 font-bold">{daysOverdue > 0 ? `${daysOverdue} Days` : "—"}</td>
-                              <td className="p-3 text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      handleClientChange(r.clientId);
-                                      setPaymentModeType("single");
-                                      setSelectedSingleInvoiceId(r.invoiceId);
-                                      setPaymentDialogOpen(true);
-                                    }}
-                                    className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 h-auto font-semibold"
-                                  >
-                                    Record Payment
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.vehicleNumber, r.balanceAmount)}
-                                    className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
-                                  >
-                                    WhatsApp
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-
-                            {/* Expandable Service Details */}
-                            {isExpanded && r.serviceList && r.serviceList.length > 0 && (
-                              <tr className="bg-slate-50/90">
-                                <td colSpan={7} className="p-3 pl-8">
-                                  <div className="rounded-lg border bg-white p-3 space-y-2 shadow-sm">
-                                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between border-b pb-1">
-                                      <span>Services Breakdown — Vehicle {r.vehicleNumber}</span>
-                                      <span className="font-mono text-[10px] text-muted-foreground">{r.serviceList.length} service(s)</span>
-                                    </div>
-                                    <div className="space-y-1 text-xs">
-                                      {r.serviceList.map((ser: any) => (
-                                        <div key={ser.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-1.5 border-b last:border-b-0 text-slate-700 gap-1 font-mono">
-                                          <span className="font-semibold text-slate-900 font-sans">{ser.serviceType}</span>
-                                          <div className="flex items-center gap-4 text-right text-[11px]">
-                                            <span>Amount: <strong className="text-slate-900">₹{ser.amount.toLocaleString("en-IN")}</strong></span>
-                                            <span>Received: <strong className="text-emerald-600">₹{ser.received.toLocaleString("en-IN")}</strong></span>
-                                            <span>Outstanding: <strong className="text-rose-600">₹{ser.outstanding.toLocaleString("en-IN")}</strong></span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <div className="pt-2 text-xs font-bold font-mono flex justify-between border-t border-slate-200 text-slate-900">
-                                      <span>Vehicle Total</span>
-                                      <div className="flex items-center gap-4 text-right">
-                                        <span>Total: ₹{r.invoiceAmount.toLocaleString("en-IN")}</span>
-                                        <span className="text-emerald-600">Received: ₹{r.receivedAmount.toLocaleString("en-IN")}</span>
-                                        <span className="text-rose-600">Outstanding: ₹{r.balanceAmount.toLocaleString("en-IN")}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {/* Tab 3: Payment Entries */}
         {activeTab === "payments" && (
