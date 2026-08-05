@@ -1149,9 +1149,9 @@ function AccountingDashboardPage() {
       });
     }
 
-    const totalRtoExpense = allAccountingRows.reduce((sum, r) => sum + (Number(r.rtoExpense) || 0), 0);
+    const totalRtoExpense = filteredRecords.reduce((sum, r) => sum + (Number(r.rtoExpense) || 0), 0);
     const totalOfficeExpense = officeExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-    const totalProfit = allAccountingRows.reduce((sum, r) => sum + (Number(r.profit) || 0), 0);
+    const totalProfit = filteredRecords.reduce((sum, r) => sum + (Number(r.profit) || 0), 0);
 
     return {
       totalReceivable,
@@ -1165,7 +1165,7 @@ function AccountingDashboardPage() {
       totalProfit,
       totalOfficeExpense,
     };
-  }, [filteredRecords, paymentEntries, activeSubModule, dailyReports, officeExpenses, allAccountingRows]);
+  }, [filteredRecords, paymentEntries, activeSubModule, dailyReports, officeExpenses]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {
