@@ -15,6 +15,7 @@ import {
 import { db } from "./firebase";
 import { removeUndefined } from "./records";
 import { getSession } from "./auth";
+import { syncInvoice } from "./billing";
 
 export const APPLICATIONS_COL = "registry_applications_v1";
 export const VEHICLES_CENTRIC_COL = "registry_vehicles_master_v1";
@@ -979,6 +980,11 @@ export async function saveApplicationAndVehicle(
       }
     });
   }
+
+  // Auto-sync invoice with application details
+  await syncInvoice(finalAppId, appData.subModule || "services").catch((err) => {
+    console.error("Failed to sync invoice inside saveApplicationAndVehicle:", err);
+  });
 
   return finalAppId;
 }

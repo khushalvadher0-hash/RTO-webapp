@@ -21,6 +21,7 @@ import {
   type PaymentHistoryItem,
 } from "@/lib/financeService";
 import { getSession } from "@/lib/auth";
+import { syncInvoice } from "@/lib/billing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1346,6 +1347,14 @@ function AccountingDashboardPage() {
         toast.success("Multi-invoice payments allocated successfully!");
       }
 
+      if (paymentClientId) {
+        const targetRow = allAccountingRows.find((r) => r.clientId === paymentClientId);
+        const subMod = targetRow?.subModule || "services";
+        await syncInvoice(paymentClientId, subMod).catch((err) => {
+          console.error("Failed to sync invoice after payment submit:", err);
+        });
+      }
+
       setPaymentDialogOpen(false);
       setPayAmount("");
       setPayRemarks("");
@@ -1427,6 +1436,10 @@ function AccountingDashboardPage() {
       } catch (e) {
         console.warn("Service RTO Expense sync issue:", e);
       }
+
+      await syncInvoice(docId, editExpenseRecord.subModule || "services").catch((err) => {
+        console.error("Failed to sync invoice inside handleEditExpenseSubmit:", err);
+      });
 
       toast.success("RTO Expense updated successfully!");
       setShowExpenseModal(false);
@@ -1594,6 +1607,15 @@ function AccountingDashboardPage() {
       });
 
       await batch.commit();
+
+      if (paymentToDelete.invoiceId) {
+        const targetRow = allAccountingRows.find((r) => r.invoiceId === paymentToDelete.invoiceId || r.clientId === paymentToDelete.clientId);
+        const subMod = targetRow?.subModule || "services";
+        await syncInvoice(paymentToDelete.invoiceId, subMod).catch((err) => {
+          console.error("Failed to sync invoice after payment delete:", err);
+        });
+      }
+
       toast.success("Payment deleted successfully!");
       setPinDialogOpen(false);
       setAdminPin("");

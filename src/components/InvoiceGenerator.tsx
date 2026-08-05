@@ -14,31 +14,30 @@ import {
   type Invoice,
 } from "@/lib/billing";
 import { getSession } from "@/lib/auth";
+import { subscribeDrivingSchoolApplications } from "@/lib/drivingSchool";
 import { subscribeAllClients } from "@/lib/hierarchy";
 
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 interface InvoiceGeneratorProps {
+  activeSubModule: string;
   onInvoiceCreated?: (invoice: Invoice) => void;
 }
 
-export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
-  const [clients, setClients] = useState<any[]>([]);
+export function InvoiceGenerator({ activeSubModule, onInvoiceCreated }: InvoiceGeneratorProps) {
+  const [applications, setApplications] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClient, setSelectedClient] = useState<any | null>(null);
+  const [selectedApplication, setSelectedApplication] = useState<any | null>(null);
+  const [accountingRecord, setAccountingRecord] = useState<any | null>(null);
   const [billingStartDate, setBillingStartDate] = useState("");
   const [billingEndDate, setBillingEndDate] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [clientVehicles, setClientVehicles] = useState<any[]>([]);
-  const [clientServices, setClientServices] = useState<any[]>([]);
   const [checkedServiceIds, setCheckedServiceIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [latestPeriod, setLatestPeriod] = useState<any>(null);
-  const [autoStartDate, setAutoStartDate] = useState<string>("");
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<any[]>([]);
   const [collectionDate, setCollectionDate] = useState("");
@@ -47,130 +46,113 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
   const session = getSession();
   const createdBy = session?.username || "system";
 
-  // Load all V2 clients
+  // Load applications belonging to this submodule
   useEffect(() => {
-    const unsub = subscribeAllClients((items) => {
-      setClients(items);
-    });
-    return unsub;
-  }, []);
+    setSelectedApplication(null);
+    setSearchTerm("");
+    setBillingStartDate("");
+    setBillingEndDate("");
+    setUnitPrice("0");
+    setSelectedServices([]);
+    setBreakdown([]);
 
-  // Fetch latest billing period when client changes
-  useEffect(() => {
-    if (selectedClient) {
-      console.log({ step: "FETCH_BILLING_PERIOD_START", clientId: selectedClient.id });
-      (async () => {
-        try {
-          const [latest, nextStart] = await Promise.all([
-            getLatestBillingPeriod(selectedClient.id),
-            getNextBillingStartDate(selectedClient.id),
-          ]);
-          console.log({ step: "FETCH_BILLING_PERIOD_SUCCESS", latest, nextStart });
-          setLatestPeriod(latest);
-          setAutoStartDate(nextStart);
-          setBillingStartDate(nextStart);
-          setValidationMsg(null);
-        } catch (err) {
-          console.error({ step: "FETCH_BILLING_PERIOD_FAILED", err });
-        }
-      })();
-    }
-  }, [selectedClient]);
-
-  // Fetch vehicles and services for selected client, pre-select all services
-  useEffect(() => {
-    if (selectedClient) {
-      (async () => {
-        try {
-          const qV = query(collection(db, "registry_vehicles_v2"), where("clientId", "==", selectedClient.id));
-          const vSnap = await getDocs(qV);
-          const vehicles = vSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setClientVehicles(vehicles);
-
-          const vehicleIds = vehicles.map((v) => v.id);
-
-          const qS = query(collection(db, "registry_services_v2"));
-          const sSnap = await getDocs(qS);
-          const services = sSnap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((s: any) => s.clientId === selectedClient.id || vehicleIds.includes(s.vehicleId));
-
-          setClientServices(services);
-          const allIds = services.map((s: any) => s.id);
-          setCheckedServiceIds(allIds);
-          setSelectedServices([...new Set(services.map((s: any) => s.serviceType))]);
-        } catch (err) {
-          console.error("Failed to load client vehicles/services:", err);
-        }
-      })();
-    } else {
-      setClientVehicles([]);
-      setClientServices([]);
-      setCheckedServiceIds([]);
-      setSelectedServices([]);
-    }
-  }, [selectedClient]);
-
-  // Recalculate invoice amount and breakdown dynamically based on checked services
-  useEffect(() => {
-    if (selectedClient && checkedServiceIds.length > 0) {
-      const activeServices = clientServices.filter((s) => checkedServiceIds.includes(s.id));
-      let totalAmount = 0;
-      const breakdownList: any[] = [];
-
-      activeServices.forEach((s) => {
-        const v = clientVehicles.find((veh) => veh.id === s.vehicleId);
-        const amount = s.serviceAmount ?? 0;
-        totalAmount += amount;
-        breakdownList.push({
-          serviceId: s.id,
-          serviceName: s.serviceType,
-          vehicleNumber: v?.vehicleNumber || (s as any).vehicleNumber || "—",
-          vehicleType: v?.vehicleType || "Commercial",
-          amount,
-        });
+    if (activeSubModule === "driving_school") {
+      const unsub = subscribeDrivingSchoolApplications((data) => {
+        setApplications(data);
       });
-
-      setUnitPrice(String(totalAmount));
-      setBreakdown(breakdownList);
-      setSelectedServices([...new Set(activeServices.map((s) => s.serviceType))]);
+      return unsub;
     } else {
-      setUnitPrice("0");
-      setBreakdown([]);
-      setSelectedServices([]);
+      const q = query(
+        collection(db, "registry_applications_v1"),
+        where("subModule", "==", activeSubModule)
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        setApplications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }, (err) => {
+        console.error("Error loading applications for subModule:", activeSubModule, err);
+      });
+      return unsub;
     }
-  }, [selectedClient, checkedServiceIds, clientServices, clientVehicles]);
+  }, [activeSubModule]);
+
+  // Fetch accounting record when application changes
+  useEffect(() => {
+    if (selectedApplication) {
+      const accRef = doc(db, "registry_accounting", selectedApplication.id);
+      getDoc(accRef).then((snap) => {
+        if (snap.exists()) {
+          const accData = snap.data();
+          setAccountingRecord(accData);
+          setAskBhaylubha(!!accData.askBhaylubha);
+        } else {
+          setAccountingRecord(null);
+          setAskBhaylubha(false);
+        }
+      }).catch((err) => {
+        console.error("Failed to load accounting record:", err);
+      });
+    } else {
+      setAccountingRecord(null);
+      setAskBhaylubha(false);
+    }
+  }, [selectedApplication]);
+
+  // Pre-populate fields automatically when application is selected
+  useEffect(() => {
+    if (selectedApplication) {
+      const start = selectedApplication.joiningDate || selectedApplication.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const end = selectedApplication.courseEndDate || selectedApplication.expiryDate || new Date().toISOString().slice(0, 10);
+      setBillingStartDate(start);
+      setBillingEndDate(end);
+
+      if (activeSubModule === "driving_school") {
+        const fees = Number(selectedApplication.totalCourseFees) || 0;
+        setUnitPrice(String(fees));
+        setSelectedServices([selectedApplication.courseType || "Driving School Course"]);
+        setBreakdown([{
+          serviceId: "course",
+          serviceName: selectedApplication.courseType || "Driving School Course",
+          vehicleNumber: "—",
+          vehicleType: "—",
+          amount: fees,
+        }]);
+      } else {
+        const amt = Number(selectedApplication.amount) || 0;
+        setUnitPrice(String(amt));
+        const servicesList = selectedApplication.services || [];
+        setSelectedServices(servicesList);
+
+        const breakdownList = servicesList.map((srv: string) => {
+          const srvAmount = Number(selectedApplication.serviceFees?.[srv]) || (servicesList.length > 0 ? amt / servicesList.length : amt);
+          return {
+            serviceId: srv,
+            serviceName: srv,
+            vehicleNumber: selectedApplication.vehicleNumber || "—",
+            vehicleType: selectedApplication.vehicleDetails?.vehicleClass || "—",
+            amount: srvAmount,
+          };
+        });
+        setBreakdown(breakdownList);
+      }
+    } else {
+      setBillingStartDate("");
+      setBillingEndDate("");
+      setUnitPrice("0");
+      setSelectedServices([]);
+      setBreakdown([]);
+    }
+  }, [selectedApplication, activeSubModule]);
 
   // Validate billing period
   useEffect(() => {
-    if (selectedClient && billingStartDate && billingEndDate) {
+    if (selectedApplication && billingStartDate && billingEndDate) {
       (async () => {
-        console.log({
-          step: "VALIDATION_START",
-          selectedClientId: selectedClient.id,
-          selectedClientName: selectedClient.name,
-          billingStartDate,
-          billingEndDate,
-          selectedServices,
-          amount: unitPrice,
-        });
-
         try {
           const validation = await validateBillingPeriodSequence(
-            selectedClient.id,
+            selectedApplication.id,
             billingStartDate,
             billingEndDate,
           );
-
-          console.log({
-            step: "VALIDATION_RESULT",
-            validation,
-            billingStartDate,
-            billingEndDate,
-            selectedServicesLength: selectedServices.length,
-            selectedServices,
-            amount: Number(unitPrice),
-          });
 
           if (!validation.valid) {
             setValidationMsg(`❌ ${validation.reason}`);
@@ -185,36 +167,39 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
     } else {
       setValidationMsg(null);
     }
-  }, [selectedClient, billingStartDate, billingEndDate, selectedServices, unitPrice]);
+  }, [selectedApplication, billingStartDate, billingEndDate]);
 
-  // Filter clients by search
-  const filteredClients = clients.filter(
-    (c) =>
-      searchTerm === "" ||
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.mobile?.includes(searchTerm),
-  );
+  // Filter applications by search term
+  const filteredApplications = applications.filter((app) => {
+    if (searchTerm === "") return false;
+    const term = searchTerm.toLowerCase();
 
-  // Handle service selection
-  const toggleService = (serviceName: string) => {
-    setSelectedServices((prev) =>
-      prev.includes(serviceName) ? prev.filter((s) => s !== serviceName) : [...prev, serviceName],
-    );
-  };
+    if (activeSubModule === "services") {
+      // Vahaan lookup: primary lookup by vehicleNumber
+      return app.vehicleNumber?.toLowerCase().includes(term);
+    } else if (activeSubModule === "driving_school") {
+      // Driving School lookup: primary lookup by studentName
+      return app.studentName?.toLowerCase().includes(term);
+    } else {
+      // Licence, Insurance, Form 5 lookup: primary lookup by ownerName/clientName
+      return (
+        app.ownerName?.toLowerCase().includes(term) ||
+        app.clientName?.toLowerCase().includes(term)
+      );
+    }
+  });
 
   const isFormValid =
-    !!selectedClient &&
+    !!selectedApplication &&
     !!billingStartDate &&
     !!billingEndDate &&
-    checkedServiceIds.length > 0 &&
-    Number(unitPrice) > 0 &&
-    validationMsg?.includes("✓");
+    Number(unitPrice) > 0;
 
   // Create invoice
   const handleCreateInvoice = async () => {
     console.log({
       step: "BUTTON_CLICKED",
-      selectedClient,
+      selectedApplication,
       billingStartDate,
       billingEndDate,
       selectedServices,
@@ -222,24 +207,16 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
       isFormValid,
     });
 
-    if (!selectedClient) {
-      setError("Please select a client");
+    if (!selectedApplication) {
+      setError("Please select an application");
       return;
     }
     if (!billingStartDate || !billingEndDate) {
       setError("Please select billing period");
       return;
     }
-    if (checkedServiceIds.length === 0) {
-      setError("Please select at least one service");
-      return;
-    }
     if (!unitPrice || Number(unitPrice) <= 0 || Number.isNaN(Number(unitPrice))) {
       setError("Calculation returned no services or 0 amount.");
-      return;
-    }
-    if (!validationMsg?.includes("✓")) {
-      setError("Please fix billing date validation before creating the invoice.");
       return;
     }
 
@@ -264,8 +241,8 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
     });
     console.log({
       step: "INVOICE_PAYLOAD_PREPARED",
-      selectedClientId: selectedClient.id,
-      selectedClientName: selectedClient.name,
+      selectedApplicationId: selectedApplication.id,
+      selectedApplicationName: selectedApplication.studentName || selectedApplication.ownerName || selectedApplication.name,
       billingStartDate,
       billingEndDate,
       selectedServices,
@@ -275,19 +252,20 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
 
     try {
       const invoice = await createInvoice(
-        selectedClient,
+        selectedApplication,
         services,
         billingStartDate,
         billingEndDate,
         createdBy,
         collectionDate,
         askBhaylubha,
+        activeSubModule,
       );
 
       console.log({ step: "INVOICE_CREATED", invoice });
 
       setSuccess(`✓ Invoice ${invoice.invoiceNumber} created successfully!`);
-      setSelectedClient(null);
+      setSelectedApplication(null);
       setBillingStartDate("");
       setBillingEndDate("");
       setUnitPrice("");
@@ -358,44 +336,117 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
         )}
 
         <div className="space-y-4">
-          {/* Client Selection */}
+          {/* Application Selection Lookup */}
           <div>
-            <label className="text-sm font-medium">Select Client *</label>
+            <label className="text-sm font-medium uppercase tracking-wide text-gray-500 text-xs font-bold">
+              {activeSubModule === "services"
+                ? "Look up by Vehicle Number *"
+                : activeSubModule === "driving_school"
+                ? "Look up by Student Name *"
+                : "Look up by Client / Owner Name *"}
+            </label>
             <div className="mt-2 relative">
               <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
               <Input
-                placeholder="Search by name or mobile..."
+                placeholder={
+                  activeSubModule === "services"
+                    ? "Enter vehicle number (e.g. GJ01XX1234)..."
+                    : activeSubModule === "driving_school"
+                    ? "Enter student name..."
+                    : "Enter client or owner name..."
+                }
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 text-sm font-semibold"
               />
             </div>
             {searchTerm && (
-              <div className="mt-2 border rounded-lg max-h-40 overflow-y-auto">
-                {filteredClients.map((client) => (
+              <div className="mt-2 border rounded-lg max-h-56 overflow-y-auto bg-white shadow-lg z-20 relative">
+                {filteredApplications.slice(0, 30).map((app) => (
                   <button
-                    key={client.id}
+                    key={app.id}
                     onClick={() => {
-                      setSelectedClient(client);
+                      setSelectedApplication(app);
                       setSearchTerm("");
                     }}
-                    className="w-full text-left px-4 py-2 hover:bg-gray-100 border-b last:border-b-0"
+                    className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b last:border-b-0 transition duration-150"
                   >
-                    <div className="font-medium">{client.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {client.mobile} {client.companyName ? `• ${client.companyName}` : ""}
-                    </div>
+                    {activeSubModule === "services" ? (
+                      <div>
+                        <div className="font-bold text-sm text-blue-600">{app.vehicleNumber}</div>
+                        <div className="text-xs text-muted-foreground flex justify-between mt-1">
+                          <span>Owner: {app.ownerName}</span>
+                          <span>ID: {app.applicationId}</span>
+                        </div>
+                      </div>
+                    ) : activeSubModule === "driving_school" ? (
+                      <div>
+                        <div className="font-bold text-sm text-green-700">{app.studentName}</div>
+                        <div className="text-xs text-muted-foreground flex justify-between mt-1">
+                          <span>Course: {app.courseType}</span>
+                          <span>ID: {app.applicationId}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="font-bold text-sm text-indigo-700">{app.ownerName || app.clientName}</div>
+                        <div className="text-xs text-muted-foreground flex justify-between mt-1">
+                          <span>Services: {app.services?.join(", ")}</span>
+                          <span>ID: {app.applicationId}</span>
+                        </div>
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
             )}
-            {selectedClient && (
-              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm font-medium">{selectedClient.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {selectedClient.mobile}{" "}
-                  {selectedClient.companyName ? `• ${selectedClient.companyName}` : ""}
-                </p>
+            {selectedApplication && (
+              <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex justify-between items-start border-b pb-2">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-sm">
+                      {selectedApplication.studentName || selectedApplication.ownerName || selectedApplication.clientName}
+                    </h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Phone: {selectedApplication.mobileNumber || selectedApplication.mobile || "—"}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                    {activeSubModule}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-xs pt-1">
+                  <div>
+                    <span className="text-slate-400 block font-medium">Application ID</span>
+                    <span className="font-bold text-slate-700">{selectedApplication.applicationId || selectedApplication.id}</span>
+                  </div>
+                  {selectedApplication.vehicleNumber && (
+                    <div>
+                      <span className="text-slate-400 block font-medium">Vehicle Number</span>
+                      <span className="font-bold text-slate-700">{selectedApplication.vehicleNumber}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-slate-400 block font-medium">Total Charges</span>
+                    <span className="font-bold text-slate-700">₹{(selectedApplication.amount || selectedApplication.totalCourseFees || 0).toLocaleString("en-IN")}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block font-medium">Advance Paid</span>
+                    <span className="font-bold text-emerald-600">₹{(selectedApplication.totalPaid || selectedApplication.advancePaid || 0).toLocaleString("en-IN")}</span>
+                  </div>
+                  {accountingRecord && (
+                    <>
+                      <div>
+                        <span className="text-slate-400 block font-medium">RTO Receipt</span>
+                        <span className="font-bold text-slate-700">₹{(accountingRecord.rtoReceipt || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block font-medium">RTO Expense</span>
+                        <span className="font-bold text-slate-700">₹{(accountingRecord.rtoExpense || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -403,179 +454,50 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
           {/* Billing Period */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium">Billing Start Date *</label>
+              <label className="text-xs font-bold uppercase text-gray-500">Billing Start Date *</label>
               <Input
                 type="date"
                 value={billingStartDate}
                 onChange={(e) => setBillingStartDate(e.target.value)}
-                className="mt-1"
+                className="mt-1 text-sm font-semibold"
               />
-              {latestPeriod && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Last period ended: {latestPeriod.periodEnd}
-                </p>
-              )}
-              {autoStartDate && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Suggested next start date: {autoStartDate}
-                </p>
-              )}
             </div>
             <div>
-              <label className="text-sm font-medium">Billing End Date *</label>
+              <label className="text-xs font-bold uppercase text-gray-500">Billing End Date *</label>
               <Input
                 type="date"
                 value={billingEndDate}
                 onChange={(e) => setBillingEndDate(e.target.value)}
-                className="mt-1"
+                className="mt-1 text-sm font-semibold"
               />
             </div>
           </div>
 
-          {/* Service Selection per Vehicle */}
-          {selectedClient && (
-            <div>
-              <label className="text-sm font-medium">Select Services *</label>
-              {clientServices.length === 0 ? (
-                <p className="text-xs text-muted-foreground mt-1 bg-amber-50 p-2 border border-amber-200 rounded">
-                  No services found for this client. Please add services to vehicles first.
-                </p>
-              ) : (
-                <div className="space-y-3 mt-2">
-                  {clientVehicles.map((vehicle) => {
-                    const vehServices = clientServices.filter((s) => s.vehicleId === vehicle.id);
-                    if (vehServices.length === 0) return null;
-
-                    return (
-                      <div key={vehicle.id} className="p-3 border rounded-lg bg-slate-50 space-y-2">
-                        <div className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                          <span>Vehicle {vehicle.vehicleNumber}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono">
-                            {vehServices.length} service(s)
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t">
-                          {vehServices.map((s) => {
-                            const isChecked = checkedServiceIds.includes(s.id);
-                            return (
-                              <label
-                                key={s.id}
-                                className={`flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-colors ${
-                                  isChecked
-                                    ? "bg-blue-50/80 border-blue-300 font-semibold"
-                                    : "bg-white border-gray-200 opacity-60"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => {
-                                      setCheckedServiceIds((prev) =>
-                                        prev.includes(s.id)
-                                          ? prev.filter((id) => id !== s.id)
-                                          : [...prev, s.id],
-                                      );
-                                    }}
-                                    className="rounded border-gray-300 size-4 text-blue-600 focus:ring-blue-500"
-                                  />
-                                  <span>{s.serviceType}</span>
-                                </div>
-                                <span className="font-mono font-bold text-slate-700">
-                                  ₹{(s.serviceAmount || 0).toLocaleString("en-IN")}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Render unassigned services if any */}
-                  {(() => {
-                    const vehIds = clientVehicles.map((v) => v.id);
-                    const unassigned = clientServices.filter((s) => !vehIds.includes(s.vehicleId));
-                    if (unassigned.length === 0) return null;
-
-                    return (
-                      <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
-                        <div className="text-xs font-bold text-slate-700">Other Services</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t">
-                          {unassigned.map((s) => {
-                            const isChecked = checkedServiceIds.includes(s.id);
-                            return (
-                              <label
-                                key={s.id}
-                                className={`flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-colors ${
-                                  isChecked
-                                    ? "bg-blue-50/80 border-blue-300 font-semibold"
-                                    : "bg-white border-gray-200 opacity-60"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => {
-                                      setCheckedServiceIds((prev) =>
-                                        prev.includes(s.id)
-                                          ? prev.filter((id) => id !== s.id)
-                                          : [...prev, s.id],
-                                      );
-                                    }}
-                                    className="rounded border-gray-300 size-4 text-blue-600 focus:ring-blue-500"
-                                  />
-                                  <span>{s.serviceType}</span>
-                                </div>
-                                <span className="font-mono font-bold text-slate-700">
-                                  ₹{(s.serviceAmount || 0).toLocaleString("en-IN")}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Breakdown of selected services across vehicles */}
-          {selectedClient && selectedServices.length > 0 && breakdown.length > 0 && (
+          {/* Invoice Breakdown display (Read-Only) */}
+          {selectedApplication && breakdown.length > 0 && (
             <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-border space-y-2">
               <h4 className="text-xs font-bold uppercase text-muted-foreground tracking-wide">
                 Invoice Breakdown
               </h4>
               <div className="space-y-2.5 text-xs">
-                {selectedServices.map((serviceName) => {
-                  const serviceItems = breakdown.filter((item) => item.serviceName === serviceName);
-                  if (serviceItems.length === 0) return null;
-                  const serviceSubtotal = serviceItems.reduce((sum, item) => sum + item.amount, 0);
-
-                  return (
-                    <div
-                      key={serviceName}
-                      className="border-b border-gray-200/60 pb-1.5 last:border-b-0 last:pb-0"
-                    >
-                      <div className="font-semibold text-foreground">{serviceName}</div>
-                      <div className="mt-1 space-y-0.5 pl-2 text-muted-foreground font-mono text-[11px]">
-                        {serviceItems.map((item, idx) => (
-                          <div key={idx} className="flex justify-between">
-                            <span>Vehicle {item.vehicleNumber}</span>
-                            <span>₹{item.amount.toLocaleString("en-IN")}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-1 flex justify-between font-semibold pl-2 text-foreground text-[11px]">
-                        <span>Total {serviceName}</span>
-                        <span>₹{serviceSubtotal.toLocaleString("en-IN")}</span>
-                      </div>
+                {breakdown.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="border-b border-gray-200/60 pb-1.5 last:border-b-0 last:pb-0 flex justify-between items-center"
+                  >
+                    <div>
+                      <div className="font-semibold text-foreground">{item.serviceName}</div>
+                      {item.vehicleNumber && item.vehicleNumber !== "—" && (
+                        <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                          Vehicle: {item.vehicleNumber} ({item.vehicleType})
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
+                    <span className="font-mono font-bold text-slate-700">
+                      ₹{item.amount.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                ))}
                 <div className="pt-1.5 border-t border-gray-300 flex justify-between font-bold text-foreground text-xs">
                   <span>Grand Total</span>
                   <span>₹{Number(unitPrice).toLocaleString("en-IN")}</span>
@@ -584,9 +506,9 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
             </div>
           )}
 
-          {/* Unit Price */}
+          {/* Service Amount */}
           <div>
-            <label className="text-sm font-medium">Service Amount (₹) *</label>
+            <label className="text-xs font-bold uppercase text-gray-500">Total Invoice Amount (₹) *</label>
             <Input
               type="text"
               readOnly
@@ -594,7 +516,6 @@ export function InvoiceGenerator({ onInvoiceCreated }: InvoiceGeneratorProps) {
               value={unitPrice ? `₹${Number(unitPrice).toLocaleString("en-IN")}` : "₹0"}
               className="mt-1 bg-muted font-bold text-foreground cursor-not-allowed"
             />
-
           </div>
 
           {/* Collection Date & Ask Bhaylubha Checkbox */}

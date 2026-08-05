@@ -67,6 +67,11 @@ export type Invoice = {
   amountPaid?: number;
   paymentMethod?: string;
   notes?: string;
+  subModule?: string;
+  rtoReceipt?: number;
+  rtoExpense?: number;
+  profit?: number;
+  assignedEmployee?: string;
 };
 
 export type InvoicePayment = {
@@ -395,6 +400,7 @@ export async function createInvoice(
   createdBy: string,
   collectionDate?: string,
   askBhaylubha?: boolean,
+  subModule?: string,
 ): Promise<Invoice> {
   const validation = await validateBillingPeriodSequence(
     client.id,
@@ -418,7 +424,8 @@ export async function createInvoice(
   const formattedStart = formatBillingDate(billingPeriodStart);
   const formattedEnd = formatBillingDate(billingPeriodEnd);
 
-  let docRef;
+  const finalSubModule = subModule || (client as any).subModule || "services";
+
   let finalTotalPaid = 0;
 
   // Calculate finalTotalPaid by summing up all service advance payments
@@ -457,9 +464,13 @@ export async function createInvoice(
     pdfUrl: null,
     collectionDate: collectionDate || null,
     askBhaylubha: askBhaylubha || false,
+    subModule: finalSubModule,
+    assignedEmployee: (client as any).assignedEmployee || (client as any).assignedEmployeeName || "Unassigned",
+    notes: (client as any).remarks || "",
   };
 
-  docRef = await addDoc(collection(db, BILLING_INVOICES_COL), invoicePayload as any);
+  const invoiceDocRef = doc(db, BILLING_INVOICES_COL, client.id);
+  await setDoc(invoiceDocRef, invoicePayload);
 
   // Update corresponding registry_services_v2 documents with the invoice info
   for (const item of services) {
@@ -470,7 +481,7 @@ export async function createInvoice(
     if (sSnap.exists()) {
       const sData = sSnap.data() as any;
       await updateDoc(sRef, {
-        invoiceId: docRef.id,
+        invoiceId: client.id,
         invoiceNumber: invoiceNumber,
         collectionDate: collectionDate || null,
         askBhaylubha: askBhaylubha || false,
@@ -483,10 +494,10 @@ export async function createInvoice(
         const paymentSnap = await getDoc(paymentRef);
         if (paymentSnap.exists()) {
           await updateDoc(paymentRef, {
-            financeRecordId: docRef.id,
-            invoiceId: docRef.id,
+            financeRecordId: client.id,
+            invoiceId: client.id,
             allocations: [{
-              invoiceId: docRef.id,
+              invoiceId: client.id,
               invoiceNumber: invoiceNumber,
               allocatedAmount: sData.advancePayment,
             }],
@@ -511,7 +522,7 @@ export async function createInvoice(
 
   invalidateCache();
   return {
-    id: docRef.id,
+    id: client.id,
     invoiceNumber,
     clientId: client.id,
     clientName: client.name,
@@ -524,15 +535,18 @@ export async function createInvoice(
     subtotal,
     totalTax,
     totalAmount,
-    totalPaid: 0,
+    totalPaid: finalTotalPaid,
     invoiceDate,
     createdBy,
     createdAt,
-    status: "Pending" as InvoiceStatus,
+    status: status as InvoiceStatus,
     services,
     pdfUrl: null,
     collectionDate: collectionDate || null,
     askBhaylubha: askBhaylubha || false,
+    subModule: finalSubModule,
+    assignedEmployee: (client as any).assignedEmployee || (client as any).assignedEmployeeName || "Unassigned",
+    notes: (client as any).remarks || "",
   };
 }
 
@@ -723,8 +737,10 @@ export async function getInvoicePayments(invoiceId: string): Promise<InvoicePaym
   return list;
 }
 
-export async function calculateBillingMetrics(): Promise<BillingMetrics> {
-  const q = query(collection(db, BILLING_INVOICES_COL));
+export async function calculateBillingMetrics(subModule?: string): Promise<BillingMetrics> {
+  const q = subModule
+    ? query(collection(db, BILLING_INVOICES_COL), where("subModule", "==", subModule))
+    : query(collection(db, BILLING_INVOICES_COL));
   const snap = await getDocs(q);
   const invoices = snap.docs.map((d) => ({ ...(d.data() as any), id: d.id }) as Invoice);
 
@@ -814,4 +830,204 @@ export async function deleteInvoiceById(
     console.warn("[deleteInvoiceById] logClientActivity failed:", err);
   }
   invalidateCache();
+}
+
+export function subscribeInvoicesBySubModule(
+  subModule: string,
+  callback: (invoices: Invoice[]) => void,
+) {
+  const q = query(
+    collection(db, BILLING_INVOICES_COL),
+    where("subModule", "==", subModule)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const invoices = snap.docs
+        .map((d) => ({ ...(d.data() as any), id: d.id }) as Invoice)
+        .sort((a, b) => {
+          const dateA = normalizeIsoDate(a.createdAt || a.invoiceDate)?.getTime() ?? 0;
+          const dateB = normalizeIsoDate(b.createdAt || b.invoiceDate)?.getTime() ?? 0;
+          return dateB - dateA;
+        });
+      callback(invoices);
+    },
+    (error) => {
+      handleFirestoreError(error, "subscribeInvoicesBySubModule");
+      callback([]);
+    },
+  );
+}
+
+export async function syncInvoice(docId: string, subModule: string): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    if (subModule === "driving_school") {
+      const appRef = doc(db, "DrivingSchoolApplications", docId);
+      const appSnap = await getDoc(appRef);
+      if (!appSnap.exists()) return;
+      const appData = appSnap.data() as any;
+
+      const accRef = doc(db, "registry_accounting", docId);
+      const accSnap = await getDoc(accRef);
+      const accData = accSnap.exists() ? accSnap.data() as any : null;
+
+      const totFee = Number(appData.totalCourseFees) || 0;
+      const advFee = Number(appData.advancePaid) || 0;
+
+      const invoiceRef = doc(db, BILLING_INVOICES_COL, docId);
+      const invoicePayload = {
+        id: docId,
+        invoiceNumber: appData.applicationId || docId,
+        clientId: docId,
+        clientName: appData.studentName || "Unknown Student",
+        clientMobile: appData.mobileNumber || "",
+        clientAddress: appData.address || "",
+        billingPeriodStart: formatBillingDate(appData.joiningDate || appData.createdAt?.slice(0, 10) || now.slice(0, 10)),
+        billingPeriodEnd: formatBillingDate(appData.courseEndDate || appData.updatedAt?.slice(0, 10) || now.slice(0, 10)),
+        subtotal: totFee,
+        totalTax: 0,
+        totalAmount: totFee,
+        totalPaid: advFee,
+        invoiceDate: appData.createdAt || now,
+        createdBy: appData.createdBy || "System",
+        createdAt: appData.createdAt || now,
+        status: (appData.paymentStatus === "Partial" ? "Partially Paid" : (appData.paymentStatus || "Pending")) as InvoiceStatus,
+        services: [{
+          serviceId: "course",
+          serviceName: appData.courseType || "Driving School Course",
+          quantity: 1,
+          unitPrice: totFee,
+          amount: totFee,
+          tax: 0,
+          total: totFee,
+        }],
+        pdfUrl: appData.pdfUrl || null,
+        collectionDate: appData.courseEndDate || null,
+        askBhaylubha: accData?.askBhaylubha || false,
+        subModule: "driving_school",
+        assignedEmployee: appData.assignedEmployee || "Unassigned",
+        notes: appData.employeeNotes || "",
+        rtoReceipt: accData?.rtoReceipt || 0,
+        rtoExpense: accData?.rtoExpense || 0,
+        profit: accData?.profit || (totFee - advFee),
+      };
+      await setDoc(invoiceRef, invoicePayload, { merge: true });
+    } else {
+      const appRef = doc(db, "registry_applications_v1", docId);
+      const appSnap = await getDoc(appRef);
+      if (!appSnap.exists()) return;
+      const appData = appSnap.data() as any;
+
+      const accRef = doc(db, "registry_accounting", docId);
+      const accSnap = await getDoc(accRef);
+      const accData = accSnap.exists() ? accSnap.data() as any : null;
+
+      const totAmt = Number(appData.amount) || 0;
+      const advAmt = Number(appData.totalPaid) || 0;
+      const servicesList = appData.services || [];
+
+      // Determine RTO Expense and Profit
+      const rtoReceipt = accData?.rtoReceipt || 0;
+      const rtoExpense = accData?.rtoExpense || 0;
+      const outstanding = Math.max(0, totAmt - advAmt - rtoReceipt);
+      const profit = outstanding - rtoExpense;
+
+      const invoiceRef = doc(db, BILLING_INVOICES_COL, docId);
+      const invoicePayload = {
+        id: docId,
+        invoiceNumber: appData.applicationId || docId,
+        clientId: docId,
+        clientName: appData.ownerName || "Unknown Owner",
+        clientMobile: appData.mobileNumber || "",
+        clientAddress: appData.vehicleDetails?.address || "",
+        vehicleNumber: appData.vehicleNumber || "",
+        vehicleType: appData.vehicleDetails?.vehicleClass || "",
+        billingPeriodStart: formatBillingDate(appData.createdAt?.slice(0, 10) || now.slice(0, 10)),
+        billingPeriodEnd: formatBillingDate(appData.expiryDate || now.slice(0, 10)),
+        subtotal: totAmt,
+        totalTax: 0,
+        totalAmount: totAmt,
+        totalPaid: advAmt,
+        invoiceDate: appData.createdAt || now,
+        createdBy: appData.createdBy || "System",
+        createdAt: appData.createdAt || now,
+        status: (appData.paymentStatus === "Partial" ? "Partially Paid" : (appData.paymentStatus || "Pending")) as InvoiceStatus,
+        services: servicesList.map((srv: string) => {
+          const srvAmount = Number(appData.serviceFees?.[srv]) || (servicesList.length > 0 ? totAmt / servicesList.length : totAmt);
+          return {
+            serviceId: srv,
+            serviceName: srv,
+            vehicleNumber: appData.vehicleNumber || "",
+            quantity: 1,
+            unitPrice: srvAmount,
+            amount: srvAmount,
+            tax: 0,
+            total: srvAmount,
+          };
+        }),
+        pdfUrl: appData.pdfUrl || null,
+        collectionDate: appData.expiryDate || null,
+        askBhaylubha: accData?.askBhaylubha || false,
+        subModule: appData.subModule || "services",
+        assignedEmployee: appData.assignedEmployeeName || "Unassigned",
+        notes: appData.remarks || "",
+        rtoReceipt,
+        rtoExpense,
+        profit,
+      };
+      await setDoc(invoiceRef, invoicePayload, { merge: true });
+    }
+    invalidateCache();
+  } catch (err) {
+    console.error(`Failed to sync invoice for docId: ${docId}`, err);
+  }
+}
+
+export async function migrateExistingInvoices(): Promise<void> {
+  try {
+    const q = query(collection(db, BILLING_INVOICES_COL));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const data = d.data() as any;
+      if (!data.subModule) {
+        // Try to find in registry_applications_v1
+        const appRef = doc(db, "registry_applications_v1", d.id);
+        const appSnap = await getDoc(appRef);
+        if (appSnap.exists()) {
+          const appData = appSnap.data() as any;
+          await updateDoc(d.ref, {
+            subModule: appData.subModule || "services",
+            assignedEmployee: appData.assignedEmployeeName || "Unassigned",
+            notes: appData.remarks || "",
+            rtoReceipt: appData.rtoReceipt || 0,
+            rtoExpense: appData.rtoExpense || 0,
+          });
+          continue;
+        }
+
+        // Try to find in DrivingSchoolApplications
+        const dsRef = doc(db, "DrivingSchoolApplications", d.id);
+        const dsSnap = await getDoc(dsRef);
+        if (dsSnap.exists()) {
+          const dsData = dsSnap.data() as any;
+          await updateDoc(d.ref, {
+            subModule: "driving_school",
+            assignedEmployee: dsData.assignedEmployee || "Unassigned",
+            notes: dsData.employeeNotes || "",
+          });
+          continue;
+        }
+
+        // Fallback
+        if (data.invoiceNumber?.startsWith("DS-")) {
+          await updateDoc(d.ref, { subModule: "driving_school" });
+        } else {
+          await updateDoc(d.ref, { subModule: "services" });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Migration of invoices failed:", err);
+  }
 }

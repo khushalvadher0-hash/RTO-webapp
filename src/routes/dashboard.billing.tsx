@@ -11,7 +11,7 @@ import {
   Search,
   FileText,
 } from "lucide-react";
-import { subscribeToAllInvoices, calculateBillingMetrics, type Invoice } from "@/lib/billing";
+import { subscribeInvoicesBySubModule, calculateBillingMetrics, migrateExistingInvoices, type Invoice } from "@/lib/billing";
 import {
   generateInvoicePDF,
   printWindow,
@@ -48,22 +48,27 @@ function BillingDashboard() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterBhaylubha, setFilterBhaylubha] = useState<string>("all");
 
-  // Subscribe to all invoices
+  // Run on-mount migration for legacy invoices without subModule
   useEffect(() => {
-    const unsub = subscribeToAllInvoices((data) => {
+    migrateExistingInvoices();
+  }, []);
+
+  // Subscribe to invoices filtered by active subModule
+  useEffect(() => {
+    const unsub = subscribeInvoicesBySubModule(activeSubModule, (data) => {
       setInvoices(data);
     });
 
     return () => unsub();
-  }, []);
+  }, [activeSubModule]);
 
-  // Calculate metrics
+  // Calculate metrics for active subModule
   useEffect(() => {
     (async () => {
-      const m = await calculateBillingMetrics();
+      const m = await calculateBillingMetrics(activeSubModule);
       setMetrics(m);
     })();
-  }, [invoices]);
+  }, [invoices, activeSubModule]);
 
   // Filter invoices
   const filteredInvoices = invoices.filter((inv) => {
@@ -311,6 +316,7 @@ function BillingDashboard() {
 
       {selectedTab === "generate" && (
         <InvoiceGenerator
+          activeSubModule={activeSubModule}
           onInvoiceCreated={(invoice) => {
             setSelectedInvoice(invoice);
             setSelectedTab("history");

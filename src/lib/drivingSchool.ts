@@ -12,6 +12,7 @@ import { db } from "./firebase";
 import { removeUndefined } from "./records";
 import { getSession } from "./auth";
 import { saveAccountingRecord } from "./applications";
+import { syncInvoice } from "./billing";
 
 export const DRIVING_SCHOOL_COL = "DrivingSchoolApplications";
 export const DRIVING_SCHOOL_VEHICLES_COL = "DrivingSchoolVehicles";
@@ -181,6 +182,11 @@ export async function saveDrivingSchoolApplication(
   } catch (accErr) {
     console.error("Error syncing Driving School accounting record:", accErr);
   }
+
+  // Auto-sync invoice with driving school application details
+  await syncInvoice(finalId, "driving_school").catch((err) => {
+    console.error("Failed to sync invoice inside saveDrivingSchoolApplication:", err);
+  });
 
   return finalId;
 }
