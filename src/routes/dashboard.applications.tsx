@@ -1581,7 +1581,7 @@ function ApplicationFormModal({
   // License Applicant Details
   const [dateOfBirth, setDateOfBirth] = useState(editingApp?.licenseDetails?.dateOfBirth || "");
   const [isDrivingSchoolHolder, setIsDrivingSchoolHolder] = useState(
-    editingApp?.licenseDetails?.isDrivingSchoolHolder ?? true
+    editingApp?.licenseDetails?.isDrivingSchoolHolder ?? false
   );
   const [groupOptions, setGroupOptions] = useState<string[]>(["Select group", "Self", "Company Fleet"]);
   const [showAddGroupInput, setShowAddGroupInput] = useState(false);
@@ -1824,21 +1824,120 @@ function ApplicationFormModal({
   const [registrationValidity, setRegistrationValidity] = useState(editingApp?.vehicleDetails?.registrationDetails?.registrationValidity || "");
 
   // Services Selected
-  const [selectedServices, setSelectedServices] = useState<string[]>(editingApp?.services || []);
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
   // Service Accounting Map (Service Name -> Total Amount & Advance Payment)
   const [serviceAccountingMap, setServiceAccountingMap] = useState<
     Record<string, { totalAmount: number; advancePayment: number }>
   >(() => {
+    const map: Record<string, { totalAmount: number; advancePayment: number }> = {};
     if (editingApp?.serviceAccounting) {
-      const map: Record<string, { totalAmount: number; advancePayment: number }> = {};
       Object.entries(editingApp.serviceAccounting).forEach(([key, item]) => {
-        map[key] = { totalAmount: item.totalAmount, advancePayment: item.advancePayment };
+        map[key] = { totalAmount: Number(item.totalAmount) || 0, advancePayment: Number(item.advancePayment) || 0 };
       });
-      return map;
     }
-    return {};
+    // Rehydrate from sub-module specific fields
+    if (editingApp?.licenseDetails?.newLearningLicence?.enabled) {
+      map["New Learning Licence"] = {
+        totalAmount: Number(editingApp.licenseDetails.newLearningLicence.totalAmount) || 0,
+        advancePayment: Number(editingApp.licenseDetails.newLearningLicence.advanceAmount) || 0,
+      };
+    }
+    if (editingApp?.licenseDetails?.dlNewLlEndorsement?.enabled) {
+      map["DL New LL Endorsement"] = {
+        totalAmount: Number(editingApp.licenseDetails.dlNewLlEndorsement.totalAmount) || 0,
+        advancePayment: Number(editingApp.licenseDetails.dlNewLlEndorsement.advanceAmount) || 0,
+      };
+    }
+    if (editingApp?.licenseDetails?.llRenewClass?.enabled) {
+      map["LL Renew Class"] = {
+        totalAmount: Number(editingApp.licenseDetails.llRenewClass.totalAmount) || 0,
+        advancePayment: Number(editingApp.licenseDetails.llRenewClass.advanceAmount) || 0,
+      };
+    }
+    if (editingApp?.licenseDetails?.dlRenewRetest?.enabled) {
+      map["DL Renew + Retest"] = {
+        totalAmount: Number(editingApp.licenseDetails.dlRenewRetest.totalAmount) || 0,
+        advancePayment: Number(editingApp.licenseDetails.dlRenewRetest.advanceAmount) || 0,
+      };
+    }
+    if (editingApp?.licenseDetails?.generalLicenceServices?.serviceAccounting) {
+      Object.entries(editingApp.licenseDetails.generalLicenceServices.serviceAccounting).forEach(([key, item]: [string, any]) => {
+        map[key] = {
+          totalAmount: Number(item.totalAmount) || 0,
+          advancePayment: Number(item.advancePayment) || Number(item.advanceAmount) || 0,
+        };
+      });
+    }
+    if (editingApp?.subModule === "driving_school") {
+      map["Driving School Course"] = {
+        totalAmount: Number(editingApp.totalCourseFees) || 0,
+        advancePayment: Number(editingApp.advancePaid) || 0,
+      };
+    }
+    if (editingApp?.subModule === "insurance") {
+      map["Insurance"] = {
+        totalAmount: Number(editingApp.vehicleDetails?.insuranceDetails?.amount) || 0,
+        advancePayment: Number(editingApp.totalPaid) || 0,
+      };
+    }
+    return map;
   });
+
+  const isVahaanService = (srv: string) => {
+    return SERVICE_GROUPS.some(group => group.items.includes(srv));
+  };
+
+  const isLicenceService = (srv: string) => {
+    return [
+      "Issue Of Duplicate DL",
+      "Change Of Address In DL",
+      "Change Of Name In DL",
+      "Photo & Signature Change",
+      "Hazardous Material Endorsement",
+      "DL Replacement",
+      "DL Extract",
+      "Hazardous Training Card",
+      "International Licence",
+      "Change Date Of Birth In DL",
+      "DL New"
+    ].includes(srv);
+  };
+
+  // Sync Vahaan selected services
+  useEffect(() => {
+    const selected = Object.keys(serviceAccountingMap).filter(isVahaanService);
+    setSelectedServices(selected);
+  }, [serviceAccountingMap]);
+
+  // Sync Licence general services
+  useEffect(() => {
+    const selected = Object.keys(serviceAccountingMap).filter(isLicenceService);
+    const accounting: Record<string, { totalAmount: number; advanceAmount: number }> = {};
+    selected.forEach((srv) => {
+      accounting[srv] = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+    });
+    setGeneralLicServices((prev) => ({
+      ...prev,
+      selected,
+      accounting,
+    }));
+  }, [serviceAccountingMap]);
+
+  // Sync Form 5 HGV selection
+  useEffect(() => {
+    const form5Type = Object.keys(serviceAccountingMap).includes("Form 5 New HGV")
+      ? "new_hgv"
+      : Object.keys(serviceAccountingMap).includes("Form 5A Renew HGV")
+      ? "renew_hgv"
+      : "";
+    setForm5Details(prev => {
+      if (prev.form5Type !== form5Type) {
+        return { ...prev, form5Type };
+      }
+      return prev;
+    });
+  }, [serviceAccountingMap]);
 
   // Generate Invoice Checkbox
   const [shouldGenerateInvoice, setShouldGenerateInvoice] = useState(!editingApp);
@@ -2470,13 +2569,23 @@ function ApplicationFormModal({
     field: "totalAmount" | "advancePayment",
     val: number
   ) => {
-    setServiceAccountingMap((prev) => ({
-      ...prev,
-      [srv]: {
-        ...(prev[srv] || { totalAmount: 0, advancePayment: 0 }),
-        [field]: val,
-      },
-    }));
+    setServiceAccountingMap((prev) => {
+      const current = prev[srv] || { totalAmount: 0, advancePayment: 0 };
+      const nextTotal = field === "totalAmount" ? val : current.totalAmount;
+      const nextAdvance = field === "advancePayment" ? val : current.advancePayment;
+
+      if (nextAdvance > nextTotal && field === "advancePayment") {
+        toast.error("Advance cannot exceed Total Amount.");
+      }
+
+      return {
+        ...prev,
+        [srv]: {
+          totalAmount: nextTotal,
+          advancePayment: nextAdvance,
+        },
+      };
+    });
   };
 
   // Calculate dynamic totals
@@ -2690,6 +2799,32 @@ function ApplicationFormModal({
       }
       if (selectedServices.length === 0) {
         toast.error("Please select at least one service!");
+        return;
+      }
+    }
+
+    // Validate advance payments
+    const currentSelected =
+      activeSubModule === "licence"
+        ? [
+            ...(newLL.enabled ? ["New Learning Licence"] : []),
+            ...(dlEndorsement.enabled ? ["DL New LL Endorsement"] : []),
+            ...(llRenew.enabled ? ["LL Renew Class"] : []),
+            ...(dlRenewRetest.enabled ? ["DL Renew + Retest"] : []),
+            ...generalLicServices.selected
+          ]
+        : activeSubModule === "form5"
+        ? (form5Details.form5Type ? [form5Details.form5Type === "new_hgv" ? "Form 5 New HGV" : "Form 5A Renew HGV"] : [])
+        : activeSubModule === "insurance"
+        ? ["Insurance"]
+        : activeSubModule === "driving_school"
+        ? ["Driving School Course"]
+        : selectedServices;
+
+    for (const srv of currentSelected) {
+      const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+      if (item.advancePayment > item.totalAmount) {
+        toast.error("Advance cannot exceed Total Amount.");
         return;
       }
     }
@@ -3196,7 +3331,22 @@ function ApplicationFormModal({
                     <input
                       type="checkbox"
                       checked={newLL.enabled}
-                      onChange={(e) => setNewLL((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setNewLL((prev) => ({ ...prev, enabled: checked }));
+                        if (checked) {
+                          setServiceAccountingMap((old) => ({
+                            ...old,
+                            "New Learning Licence": old["New Learning Licence"] || { totalAmount: 0, advancePayment: 0 },
+                          }));
+                        } else {
+                          setServiceAccountingMap((old) => {
+                            const next = { ...old };
+                            delete next["New Learning Licence"];
+                            return next;
+                          });
+                        }
+                      }}
                       className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span className="font-bold text-slate-900 text-xs">New Learning Licence</span>
@@ -3502,8 +3652,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter total amount"
-                            value={newLL.totalAmount}
-                            onChange={(e) => setNewLL((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            value={serviceAccountingMap["New Learning Licence"]?.totalAmount || ""}
+                            onChange={(e) => updateServiceAccounting("New Learning Licence", "totalAmount", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
                           />
                         </div>
@@ -3512,8 +3662,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter advance amount"
-                            value={newLL.advanceAmount}
-                            onChange={(e) => setNewLL((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            value={serviceAccountingMap["New Learning Licence"]?.advancePayment || ""}
+                            onChange={(e) => updateServiceAccounting("New Learning Licence", "advancePayment", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
                           />
                         </div>
@@ -3528,7 +3678,22 @@ function ApplicationFormModal({
                     <input
                       type="checkbox"
                       checked={dlEndorsement.enabled}
-                      onChange={(e) => setDlEndorsement((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setDlEndorsement((prev) => ({ ...prev, enabled: checked }));
+                        if (checked) {
+                          setServiceAccountingMap((old) => ({
+                            ...old,
+                            "DL New LL Endorsement": old["DL New LL Endorsement"] || { totalAmount: 0, advancePayment: 0 },
+                          }));
+                        } else {
+                          setServiceAccountingMap((old) => {
+                            const next = { ...old };
+                            delete next["DL New LL Endorsement"];
+                            return next;
+                          });
+                        }
+                      }}
                       className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span className="font-bold text-slate-900 text-xs">DL New LL Endorsement</span>
@@ -3785,8 +3950,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter total amount"
-                            value={dlEndorsement.totalAmount}
-                            onChange={(e) => setDlEndorsement((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            value={serviceAccountingMap["DL New LL Endorsement"]?.totalAmount || ""}
+                            onChange={(e) => updateServiceAccounting("DL New LL Endorsement", "totalAmount", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
                           />
                         </div>
@@ -3795,8 +3960,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter advance amount"
-                            value={dlEndorsement.advanceAmount}
-                            onChange={(e) => setDlEndorsement((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            value={serviceAccountingMap["DL New LL Endorsement"]?.advancePayment || ""}
+                            onChange={(e) => updateServiceAccounting("DL New LL Endorsement", "advancePayment", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
                           />
                         </div>
@@ -3811,7 +3976,22 @@ function ApplicationFormModal({
                     <input
                       type="checkbox"
                       checked={llRenew.enabled}
-                      onChange={(e) => setLlRenew((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setLlRenew((prev) => ({ ...prev, enabled: checked }));
+                        if (checked) {
+                          setServiceAccountingMap((old) => ({
+                            ...old,
+                            "LL Renew Class": old["LL Renew Class"] || { totalAmount: 0, advancePayment: 0 },
+                          }));
+                        } else {
+                          setServiceAccountingMap((old) => {
+                            const next = { ...old };
+                            delete next["LL Renew Class"];
+                            return next;
+                          });
+                        }
+                      }}
                       className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span className="font-bold text-slate-900 text-xs">LL Renew Class</span>
@@ -4266,8 +4446,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter total amount"
-                            value={llRenew.totalAmount}
-                            onChange={(e) => setLlRenew((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            value={serviceAccountingMap["LL Renew Class"]?.totalAmount || ""}
+                            onChange={(e) => updateServiceAccounting("LL Renew Class", "totalAmount", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
                           />
                         </div>
@@ -4276,8 +4456,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter advance amount"
-                            value={llRenew.advanceAmount}
-                            onChange={(e) => setLlRenew((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            value={serviceAccountingMap["LL Renew Class"]?.advancePayment || ""}
+                            onChange={(e) => updateServiceAccounting("LL Renew Class", "advancePayment", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
                           />
                         </div>
@@ -4292,7 +4472,22 @@ function ApplicationFormModal({
                     <input
                       type="checkbox"
                       checked={dlRenewRetest.enabled}
-                      onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setDlRenewRetest((prev) => ({ ...prev, enabled: checked }));
+                        if (checked) {
+                          setServiceAccountingMap((old) => ({
+                            ...old,
+                            "DL Renew + Retest": old["DL Renew + Retest"] || { totalAmount: 0, advancePayment: 0 },
+                          }));
+                        } else {
+                          setServiceAccountingMap((old) => {
+                            const next = { ...old };
+                            delete next["DL Renew + Retest"];
+                            return next;
+                          });
+                        }
+                      }}
                       className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span className="font-bold text-slate-900 text-xs">DL Renew + Retest</span>
@@ -4461,8 +4656,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter total amount"
-                            value={dlRenewRetest.totalAmount}
-                            onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, totalAmount: e.target.value }))}
+                            value={serviceAccountingMap["DL Renew + Retest"]?.totalAmount || ""}
+                            onChange={(e) => updateServiceAccounting("DL Renew + Retest", "totalAmount", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
                           />
                         </div>
@@ -4471,8 +4666,8 @@ function ApplicationFormModal({
                           <input
                             type="number"
                             placeholder="Enter advance amount"
-                            value={dlRenewRetest.advanceAmount}
-                            onChange={(e) => setDlRenewRetest((prev) => ({ ...prev, advanceAmount: e.target.value }))}
+                            value={serviceAccountingMap["DL Renew + Retest"]?.advancePayment || ""}
+                            onChange={(e) => updateServiceAccounting("DL Renew + Retest", "advancePayment", Number(e.target.value))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-emerald-700"
                           />
                         </div>
@@ -5119,35 +5314,114 @@ function ApplicationFormModal({
                     <p className="text-[11px] text-slate-400">Select any one HGV application option.</p>
                   </div>
                 </div>
-                <div className="flex gap-8 pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
-                    <input
-                      type="checkbox"
-                      checked={form5Details.form5Type === "new_hgv"}
-                      onChange={(e) => {
-                        setForm5Details(prev => ({ 
-                          ...prev, 
-                          form5Type: e.target.checked ? "new_hgv" : "" 
-                        }));
-                      }}
-                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>Form 5 New HGV</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
-                    <input
-                      type="checkbox"
-                      checked={form5Details.form5Type === "renew_hgv"}
-                      onChange={(e) => {
-                        setForm5Details(prev => ({ 
-                          ...prev, 
-                          form5Type: e.target.checked ? "renew_hgv" : "" 
-                        }));
-                      }}
-                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>Form 5A Renew HGV</span>
-                  </label>
+                <div className="flex flex-col gap-4 pt-2">
+                  <div className="flex flex-wrap gap-8">
+                    <div className="flex flex-col gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
+                        <input
+                          type="checkbox"
+                          checked={form5Details.form5Type === "new_hgv"}
+                          onChange={(e) => {
+                            setForm5Details(prev => ({ 
+                              ...prev, 
+                              form5Type: e.target.checked ? "new_hgv" : "" 
+                            }));
+                            if (e.target.checked) {
+                              setServiceAccountingMap((oldMap) => ({
+                                ...oldMap,
+                                "Form 5 New HGV": oldMap["Form 5 New HGV"] || { totalAmount: 0, advancePayment: 0 },
+                              }));
+                            } else {
+                              setServiceAccountingMap((oldMap) => {
+                                const newMap = { ...oldMap };
+                                delete newMap["Form 5 New HGV"];
+                                return newMap;
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Form 5 New HGV</span>
+                      </label>
+                      {form5Details.form5Type === "new_hgv" && (
+                        <div className="grid grid-cols-2 gap-2 mt-1 p-3 bg-blue-50/50 border border-blue-200 rounded-xl text-xs max-w-sm">
+                          <div>
+                            <span className="font-semibold text-slate-500 block text-[10px] mb-0.5">Total Amount (₹)</span>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={serviceAccountingMap["Form 5 New HGV"]?.totalAmount || ""}
+                              onChange={(e) => updateServiceAccounting("Form 5 New HGV", "totalAmount", Number(e.target.value))}
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-900 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <span className="font-semibold text-slate-500 block text-[10px] mb-0.5">Advance Payment (₹)</span>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={serviceAccountingMap["Form 5 New HGV"]?.advancePayment || ""}
+                              onChange={(e) => updateServiceAccounting("Form 5 New HGV", "advancePayment", Number(e.target.value))}
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-emerald-700 text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs select-none">
+                        <input
+                          type="checkbox"
+                          checked={form5Details.form5Type === "renew_hgv"}
+                          onChange={(e) => {
+                            setForm5Details(prev => ({ 
+                              ...prev, 
+                              form5Type: e.target.checked ? "renew_hgv" : "" 
+                            }));
+                            if (e.target.checked) {
+                              setServiceAccountingMap((oldMap) => ({
+                                ...oldMap,
+                                "Form 5A Renew HGV": oldMap["Form 5A Renew HGV"] || { totalAmount: 0, advancePayment: 0 },
+                              }));
+                            } else {
+                              setServiceAccountingMap((oldMap) => {
+                                const newMap = { ...oldMap };
+                                delete newMap["Form 5A Renew HGV"];
+                                return newMap;
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Form 5A Renew HGV</span>
+                      </label>
+                      {form5Details.form5Type === "renew_hgv" && (
+                        <div className="grid grid-cols-2 gap-2 mt-1 p-3 bg-blue-50/50 border border-blue-200 rounded-xl text-xs max-w-sm">
+                          <div>
+                            <span className="font-semibold text-slate-500 block text-[10px] mb-0.5">Total Amount (₹)</span>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={serviceAccountingMap["Form 5A Renew HGV"]?.totalAmount || ""}
+                              onChange={(e) => updateServiceAccounting("Form 5A Renew HGV", "totalAmount", Number(e.target.value))}
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-900 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <span className="font-semibold text-slate-500 block text-[10px] mb-0.5">Advance Payment (₹)</span>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={serviceAccountingMap["Form 5A Renew HGV"]?.advancePayment || ""}
+                              onChange={(e) => updateServiceAccounting("Form 5A Renew HGV", "advancePayment", Number(e.target.value))}
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-emerald-700 text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 

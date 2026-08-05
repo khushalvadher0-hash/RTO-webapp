@@ -174,6 +174,7 @@ function AccountingDashboardPage() {
   const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
   const [dailyReports, setDailyReports] = useState<DrivingSchoolDailyReport[]>([]);
   const [officeExpenses, setOfficeExpenses] = useState<OfficeExpense[]>([]);
+  const [dbEmployees, setDbEmployees] = useState<any[]>([]);
 
   // Subscriptions
   useEffect(() => {
@@ -200,6 +201,9 @@ function AccountingDashboardPage() {
       setDailyReports(list);
     });
     const unsubOfficeExpenses = subscribeOfficeExpenses(setOfficeExpenses);
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      setDbEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
 
     return () => {
       unsubFinance();
@@ -213,6 +217,7 @@ function AccountingDashboardPage() {
       unsubAcc();
       unsubReports();
       unsubOfficeExpenses();
+      unsubUsers();
     };
   }, []);
 
@@ -481,11 +486,11 @@ function AccountingDashboardPage() {
   // Unique lists for filters
   // Unique lists for filters
   const employees = useMemo(() => {
-    const set = new Set<string>();
-    v2Services.forEach((s) => s.assignedStaff && set.add(s.assignedStaff));
-    v2Clients.forEach((c) => c.assignee && set.add(c.assignee));
-    return Array.from(set);
-  }, [v2Services, v2Clients]);
+    const active = dbEmployees
+      .filter((e) => e.status === "active" || e.isActive !== false)
+      .map((e) => e.fullName || e.name || e.username || "");
+    return active.length > 0 ? active : STAFF_USERS.map((s) => s.name);
+  }, [dbEmployees]);
 
   const servicesList = useMemo(() => {
     const set = new Set<string>();

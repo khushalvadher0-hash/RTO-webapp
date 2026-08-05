@@ -329,6 +329,18 @@ let employeesCache: any[] = [];
 // Subscribe to users collection to dynamically maintain cache of names
 onSnapshot(collection(db, "users"), (snap) => {
   employeesCache = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+  
+  // Dynamically update STAFF_USERS to reflect only active users from DB
+  const dbActive = employeesCache
+    .filter((e) => e.status === "active" || e.isActive !== false)
+    .map((e) => ({
+      username: e.username || e.uid,
+      name: e.fullName || e.name || e.username,
+    }));
+  if (dbActive.length > 0) {
+    STAFF_USERS.length = 0;
+    STAFF_USERS.push(...dbActive);
+  }
 });
 
 export const staffLabel = (username?: string) => {
