@@ -377,31 +377,31 @@ function ApplicationsPage() {
   const filteredApps = applications.filter((app) => {
     if (activeSubModule === "driving_school") return false;
 
-    const isForm5App = app.subModule === "form5";
+    let appSubModule = app.subModule;
+    if (!appSubModule) {
+      const isForm5App = app.subModule === "form5";
+      const isLicenceApp =
+        app.subModule === "licence" ||
+        app.applicationType === "Licence" ||
+        (app.licenseDetails &&
+          (app.licenseDetails.newLearningLicence?.enabled ||
+            app.licenseDetails.dlNewLlEndorsement?.enabled ||
+            app.licenseDetails.llRenewClass?.enabled ||
+            app.licenseDetails.dlRenewRetest?.enabled ||
+            (app.licenseDetails.generalLicenceServices?.selectedServices &&
+              app.licenseDetails.generalLicenceServices.selectedServices.length > 0)));
+      const isInsuranceApp =
+        app.subModule === "insurance" ||
+        (app.services || []).includes("Insurance");
 
-    const isLicenceApp =
-      app.subModule === "licence" ||
-      app.applicationType === "Licence" ||
-      (app.licenseDetails &&
-        (app.licenseDetails.newLearningLicence?.enabled ||
-          app.licenseDetails.dlNewLlEndorsement?.enabled ||
-          app.licenseDetails.llRenewClass?.enabled ||
-          app.licenseDetails.dlRenewRetest?.enabled ||
-          (app.licenseDetails.generalLicenceServices?.selectedServices &&
-            app.licenseDetails.generalLicenceServices.selectedServices.length > 0)));
+      if (isForm5App) appSubModule = "form5";
+      else if (isLicenceApp) appSubModule = "licence";
+      else if (isInsuranceApp) appSubModule = "insurance";
+      else appSubModule = "services";
+    }
 
-    const isInsuranceApp =
-      app.subModule === "insurance" ||
-      (app.services || []).includes("Insurance");
-
-    if (activeSubModule === "form5") {
-      if (!isForm5App) return false;
-    } else if (activeSubModule === "licence") {
-      if (!isLicenceApp || isForm5App) return false;
-    } else if (activeSubModule === "insurance") {
-      if (!isInsuranceApp || isForm5App) return false;
-    } else if (activeSubModule === "services") {
-      if (isLicenceApp || isInsuranceApp || isForm5App) return false;
+    if (activeSubModule !== appSubModule) {
+      return false;
     }
 
     const term = searchTerm.toLowerCase();
@@ -1680,6 +1680,24 @@ function ApplicationFormModal({
     accounting: editingApp?.licenseDetails?.generalLicenceServices?.serviceAccounting || {},
   });
 
+  const [genDlNumber, setGenDlNumber] = useState(editingApp?.licenseDetails?.generalLicenceServices?.dlNumber || "");
+  const [genClassOfVehicle, setGenClassOfVehicle] = useState<string[]>(editingApp?.licenseDetails?.generalLicenceServices?.classOfVehicle || []);
+  const [genIssueDate, setGenIssueDate] = useState(editingApp?.licenseDetails?.generalLicenceServices?.issueDate || "");
+  const [genValidityDate, setGenValidityDate] = useState(editingApp?.licenseDetails?.generalLicenceServices?.validityDate || "");
+  const [genVehicleTypes, setGenVehicleTypes] = useState({
+    nt: editingApp?.licenseDetails?.generalLicenceServices?.vehicleTypes?.nt ?? false,
+    tr: editingApp?.licenseDetails?.generalLicenceServices?.vehicleTypes?.tr ?? false,
+    hazardous: editingApp?.licenseDetails?.generalLicenceServices?.vehicleTypes?.hazardous ?? false,
+  });
+  const [genNtValidity, setGenNtValidity] = useState(editingApp?.licenseDetails?.generalLicenceServices?.ntValidity || "");
+  const [genTrValidity, setGenTrValidity] = useState(editingApp?.licenseDetails?.generalLicenceServices?.trValidity || "");
+  const [genHazardousValidity, setGenHazardousValidity] = useState(editingApp?.licenseDetails?.generalLicenceServices?.hazardousValidity || "");
+  const [genHazardousTrainingValidity, setGenHazardousTrainingValidity] = useState(editingApp?.licenseDetails?.generalLicenceServices?.hazardousTrainingValidity || "");
+  const [genInternationalLicenceValidity, setGenInternationalLicenceValidity] = useState(editingApp?.licenseDetails?.generalLicenceServices?.internationalLicenceValidity || "");
+
+  const [showGenClassDropdown, setShowGenClassDropdown] = useState(false);
+  const [genCustomClassInput, setGenCustomClassInput] = useState("");
+
   const [form5Details, setForm5Details] = useState<Form5DetailsData>({
     form5Type: editingApp?.form5Details?.form5Type || "",
     name: editingApp?.form5Details?.name || editingApp?.ownerName || "",
@@ -2137,6 +2155,10 @@ function ApplicationFormModal({
 
   // Calculate dynamic totals
   const overallTotals = useMemo(() => {
+    if (activeSubModule === "licence" && isDrivingSchoolHolder) {
+      return { totalAmt: 0, totalAdv: 0, pending: 0, payStatus: "Driving School Holder" as any };
+    }
+
     let totalAmt = 0;
     let totalAdv = 0;
 
@@ -2185,6 +2207,7 @@ function ApplicationFormModal({
     return { totalAmt, totalAdv, pending, payStatus };
   }, [
     activeSubModule,
+    isDrivingSchoolHolder,
     newLL,
     dlEndorsement,
     llRenew,
@@ -2551,6 +2574,16 @@ function ApplicationFormModal({
             generalLicenceServices: {
               selectedServices: generalLicServices.selected,
               serviceAccounting: generalLicServices.accounting,
+              dlNumber: genDlNumber,
+              classOfVehicle: genClassOfVehicle,
+              issueDate: genIssueDate,
+              validityDate: genValidityDate,
+              vehicleTypes: genVehicleTypes,
+              ntValidity: genNtValidity,
+              trValidity: genTrValidity,
+              hazardousValidity: genHazardousValidity,
+              hazardousTrainingValidity: genHazardousTrainingValidity,
+              internationalLicenceValidity: genInternationalLicenceValidity,
             },
           } : undefined,
           form5Details: activeSubModule === "form5" ? form5Details : undefined,
@@ -4155,6 +4188,228 @@ function ApplicationFormModal({
                     );
                   })}
                 </div>
+
+                {/* 1. DL RECORD (Visible if any general service is selected) */}
+                {generalLicServices.selected.length > 0 && (
+                  <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-sm text-xs">
+                    <div className="flex items-center gap-2 font-bold text-blue-900">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span>
+                      <span className="uppercase tracking-wider">DL RECORD</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">DL NUMBER</label>
+                        <input
+                          type="text"
+                          placeholder="GJ01 20260001234"
+                          value={genDlNumber}
+                          onChange={(e) => setGenDlNumber(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                        />
+                      </div>
+                      <div className="relative">
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">CLASS OF VEHICLE</label>
+                        <div 
+                          className="min-h-[42px] p-1.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-1.5 items-center cursor-pointer select-none text-xs"
+                          onClick={() => setShowGenClassDropdown(!showGenClassDropdown)}
+                        >
+                          {(genClassOfVehicle || []).length === 0 ? (
+                            <span className="text-slate-400 pl-2 text-[11px]">Select Class of Vehicle...</span>
+                          ) : (
+                            (genClassOfVehicle || []).map((val: string) => (
+                              <span 
+                                key={val} 
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-lg border border-blue-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const next = (genClassOfVehicle || []).filter((v: string) => v !== val);
+                                  setGenClassOfVehicle(next);
+                                }}
+                              >
+                                {val}
+                                <span className="text-blue-500 hover:text-blue-700 font-bold ml-0.5">×</span>
+                              </span>
+                            ))
+                          )}
+                        </div>
+
+                        {showGenClassDropdown && (
+                          <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-[250px] overflow-y-auto">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {suggestedClasses.map((item) => {
+                                const isSelected = (genClassOfVehicle || []).includes(item);
+                                return (
+                                  <label 
+                                    key={item} 
+                                    className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer font-semibold text-[11px] transition-all select-none ${
+                                      isSelected ? "bg-blue-50 border-blue-200 text-blue-900" : "bg-slate-50 border-slate-100 hover:bg-slate-100 text-slate-700"
+                                    }`}
+                                  >
+                                    <input 
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const next = e.target.checked 
+                                          ? [...(genClassOfVehicle || []), item]
+                                          : (genClassOfVehicle || []).filter((v: string) => v !== item);
+                                        setGenClassOfVehicle(next);
+                                      }}
+                                      className="w-3.5 h-3.5 text-blue-600 rounded"
+                                    />
+                                    <span>{item}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+
+                            <div className="border-t pt-2 flex gap-2">
+                              <input 
+                                type="text"
+                                placeholder="Add custom..."
+                                value={genCustomClassInput}
+                                onChange={(e) => setGenCustomClassInput(e.target.value.toUpperCase())}
+                                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const cleaned = genCustomClassInput.trim();
+                                  if (cleaned && !suggestedClasses.includes(cleaned)) {
+                                    const nextSuggested = [...suggestedClasses, cleaned];
+                                    setSuggestedClasses(nextSuggested);
+                                    localStorage.setItem("custom_vehicle_classes", JSON.stringify(nextSuggested));
+                                    
+                                    const nextSelected = [...(genClassOfVehicle || []), cleaned];
+                                    setGenClassOfVehicle(nextSelected);
+                                    setGenCustomClassInput("");
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                              >
+                                + Add
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">ISSUE DATE</label>
+                        <input
+                          type="date"
+                          value={genIssueDate}
+                          onChange={(e) => setGenIssueDate(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">VALIDITY</label>
+                        <input
+                          type="date"
+                          value={genValidityDate}
+                          onChange={(e) => setGenValidityDate(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Vehicle Type Checkboxes */}
+                    <div className="pt-2 border-t border-slate-100">
+                      <label className="font-semibold text-slate-500 text-[10px] block mb-2 uppercase">VEHICLE TYPE</label>
+                      <div className="flex gap-6">
+                        {["NT", "TR", "Hazardous"].map((vt) => {
+                          const k = vt.toLowerCase() as "nt" | "tr" | "hazardous";
+                          return (
+                            <label key={vt} className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 text-xs select-none">
+                              <input
+                                type="checkbox"
+                                checked={genVehicleTypes[k]}
+                                onChange={(e) => setGenVehicleTypes(prev => ({ ...prev, [k]: e.target.checked }))}
+                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span>{vt}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Validity Dates for NT, TR, Hazardous */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                      {genVehicleTypes.nt && (
+                        <div>
+                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">NT Validity Date</label>
+                          <input
+                            type="date"
+                            value={genNtValidity}
+                            onChange={(e) => setGenNtValidity(e.target.value)}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                          />
+                        </div>
+                      )}
+                      {genVehicleTypes.tr && (
+                        <div>
+                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">TR Validity Date</label>
+                          <input
+                            type="date"
+                            value={genTrValidity}
+                            onChange={(e) => setGenTrValidity(e.target.value)}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                          />
+                        </div>
+                      )}
+                      {genVehicleTypes.hazardous && (
+                        <div>
+                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">Hazardous Validity Date</label>
+                          <input
+                            type="date"
+                            value={genHazardousValidity}
+                            onChange={(e) => setGenHazardousValidity(e.target.value)}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-red-600"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. HAZARDOUS TRAINING CARD */}
+                {generalLicServices.selected.includes("Hazardous Training Card") && (
+                  <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-3 shadow-sm text-xs">
+                    <h4 className="font-bold text-slate-800 uppercase tracking-wide">HAZARDOUS TRAINING CARD</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">VALIDITY</label>
+                        <input
+                          type="date"
+                          value={genHazardousTrainingValidity}
+                          onChange={(e) => setGenHazardousTrainingValidity(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. INTERNATIONAL LICENCE */}
+                {generalLicServices.selected.includes("International Licence") && (
+                  <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-3 shadow-sm text-xs">
+                    <h4 className="font-bold text-slate-800 uppercase tracking-wide">INTERNATIONAL LICENCE</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">VALIDITY</label>
+                        <input
+                          type="date"
+                          value={genInternationalLicenceValidity}
+                          onChange={(e) => setGenInternationalLicenceValidity(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Change Date Of Birth Note Box */}
                 {generalLicServices.selected.includes("Change Date Of Birth In DL") && (
@@ -6690,7 +6945,7 @@ function ApplicationFormModal({
           </div>
 
           {/* NEW 9. Service Accounting & Invoice Details Section */}
-          {selectedServices.length > 0 && (
+          {selectedServices.length > 0 && !isDrivingSchoolHolder && (
             <div className="bg-white p-6 rounded-2xl border border-blue-200 shadow-sm space-y-4 bg-blue-50/20">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-3">

@@ -146,6 +146,8 @@ export interface Task {
   reference?: string;
   vehicleNumber?: string;
   applicationDocId?: string;
+  subModule?: string;
+  parentApplicationId?: string;
 }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
@@ -561,8 +563,12 @@ export async function markTaskAsRead(
  * Subscribe to live task updates.
  * Returns an unsubscribe function for useEffect cleanup.
  */
-export function subscribeToTasks(cb: (tasks: Task[]) => void): () => void {
-  const q = query(collection(db, COL), orderBy("createdAt", "desc"));
+export function subscribeToTasks(subModule: string, cb: (tasks: Task[]) => void): () => void {
+  const q = query(
+    collection(db, COL),
+    where("subModule", "==", subModule),
+    orderBy("createdAt", "desc")
+  );
   return onSnapshot(
     q,
     (snap) => {
@@ -575,12 +581,22 @@ export function subscribeToTasks(cb: (tasks: Task[]) => void): () => void {
     (err) => {
       console.warn("subscribeToTasks orderBy failed, falling back to simple query:", err);
       // Fallback query without orderBy to ensure tasks are always loaded even if index is building
-      return onSnapshot(
+      const fallbackQ = query(
         collection(db, COL),
+        where("subModule", "==", subModule)
+      );
+      return onSnapshot(
+        fallbackQ,
         (snap) => {
           const tasks = snap.docs
             .map((d) => ({ id: d.id, ...d.data() }) as Task)
             .filter((t) => !t.isDeleted);
+          // Sort by createdAt descending in memory
+          tasks.sort((a, b) => {
+            const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return db - da;
+          });
           cb(tasks);
         },
         (fallbackErr) => {
@@ -647,6 +663,8 @@ export interface CreateTaskInput {
   remarks?: string;
   appointmentDate?: string;
   applicationId?: string;
+  applicationType?: string;
+  subModule?: string;
 }
 
 export async function resolveAssigneeIdentity(input: string): Promise<{
@@ -762,6 +780,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     remarks: input.description ?? "",
     activityLog: [initActivity],
     applicationId: input.applicationId,
+    subModule: input.subModule,
   };
 
   try {
@@ -800,6 +819,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
       remarks: task.remarks,
       activityLog: task.activityLog,
       applicationId: task.applicationId,
+      subModule: task.subModule,
       // Conditionally include optional fields only if they have values
       ...(task.dueDate ? { dueDate: task.dueDate } : {}),
       ...(task.reminderMinutes !== undefined ? { reminderMinutes: task.reminderMinutes } : {}),

@@ -449,6 +449,46 @@ export function ApplicationFullDetailsModal({
               </div>
             </div>
           </div>
+
+          {/* Section 8: Timeline & Activity Log */}
+          <div className="bg-white rounded-xl border p-4 shadow-sm space-y-3">
+            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm border-b pb-2">
+              <Activity className="size-4 text-rose-600" />
+              <span>8. Timeline & Activity Log</span>
+            </div>
+            <div className="space-y-3">
+              {(app.activityLogs ?? []).length === 0 && (app.activity ?? []).length === 0 ? (
+                <p className="text-slate-400 italic text-[11px]">No activity history yet.</p>
+              ) : (
+                <ol className="relative border-l border-slate-200 pl-4 space-y-4">
+                  {(app.activityLogs ?? []).length > 0
+                    ? (app.activityLogs ?? []).map((log: any, idx: number) => (
+                        <li key={log.id || idx} className="text-xs relative">
+                          <span className="absolute -left-[21px] mt-1 w-2 h-2 rounded-full bg-rose-500" />
+                          <div className="font-semibold text-slate-800 leading-tight">{log.action}</div>
+                          {log.field && (log.oldValue !== undefined || log.newValue !== undefined) && (
+                            <div className="text-slate-500 mt-0.5 font-medium">
+                              {log.field}: <span className="line-through text-slate-400">{log.oldValue || "—"}</span> → <span className="font-semibold text-slate-700">{log.newValue || "—"}</span>
+                            </div>
+                          )}
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            {log.actor} • {new Date(log.timestamp).toLocaleString("en-IN")}
+                          </div>
+                        </li>
+                      ))
+                    : (app.activity ?? []).map((a: any, idx: number) => (
+                        <li key={a.id || idx} className="text-xs relative">
+                          <span className="absolute -left-[21px] mt-1 w-2 h-2 rounded-full bg-rose-500" />
+                          <div className="text-slate-800 leading-tight">{a.message}</div>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            {a.actor} • {new Date(a.at).toLocaleString("en-IN")}
+                          </div>
+                        </li>
+                      ))}
+                </ol>
+              )}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

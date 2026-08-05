@@ -355,7 +355,7 @@ function TasksPage() {
   }, [location.search]);
 
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
-  const [query, setQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
@@ -378,7 +378,7 @@ function TasksPage() {
   const [savingRemark, setSavingRemark] = useState(false);
 
   useEffect(() => {
-    const u1 = subscribeToTasks(setTasks);
+    const u1 = subscribeToTasks(activeSubModule, setTasks);
     const u2 = subscribeToAllClients((items) => {
       const parsedClients = items.filter((c) => c.type === "client").map((c) => ({
         ...c,
@@ -403,11 +403,11 @@ function TasksPage() {
     const u5 = onSnapshot(collection(db, "users"), (snap) => {
       setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    const u6 = onSnapshot(collection(db, "registry_services_v2"), (snap) => {
+    const u6 = onSnapshot(query(collection(db, "registry_services_v2"), where("subModule", "==", activeSubModule)), (snap) => {
       const services = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setV2Services(services);
     });
-    const u7 = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
+    const u7 = onSnapshot(query(collection(db, "registry_applications_v1"), where("subModule", "==", activeSubModule)), (snap) => {
       const apps = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setApplications(apps);
     });
@@ -421,37 +421,27 @@ function TasksPage() {
       u7();
       u8();
     };
-  }, []);
+  }, [activeSubModule]);
 
   const allTasks = useMemo(() => {
-    // 1. Get manual tasks enriched with service info & application subModule
-    const manualTasksMapped = tasks.map((t) => {
-      const svc = v2Services.find(
-        (s: any) =>
-          s.id === (t as any).serviceId ||
-          s.id === t.id ||
-          (s.vehicleId === t.vehicleId && s.serviceType === t.serviceName),
-      );
-
-      const cleanVeh = t.vehicleNumber || t.vehicleId;
-      const cleanVehNo = cleanVeh ? cleanVeh.trim().toUpperCase().replace(/[\s-]/g, "") : "";
-
-      const linkedApp = applications.find((a: any) => {
-        const aAppId = a.applicationId ? a.applicationId.trim().toUpperCase() : "";
-        const tAppId = t.applicationId ? t.applicationId.trim().toUpperCase() : "";
-        const aVeh = a.vehicleNumber ? a.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "") : "";
-        
+    // Helper to get linked application
+    const getLinkedApp = (t: any) => {
+      const tDocId = t.applicationDocId || t.parentApplicationId || "";
+      return applications.find((a: any) => {
         return (
-          (tAppId && aAppId === tAppId) ||
-          a.id === (t as any).recordId ||
-          a.id === (t as any).applicationDocId ||
+          (tDocId && a.id === tDocId) ||
           (t.id && t.id.replace("task-app-", "") === a.id) ||
-          (cleanVehNo && aVeh === cleanVehNo)
+          a.taskId === t.id
         );
       });
+    };
 
+    // 1. Get manual tasks enriched with service info & application subModule
+    const manualTasksMapped = tasks.map((t) => {
+      const linkedApp = getLinkedApp(t);
+      
       // If task is linked to an application but the application has been deleted, exclude it
-      const isLinkedToApp = !!(t.applicationId || (t as any).applicationDocId || t.id.startsWith("task-app-") || (t as any).recordId?.startsWith("task-app-"));
+      const isLinkedToApp = !!(t.applicationId || (t as any).applicationDocId || (t as any).parentApplicationId || t.id.startsWith("task-app-"));
       if (isLinkedToApp && !linkedApp) {
         return null;
       }
@@ -459,7 +449,7 @@ function TasksPage() {
       const resolvedSubModule =
         (t as any).subModule ||
         linkedApp?.subModule ||
-        (linkedApp?.licenseDetails ? "licence" : linkedApp ? "services" : undefined);
+        (linkedApp?.licenseDetails ? "licence" : linkedApp ? "services" : "services"); // Default to services if not specified
 
       return {
         ...t,
@@ -480,43 +470,32 @@ function TasksPage() {
 
     // 2. Generate task objects dynamically from registry_services_v2 joined with vehicles and clients/leads
     const serviceTasks: Task[] = v2Services.map((s: any) => {
-      const isLicense = s.serviceType === "License New" || s.serviceType === "License Renew";
-      const vehicle = s.vehicleId ? vehicles.find((v) => v.id === s.vehicleId) : null;
-      const vehicleNo = vehicle?.vehicleNumber || "";
-      const clientId = s.clientId || vehicle?.clientId || "";
-      const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
-
-      const cleanVehNo = vehicleNo ? vehicleNo.trim().toUpperCase().replace(/[\s-]/g, "") : "";
-      const linkedApp = applications.find((a: any) => {
-        const aAppId = a.applicationId ? a.applicationId.trim().toUpperCase() : "";
-        const sAppId = s.applicationId ? s.applicationId.trim().toUpperCase() : "";
-        const aVeh = a.vehicleNumber ? a.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "") : "";
-        
-        return (
-          (sAppId && aAppId === sAppId) ||
-          a.id === s.id ||
-          a.id === s.recordId ||
-          (s.id && s.id.replace("task-app-", "") === a.id) ||
-          (cleanVehNo && aVeh === cleanVehNo)
-        );
-      });
-
       if (s.id?.startsWith("task-app-")) {
         return null;
       }
-
       if (!s.title && !s.serviceType && !s.serviceName) {
         return null;
       }
 
-      // If task is linked to an application but the application has been deleted, exclude it
+      const linkedApp = getLinkedApp(s);
       const isLinkedToApp = !!(s.applicationId || s.id?.startsWith("task-app-") || s.recordId?.startsWith("task-app-") || s.applicationDocId?.startsWith("task-app-"));
       if (isLinkedToApp && !linkedApp) {
         return null;
       }
 
+      const vehicle = s.vehicleId ? vehicles.find((v) => v.id === s.vehicleId) : null;
+      const vehicleNo = vehicle?.vehicleNumber || "";
+      const clientId = s.clientId || vehicle?.clientId || "";
+      const client = clients.find((c) => c.id === clientId) || leads.find((l) => l.id === clientId);
+
+      const resolvedSubModule =
+        s.subModule ||
+        linkedApp?.subModule ||
+        (linkedApp?.licenseDetails ? "licence" : linkedApp ? "services" : "services");
+
       const clientName = linkedApp?.ownerName || client?.name || s.clientName || "Unknown Client";
       const mobNo = linkedApp?.mobileNumber || s.mobileNumber || s.phone || client?.mo || "";
+      const isLicense = s.serviceType === "License New" || s.serviceType === "License Renew" || resolvedSubModule === "licence";
       const taskTitle = s.title || (isLicense ? `${s.serviceType || "License Service"} - ${clientName}` : `${s.serviceType || "Service"} - ${vehicleNo || "—"}`);
       const taskDesc = s.description || (isLicense ? `Client: ${clientName}. Status: ${s.taskStatus || s.status || "Pending"}. Notes: ${s.notes || s.remarks || "—"}` : `Vehicle: ${vehicleNo || "—"}. Status: ${s.taskStatus || s.status || "Pending"}. Remarks: ${s.remarks || "—"}`);
 
@@ -548,7 +527,7 @@ function TasksPage() {
         applicationId: s.applicationId || linkedApp?.applicationId || "",
         applicationType: s.applicationType || linkedApp?.applicationType || "",
         appointmentDate: s.appointmentDate || s.dueDate || "",
-        subModule: linkedApp?.subModule || (linkedApp?.licenseDetails ? "licence" : undefined),
+        subModule: resolvedSubModule,
         licenseDetails: linkedApp?.licenseDetails,
         amount: linkedApp?.amount ?? s.serviceAmount ?? 0,
         totalPaid: linkedApp?.totalPaid ?? s.amountReceived ?? 0,
@@ -615,38 +594,36 @@ function TasksPage() {
       } as any);
     });
 
-    // Map strictly by Application ID or Task ID to guarantee 1 task row per Application ID
+    // Map strictly by unique immutable applicationDocId or Task ID to prevent duplicates
     const map = new Map<string, Task>();
 
-    const getAppKeys = (item: any): string[] => {
-      const keys: string[] = [];
-      if (item.applicationId) keys.push(`app-${item.applicationId}`);
-      if (item.applicationDocId) keys.push(`app-doc-${item.applicationDocId}`);
+    const getMergeKey = (item: any): string => {
+      const linkedApp = getLinkedApp(item);
+      if (linkedApp) {
+        return `app-doc-${linkedApp.id}`;
+      }
+      const appDocId = item.applicationDocId || item.parentApplicationId || "";
+      if (appDocId) {
+        return `app-doc-${appDocId}`;
+      }
       if (item.id && typeof item.id === "string" && item.id.startsWith("task-app-")) {
-        keys.push(`app-doc-${item.id.replace("task-app-", "")}`);
+        return `app-doc-${item.id.replace("task-app-", "")}`;
       }
-      if (item.recordId && typeof item.recordId === "string" && item.recordId.startsWith("task-app-")) {
-        keys.push(`app-doc-${item.recordId.replace("task-app-", "")}`);
-      }
-      return keys;
+      return `task-${item.id}`;
     };
 
-    // 1. First add application-generated tasks (primary single source of truth for application tasks)
+    // 1. First add application-generated tasks
     appTasks.forEach((appTask: any) => {
-      const keys = getAppKeys(appTask);
-      const primaryKey = keys[0] || appTask.id;
-      keys.forEach((k) => map.set(k, appTask));
-      if (!keys.length) map.set(primaryKey, appTask);
+      const key = getMergeKey(appTask);
+      map.set(key, appTask);
     });
 
-    // 2. Add manual tasks & service tasks, merging into existing application task if Application ID matches
+    // 2. Add manual tasks & service tasks, merging into existing application task if Application Doc ID matches
     [...manualTasksMapped.filter(Boolean), ...serviceTasks.filter(Boolean)].forEach((item: any) => {
-      const keys = getAppKeys(item);
-      const existingKey = keys.find((k) => map.has(k));
+      const key = getMergeKey(item);
 
-      if (existingKey) {
-        // Merge attributes into existing application task
-        const existing = map.get(existingKey)!;
+      if (map.has(key)) {
+        const existing = map.get(key)!;
         const merged = {
           ...existing,
           ...item,
@@ -660,18 +637,15 @@ function TasksPage() {
           applicationType: item.applicationType || existing.applicationType,
           vehicleNumber: existing.vehicleNumber || item.vehicleNumber,
           clientName: existing.clientName || item.clientName,
+          subModule: item.subModule || existing.subModule || "services",
         };
-        keys.forEach((k) => map.set(k, merged));
+        map.set(key, merged);
       } else {
-        const primaryKey = keys[0] || item.taskId || item.id;
-        keys.forEach((k) => map.set(k, item));
-        if (!keys.length) map.set(primaryKey, item);
+        map.set(key, item);
       }
     });
 
-    // Return all unique tasks (even completed ones)
-    const uniqueValues = Array.from(new Set(map.values()));
-    return uniqueValues;
+    return Array.from(map.values());
   }, [tasks, v2Services, vehicles, clients, leads, applications]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
@@ -710,57 +684,11 @@ function TasksPage() {
     let list = baseList;
 
     if (activeSubModule === "driving_school") return [];
-    if (activeSubModule === "form5") {
-      list = list.filter((t) => {
-        if ((t as any).subModule) return (t as any).subModule === "form5";
-        const linked = applications.find(
-          (a: any) =>
-            (t.applicationId && a.applicationId === t.applicationId) ||
-            a.id === (t as any).recordId ||
-            a.id === (t as any).applicationDocId
-        );
-        if (linked) return linked.subModule === "form5";
-        return false;
-      });
-    } else if (activeSubModule === "insurance") {
-      list = list.filter((t) => {
-        if ((t as any).subModule) return (t as any).subModule === "insurance";
-        const linked = applications.find(
-          (a: any) =>
-            (t.applicationId && a.applicationId === t.applicationId) ||
-            a.id === (t as any).recordId ||
-            a.id === (t as any).applicationDocId
-        );
-        if (linked) return linked.subModule === "insurance";
-        return (t.applicationType || "").toLowerCase() === "insurance";
-      });
-    } else if (activeSubModule === "licence") {
-      list = list.filter((t) => {
-        if ((t as any).subModule) return (t as any).subModule === "licence";
-        if ((t as any).licenseDetails) return true;
-        const linked = applications.find(
-          (a: any) =>
-            (t.applicationId && a.applicationId === t.applicationId) ||
-            a.id === (t as any).recordId ||
-            a.id === (t as any).applicationDocId
-        );
-        if (linked) return linked.subModule === "licence" || !!linked.licenseDetails;
-        return (t.applicationType || "").toLowerCase() === "licence";
-      });
-    } else {
-      list = list.filter((t) => {
-        if ((t as any).subModule) return (t as any).subModule === "services";
-        if ((t as any).licenseDetails) return false;
-        const linked = applications.find(
-          (a: any) =>
-            (t.applicationId && a.applicationId === t.applicationId) ||
-            a.id === (t as any).recordId ||
-            a.id === (t as any).applicationDocId
-        );
-        if (linked) return linked.subModule !== "licence" && linked.subModule !== "insurance" && linked.subModule !== "form5" && !linked.licenseDetails;
-        return (t.applicationType || "").toLowerCase() !== "licence" && (t.applicationType || "").toLowerCase() !== "insurance" && (t.applicationType || "").toLowerCase() !== "form5";
-      });
-    }
+
+    list = list.filter((t) => {
+      const tSub = (t as any).subModule || "services";
+      return tSub === activeSubModule;
+    });
 
     console.log("🐛 [DEBUG TASKS] --- Filtering Start ---");
     console.log("🐛 Current User Session:", session);
@@ -772,8 +700,8 @@ function TasksPage() {
       console.log(`  - Task: "${t.title}" | Assignee: "${t.assignee}" | Assigned ID: "${t.assignedEmployeeId}" | Assigned Name: "${t.assignedEmployeeName}"`);
     });
 
-    if (query.trim()) {
-      const q = query.toLowerCase();
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
       list = list.filter((t) => {
         const info = getTaskInfoHelper(t, clients, leads, vehicles);
         const titleMatch = t.title.toLowerCase().includes(q);
@@ -862,7 +790,7 @@ function TasksPage() {
   }, [
     baseList,
     session,
-    query,
+    searchQuery,
     statusFilter,
     priorityFilter,
     assigneeFilter,
@@ -1216,8 +1144,8 @@ function TasksPage() {
               <Input
                 className="pl-9"
                 placeholder="Search by Vehicle No, Application No, Client Name, Reference, Employee, Phone…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
@@ -1412,8 +1340,8 @@ function TasksPage() {
               <Input
                 className="pl-9"
                 placeholder="Search tasks by title, description, assignee…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
@@ -1614,6 +1542,7 @@ function TasksPage() {
         employees={employees}
         actor={session?.username ?? "system"}
         isAdmin={!!isAdmin}
+        activeSubModule={activeSubModule}
       />
 
       {detailsTask && (
@@ -2729,6 +2658,7 @@ function TaskFormDialog({
   employees,
   actor,
   isAdmin,
+  activeSubModule,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2739,6 +2669,7 @@ function TaskFormDialog({
   employees: any[];
   actor: string;
   isAdmin: boolean;
+  activeSubModule: SubModuleType;
 }) {
   const [title, setTitle] = useState("");
   const [serviceName, setServiceName] = useState("");
@@ -2945,6 +2876,7 @@ function TaskFormDialog({
             remarks: remarks.trim(),
             applicationId: applicationId.trim(),
             applicationType: applicationType,
+            subModule: activeSubModule,
           },
           actor,
           "Task edited",
@@ -2974,6 +2906,7 @@ function TaskFormDialog({
           remarks: remarks.trim(),
           applicationId: applicationId.trim(),
           applicationType: applicationType,
+          subModule: activeSubModule,
         });
       }
       onClose();

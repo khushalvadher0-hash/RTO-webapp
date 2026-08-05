@@ -456,7 +456,10 @@ function AccountingDashboardPage() {
     applications.forEach((app) => {
       const appKey = `app-fin-${app.id}`;
       const srvList = app.services || [];
-      const appServicesStr = srvList.length > 0 ? srvList.join(", ") : "General Service";
+      const isDrivingSchoolHolder = app.subModule === "licence" && !!app.licenseDetails?.isDrivingSchoolHolder;
+      const appServicesStr = isDrivingSchoolHolder 
+        ? `[Driving School Holder] ${srvList.length > 0 ? srvList.join(", ") : "General Service"}`
+        : (srvList.length > 0 ? srvList.join(", ") : "General Service");
 
       const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
 
@@ -524,18 +527,30 @@ function AccountingDashboardPage() {
         }
       }
 
-      const rtoReceipt = acc?.rtoReceipt !== undefined ? Number(acc.rtoReceipt) : 0;
-      const rtoExpense = acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : (Number(app.rtoExpense) || 0);
-      const totalCharges = acc?.totalCharges !== undefined ? Number(acc.totalCharges) : totAmt;
-      const advancePaid = acc?.advancePaid !== undefined ? Number(acc.advancePaid) : totPaid;
-      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
-      const profit = outstanding - rtoExpense;
+      const rtoReceipt = isDrivingSchoolHolder ? 0 : (acc?.rtoReceipt !== undefined ? Number(acc.rtoReceipt) : 0);
+      const rtoExpense = isDrivingSchoolHolder ? 0 : (acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : (Number(app.rtoExpense) || 0));
+      const totalCharges = isDrivingSchoolHolder ? 0 : (acc?.totalCharges !== undefined ? Number(acc.totalCharges) : totAmt);
+      const advancePaid = isDrivingSchoolHolder ? 0 : (acc?.advancePaid !== undefined ? Number(acc.advancePaid) : totPaid);
+      const outstanding = isDrivingSchoolHolder ? 0 : Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const profit = isDrivingSchoolHolder ? 0 : (outstanding - rtoExpense);
 
       const balAmt = outstanding;
-      const paymentStatus = acc?.paymentStatus ?? (balAmt === 0 && totalCharges > 0 ? "Paid" : advancePaid > 0 ? "Partially Paid" : "Pending");
+      const paymentStatus = isDrivingSchoolHolder ? "Driving School Holder" : (acc?.paymentStatus ?? (balAmt === 0 && totalCharges > 0 ? "Paid" : advancePaid > 0 ? "Partially Paid" : "Pending"));
 
       const srvCount = srvList.length;
       const serviceList = srvList.map((srv: string) => {
+        if (isDrivingSchoolHolder) {
+          return {
+            id: `${app.id}-${srv}`,
+            serviceType: srv,
+            amount: 0,
+            received: 0,
+            outstanding: 0,
+            status: "Driving School Holder",
+            dueDate: app.createdAt?.slice(0, 10) || "",
+          };
+        }
+
         let srvAmount = 0;
         let srvReceived = 0;
 
@@ -1972,7 +1987,9 @@ function AccountingDashboardPage() {
                                       ? "bg-amber-100 text-amber-800"
                                       : r.paymentStatus === "Pending Invoice"
                                         ? "bg-slate-100 text-slate-500"
-                                        : "bg-orange-100 text-orange-800"
+                                        : r.paymentStatus === "Driving School Holder"
+                                          ? "bg-blue-100 text-blue-850 border border-blue-200"
+                                          : "bg-orange-100 text-orange-800"
                                 }`}>
                                   {r.paymentStatus}
                                 </span>
