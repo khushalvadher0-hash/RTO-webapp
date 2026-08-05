@@ -24,6 +24,7 @@ import {
   Printer,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from "lucide-react";
 import {
   subscribeApplications,
@@ -54,6 +55,7 @@ import { getInsuranceGstPercentage } from "@/lib/capitalize-settings";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Timestamp } from "firebase/firestore";
+import { useApplicationAutoFill } from "@/hooks/useApplicationAutoFill";
 
 const toDateString = (ts: any) => {
   if (!ts) return "";
@@ -806,7 +808,7 @@ function ApplicationsPage() {
               ) : (
                 filteredApps.map((app, index) => {
                   if (activeSubModule === "form5") {
-                    const fd = app.form5Details || {};
+                    const fd = (app.form5Details || {}) as Form5DetailsData;
                     const nameVal = fd.name || "—";
                     const dobVal = fd.dateOfBirth || "—";
                     const appNoVal = fd.applicationNo || "—";
@@ -845,9 +847,6 @@ function ApplicationsPage() {
                             <button
                               onClick={() => {
                                 setEditingApp(app);
-                                if (app.form5Details) {
-                                  setForm5Details(app.form5Details);
-                                }
                                 setIsModalOpen(true);
                               }}
                               className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600 transition-all"
@@ -1524,6 +1523,7 @@ function ApplicationFormModal({
 
   const gstPercentage = getInsuranceGstPercentage();
   const [showLicenseDocsSection, setShowLicenseDocsSection] = useState(true);
+  const [newGroupInput, setNewGroupInput] = useState("");
 
   // Driving School State
   const [courseTypes] = useState<string[]>(() => {
@@ -1852,6 +1852,332 @@ function ApplicationFormModal({
   const [assignedEmployee, setAssignedEmployee] = useState(editingApp?.assignedEmployeeName || "");
   const [activeEmployees, setActiveEmployees] = useState<{ id: string; name: string }[]>([]);
 
+  // 1. Vahaan Auto Fill
+  const vahaanAutoFill = useApplicationAutoFill({
+    subModule: "services",
+    lookupValues: vehicleNumber,
+    isEditing: !!editingApp,
+    onFill: (match) => {
+      if (match.mobileNumber) setPhone(match.mobileNumber);
+      if (match.ownerName) setOwnerName(match.ownerName);
+      
+      const v = match.vehicleDetails || {};
+      if (v.fatherHusbandName) setFatherHusbandName(v.fatherHusbandName);
+      if (v.coName) setCoName(v.coName);
+      if (v.groupName) setGroupName(v.groupName);
+      if (v.address) setAddress(v.address);
+      if (v.registrationDate) setRegistrationDate(v.registrationDate);
+      if (v.chassisNumber) setChassisNumber(v.chassisNumber);
+      if (v.engineNumber) setEngineNumber(v.engineNumber);
+      if (v.fuelType) setFuelType(v.fuelType);
+      if (v.vehicleClass) setVehicleClass(v.vehicleClass);
+      if (v.makerName) setMakerName(v.makerName);
+      if (v.modelName) setModelName(v.modelName);
+      if (v.colour) setColour(v.colour);
+      if (v.bodyType) setBodyType(v.bodyType);
+      if (v.seatingCapacity !== undefined) setSeatingCapacity(v.seatingCapacity);
+      if (v.grossWeight !== undefined) setGrossWeight(v.grossWeight);
+      if (v.unladenWeight !== undefined) setUnladenWeight(v.unladenWeight);
+      if (v.payload !== undefined) setPayload(v.payload);
+      if (v.horsePower) setHorsePower(v.horsePower);
+      if (v.cylinderCount !== undefined) setCylinderCount(v.cylinderCount);
+      if (v.pucExpiryDate) setPucExpiryDate(v.pucExpiryDate);
+      
+      if (v.taxDetails) {
+        setIsLumpsumTax(v.taxDetails.isLumpsum || false);
+        if (v.taxDetails.issueDate) setTaxIssueDate(v.taxDetails.issueDate);
+        if (v.taxDetails.expiryDate) setTaxExpiryDate(v.taxDetails.expiryDate);
+        if (v.taxDetails.amount !== undefined) setTaxAmount(v.taxDetails.amount);
+      }
+      
+      if (v.fitnessDetails) {
+        if (v.fitnessDetails.issueDate) setFitnessIssueDate(v.fitnessDetails.issueDate);
+        if (v.fitnessDetails.expiryDate) setFitnessExpiryDate(v.fitnessDetails.expiryDate);
+      }
+      
+      if (v.insuranceDetails) {
+        if (v.insuranceDetails.company) setInsuranceCompany(v.insuranceDetails.company);
+        if (v.insuranceDetails.policyNumber) setInsurancePolicyNo(v.insuranceDetails.policyNumber);
+        if (v.insuranceDetails.policyType) setInsurancePolicyType(v.insuranceDetails.policyType);
+        if (v.insuranceDetails.issueDate) setInsuranceIssueDate(v.insuranceDetails.issueDate);
+        if (v.insuranceDetails.expiryDate) setInsuranceExpiryDate(v.insuranceDetails.expiryDate);
+        if (v.insuranceDetails.amount !== undefined) setInsuranceAmount(v.insuranceDetails.amount);
+        if (v.insuranceDetails.insurancePlace) setInsurancePlace(v.insuranceDetails.insurancePlace);
+        if (v.insuranceDetails.policySubCategory) setPolicySubCategory(v.insuranceDetails.policySubCategory);
+        if (v.insuranceDetails.vehicleType) setInsVehicleType(v.insuranceDetails.vehicleType);
+      }
+      
+      if (v.permitDetails) {
+        if (v.permitDetails.gujaratPermitIssueDate) setGujaratPermitIssueDate(v.permitDetails.gujaratPermitIssueDate);
+        if (v.permitDetails.gujaratPermitExpiryDate) setGujaratPermitExpiryDate(v.permitDetails.gujaratPermitExpiryDate);
+        if (v.permitDetails.nationalPermitIssueDate) setNationalPermitIssueDate(v.permitDetails.nationalPermitIssueDate);
+        if (v.permitDetails.nationalPermitExpiryDate) setNationalPermitExpiryDate(v.permitDetails.nationalPermitExpiryDate);
+      }
+      
+      if (match.remarks) setEmployeeRemarks(match.remarks);
+      if (match.reminder) setReminder(match.reminder);
+      if (match.dueDate) setDueDate(match.dueDate);
+      if (match.priority) setPriority(match.priority);
+      if (match.assignedEmployeeName) setAssignedEmployee(match.assignedEmployeeName);
+      toast.success("Existing customer found. Details loaded.");
+    },
+    onClear: () => {
+      setPhone("");
+      setOwnerName("");
+      setFatherHusbandName("");
+      setCoName("");
+      setGroupName("");
+      setAddress("");
+      setRegistrationDate("");
+      setChassisNumber("");
+      setEngineNumber("");
+      setFuelType("Petrol");
+      setVehicleClass("LMV");
+      setMakerName("");
+      setModelName("");
+      setColour("");
+      setBodyType("");
+      setSeatingCapacity(5);
+      setGrossWeight(4990);
+      setUnladenWeight(1620);
+      setPayload(3370);
+      setHorsePower("");
+      setCylinderCount(4);
+      setPucExpiryDate("");
+      
+      setIsLumpsumTax(false);
+      setTaxIssueDate("");
+      setTaxExpiryDate("");
+      setTaxAmount(0);
+      
+      setFitnessIssueDate("");
+      setFitnessExpiryDate("");
+      
+      setInsuranceCompany("New India");
+      setInsurancePolicyNo("");
+      setInsurancePolicyType("Third Party");
+      setInsuranceIssueDate("");
+      setInsuranceExpiryDate("");
+      setInsuranceAmount(0);
+      setInsurancePlace("");
+      setPolicySubCategory("Motor / Vehicle");
+      setInsVehicleType("4 Wheel");
+      
+      setGujaratPermitIssueDate("");
+      setGujaratPermitExpiryDate("");
+      setNationalPermitIssueDate("");
+      setNationalPermitExpiryDate("");
+      
+      setEmployeeRemarks("");
+      setReminder("");
+      setDueDate("");
+      setPriority("Low");
+      setAssignedEmployee("");
+    }
+  });
+
+  // 2. Insurance Auto Fill
+  const insuranceAutoFill = useApplicationAutoFill({
+    subModule: "insurance",
+    lookupValues: { name: ownerName, mobile: phone },
+    isEditing: !!editingApp,
+    onFill: (match) => {
+      const v = match.vehicleDetails || {};
+      if (v.address) setAddress(v.address);
+      if (match.vehicleNumber) setVehicleNumber(match.vehicleNumber);
+      if (v.makerName) setMakerName(v.makerName);
+      if (v.modelName) setModelName(v.modelName);
+      if (v.fuelType) setFuelType(v.fuelType);
+      if (v.chassisNumber) setChassisNumber(v.chassisNumber);
+      if (v.engineNumber) setEngineNumber(v.engineNumber);
+      if (v.registrationDate) setRegistrationDate(v.registrationDate);
+      if (v.fatherHusbandName) setFatherHusbandName(v.fatherHusbandName);
+      if (v.coName) setCoName(v.coName);
+      if (v.groupName) setGroupName(v.groupName);
+      if (v.colour) setColour(v.colour);
+      if (v.bodyType) setBodyType(v.bodyType);
+      if (v.seatingCapacity !== undefined) setSeatingCapacity(v.seatingCapacity);
+      if (v.grossWeight !== undefined) setGrossWeight(v.grossWeight);
+      if (v.unladenWeight !== undefined) setUnladenWeight(v.unladenWeight);
+      if (v.payload !== undefined) setPayload(v.payload);
+      if (v.horsePower) setHorsePower(v.horsePower);
+      if (v.cylinderCount !== undefined) setCylinderCount(v.cylinderCount);
+      toast.success("Existing customer found. Details loaded.");
+    },
+    onClear: () => {
+      setAddress("");
+      setVehicleNumber("");
+      setMakerName("");
+      setModelName("");
+      setFuelType("Petrol");
+      setChassisNumber("");
+      setEngineNumber("");
+      setRegistrationDate("");
+      setFatherHusbandName("");
+      setCoName("");
+      setGroupName("");
+      setColour("");
+      setBodyType("");
+      setSeatingCapacity(5);
+      setGrossWeight(4990);
+      setUnladenWeight(1620);
+      setPayload(3370);
+      setHorsePower("");
+      setCylinderCount(4);
+    }
+  });
+
+  // 3. License Auto Fill
+  const licenseAutoFill = useApplicationAutoFill({
+    subModule: "licence",
+    lookupValues: { name: ownerName, mobile: phone },
+    isEditing: !!editingApp,
+    onFill: (match) => {
+      const v = match.vehicleDetails || {};
+      if (v.address) setAddress(v.address);
+      
+      const dob = match.licenseDetails?.dateOfBirth || match.dateOfBirth || "";
+      if (dob) setDateOfBirth(dob);
+      
+      if (match.gender) setDsGender(match.gender as any);
+      if (v.fatherHusbandName) setFatherHusbandName(v.fatherHusbandName);
+      
+      const l = match.licenseDetails || {};
+      if (l.generalLicenceServices) {
+        const g = l.generalLicenceServices;
+        if (g.dlNumber) setGenDlNumber(g.dlNumber);
+        if (g.classOfVehicle) setGenClassOfVehicle(g.classOfVehicle);
+        if (g.issueDate) setGenIssueDate(g.issueDate);
+        if (g.validityDate) setGenValidityDate(g.validityDate);
+        if (g.vehicleTypes) setGenVehicleTypes(g.vehicleTypes);
+      }
+      toast.success("Existing customer found. Details loaded.");
+    },
+    onClear: () => {
+      setAddress("");
+      setDateOfBirth("");
+      setDsGender("Male");
+      setFatherHusbandName("");
+      setGenDlNumber("");
+      setGenClassOfVehicle([]);
+      setGenIssueDate("");
+      setGenValidityDate("");
+      setGenVehicleTypes({ nt: false, tr: false, hazardous: false });
+    }
+  });
+
+  // 4. Form 5 Auto Fill
+  const form5AutoFill = useApplicationAutoFill({
+    subModule: "form5",
+    lookupValues: { name: ownerName, mobile: phone },
+    isEditing: !!editingApp,
+    onFill: (match) => {
+      const v = match.vehicleDetails || {};
+      if (v.address) setAddress(v.address);
+      if (match.vehicleNumber) setVehicleNumber(match.vehicleNumber);
+      if (v.fatherHusbandName) setFatherHusbandName(v.fatherHusbandName);
+      if (v.coName) setCoName(v.coName);
+      if (v.groupName) setGroupName(v.groupName);
+      if (v.makerName) setMakerName(v.makerName);
+      if (v.modelName) setModelName(v.modelName);
+      if (v.fuelType) setFuelType(v.fuelType);
+      if (v.vehicleClass) setVehicleClass(v.vehicleClass);
+      if (v.chassisNumber) setChassisNumber(v.chassisNumber);
+      if (v.engineNumber) setEngineNumber(v.engineNumber);
+      if (v.registrationDate) setRegistrationDate(v.registrationDate);
+      if (match.form5Details) {
+        setForm5Details({
+          ...match.form5Details,
+        });
+      }
+      toast.success("Existing customer found. Details loaded.");
+    },
+    onClear: () => {
+      setAddress("");
+      setVehicleNumber("");
+      setFatherHusbandName("");
+      setCoName("");
+      setGroupName("");
+      setMakerName("");
+      setModelName("");
+      setFuelType("Petrol");
+      setVehicleClass("LMV");
+      setChassisNumber("");
+      setEngineNumber("");
+      setRegistrationDate("");
+      setForm5Details({
+        form5Type: "",
+        name: "",
+        dlNumber: "",
+        applicationNo: "",
+        dateOfBirth: "",
+        llNumber: "",
+        llIssueDate: "",
+        llExpiryDate: "",
+        ntValidityDate: "",
+        trValidityDate: "",
+        aadhaarNumber: "",
+      });
+    }
+  });
+
+  // 5. Driving School Auto Fill
+  const drivingSchoolAutoFill = useApplicationAutoFill({
+    subModule: "driving_school",
+    lookupValues: { name: ownerName, mobile: phone },
+    isEditing: !!editingApp,
+    onFill: (match) => {
+      if (match.address) setAddress(match.address);
+      if (match.dateOfBirth) setDateOfBirth(match.dateOfBirth);
+      if (match.gender) setDsGender(match.gender as any);
+      if (match.co) {
+        setCoName(match.co);
+        setFatherHusbandName(match.co);
+      }
+      if (match.drivingLicenceStatus) setDsDlStatus(match.drivingLicenceStatus);
+      
+      if (match.drivingLicence) {
+        if (match.drivingLicence.number) setDsDlNumber(match.drivingLicence.number);
+        if (match.drivingLicence.issueDate) setDsDlIssueDate(toDateString(match.drivingLicence.issueDate));
+        if (match.drivingLicence.expiryDate) setDsDlExpiryDate(toDateString(match.drivingLicence.expiryDate));
+        if (match.drivingLicence.classes) setDsDlClasses(match.drivingLicence.classes);
+      } else if (match.drivingLicenceNumber) {
+        setDsDlNumber(match.drivingLicenceNumber);
+      }
+      
+      if (match.learningLicence) {
+        if (match.learningLicence.number) setDsLlNumber(match.learningLicence.number);
+        if (match.learningLicence.issueDate) setDsLlIssueDate(toDateString(match.learningLicence.issueDate));
+        if (match.learningLicence.expiryDate) setDsLlExpiryDate(toDateString(match.learningLicence.expiryDate));
+        if (match.learningLicence.classes) setDsLlClasses(match.learningLicence.classes);
+      }
+      
+      if (match.bloodGroup) setDsBloodGroup(match.bloodGroup);
+      if (match.vehicleNumber) setVehicleNumber(match.vehicleNumber);
+      if (match.assignedEmployee) setAssignedEmployee(match.assignedEmployee);
+      toast.success("Existing customer found. Details loaded.");
+    },
+    onClear: () => {
+      setAddress("");
+      setDateOfBirth("");
+      setDsGender("Male");
+      setFatherHusbandName("");
+      setCoName("");
+      setDsDlStatus("WITHOUT_DL");
+      setDsDlNumber("");
+      setDsDlIssueDate("");
+      setDsDlExpiryDate("");
+      setDsDlClasses([]);
+      setDsLlNumber("");
+      setDsLlIssueDate("");
+      setDsLlExpiryDate("");
+      setDsLlClasses([]);
+      setDsBloodGroup("");
+      setVehicleNumber("");
+      setAssignedEmployee("");
+    }
+  });
+
   // Unique suggestions collected from existing application records
   const coNameSuggestions = useMemo(() => {
     return Array.from(new Set(
@@ -1865,7 +2191,7 @@ function ApplicationFormModal({
   const groupNameSuggestions = useMemo(() => {
     return Array.from(new Set(
       applications
-        .map((app) => app.vehicleDetails?.groupName || app.groupName || "")
+        .map((app) => app.vehicleDetails?.groupName || (app as any).groupName || "")
         .map((val) => val.trim())
         .filter((val) => val.length > 0)
     ));
@@ -2731,6 +3057,7 @@ function ApplicationFormModal({
                       placeholder="Full name"
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
+                      onBlur={licenseAutoFill.handleBlur}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
                     />
                   </div>
@@ -2747,13 +3074,26 @@ function ApplicationFormModal({
 
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER</label>
-                    <input
-                      type="text"
-                      placeholder="+91 9XXXXXXXXX"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="+91 9XXXXXXXXX"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        onBlur={licenseAutoFill.handleBlur}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl pr-10"
+                      />
+                      {licenseAutoFill.loading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                    {licenseAutoFill.success && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-semibold">
+                        Existing customer found. Details loaded.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -4835,8 +5175,32 @@ function ApplicationFormModal({
                         setForm5Details(prev => ({ ...prev, name: val }));
                         setOwnerName(val);
                       }}
+                      onBlur={form5AutoFill.handleBlur}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
                     />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="10-digit mobile number"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        onBlur={form5AutoFill.handleBlur}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl pr-10"
+                      />
+                      {form5AutoFill.loading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                    {form5AutoFill.success && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-semibold">
+                        Existing customer found. Details loaded.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">DATE OF BIRTH</label>
@@ -5197,19 +5561,33 @@ function ApplicationFormModal({
                       placeholder="Full name"
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
+                      onBlur={drivingSchoolAutoFill.handleBlur}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
 
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER</label>
-                    <input
-                      type="text"
-                      placeholder="+91 XXXXXXXXXX"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="+91 XXXXXXXXXX"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        onBlur={drivingSchoolAutoFill.handleBlur}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium pr-10"
+                      />
+                      {drivingSchoolAutoFill.loading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                    {drivingSchoolAutoFill.success && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-semibold">
+                        Existing customer found. Details loaded.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -5723,6 +6101,7 @@ function ApplicationFormModal({
                       placeholder="Applicant's full name"
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
+                      onBlur={insuranceAutoFill.handleBlur}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                       required
                     />
@@ -5739,13 +6118,26 @@ function ApplicationFormModal({
                   </div>
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">MOBILE NUMBER</label>
-                    <input
-                      type="text"
-                      placeholder="10 digit mobile number"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="10 digit mobile number"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        onBlur={insuranceAutoFill.handleBlur}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl pr-10"
+                      />
+                      {insuranceAutoFill.loading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                    {insuranceAutoFill.success && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-semibold">
+                        Existing customer found. Details loaded.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
@@ -6208,14 +6600,26 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">
                       VEHICLE NUMBER *
                     </label>
-                    <input
-                      type="text"
-                      placeholder="GJ-01-AB-1234"
-                      value={vehicleNumber}
-                      onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
-                      onBlur={handleVehicleBlur}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="GJ-01-AB-1234"
+                        value={vehicleNumber}
+                        onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
+                        onBlur={vahaanAutoFill.handleBlur}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 pr-10"
+                      />
+                      {vahaanAutoFill.loading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                    {vahaanAutoFill.success && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-semibold">
+                        Existing customer found. Details loaded.
+                      </p>
+                    )}
                   </div>
 
               <div>
@@ -7056,7 +7460,7 @@ function ApplicationFormModal({
           )}
 
           {/* 10. Internal Notes / Employee Remarks */}
-          {activeSubModule !== "insurance" && (
+          {(activeSubModule as string) !== "insurance" && (
             <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
               <User className="w-5 h-5 text-blue-600" />
@@ -7221,7 +7625,7 @@ function ApplicationDetailsModal({
   app,
   onClose,
 }: {
-  app: ApplicationRecord;
+  app: any;
   onClose: () => void;
 }) {
   const v = app.vehicleDetails || {};
@@ -7311,7 +7715,7 @@ function ApplicationDetailsModal({
               <FileSpreadsheet className="w-4 h-4 text-blue-600" /> Selected Services & Accounting
             </h3>
             <div className="divide-y divide-slate-200">
-              {app.services?.map((srv, idx) => {
+              {app.services?.map((srv: string, idx: number) => {
                 const sAcc = app.serviceAccounting?.[srv];
                 return (
                   <div key={idx} className="py-2 flex items-center justify-between text-xs">

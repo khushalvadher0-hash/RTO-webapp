@@ -46,21 +46,18 @@ export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
 
-    // Prefer the lightweight cached session so refresh restores the page fast.
-    if (getSession()) return;
-
     if (!isAuthReady()) {
       await new Promise<void>((resolve) => {
         const interval = setInterval(() => {
-          if (isAuthReady() || getSession()) {
+          if (isAuthReady()) {
             clearInterval(interval);
             resolve();
           }
-        }, 50);
+        }, 30);
         setTimeout(() => {
           clearInterval(interval);
           resolve();
-        }, 1500);
+        }, 3000);
       });
     }
 

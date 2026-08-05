@@ -69,6 +69,64 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "registry_applications_v1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "subModule",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "vehicleNumber",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "registry_applications_v1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "subModule",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ownerName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "mobileNumber",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "DrivingSchoolApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "studentName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "mobileNumber",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

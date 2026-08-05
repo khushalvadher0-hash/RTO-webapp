@@ -9,7 +9,9 @@ import {
   updatePassword as secondaryUpdate, 
   updateEmail as secondaryUpdateEmail,
   signOut as secondarySignOut,
-  deleteUser as secondaryDelete
+  deleteUser as secondaryDelete,
+  setPersistence,
+  inMemoryPersistence
 } from 'firebase/auth';
 
 // Types
@@ -60,7 +62,11 @@ function getSecondaryAuth() {
   const apps = getApps();
   const existing = apps.find(a => a.name === 'SecondaryEmployeeAuth');
   const secondaryApp = existing || initializeApp(firebaseConfig, 'SecondaryEmployeeAuth');
-  return getAuth(secondaryApp);
+  const auth = getAuth(secondaryApp);
+  setPersistence(auth, inMemoryPersistence).catch((err) => {
+    console.error("Failed to set secondary auth persistence:", err);
+  });
+  return auth;
 }
 
 /** Helper to log employee management audit actions */
@@ -681,7 +687,78 @@ export async function deleteEmployee(uid: string) {
     }
   });
 
-  // 4. Move to archive collection
+  // 4. Unassign matching registry_applications_v1
+  try {
+    const appsSnap = await getDocs(collection(db, "registry_applications_v1"));
+    appsSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const appAssignees = [
+        data.assignedEmployeeId,
+        data.assignedEmployeeUid,
+        data.assignedEmployeeName,
+      ]
+        .filter(Boolean)
+        .map((s) => String(s).trim().toLowerCase());
+
+      if (appAssignees.some((val) => identifiers.includes(val))) {
+        batch.update(docSnap.ref, {
+          assignedEmployeeId: "",
+          assignedEmployeeUid: "",
+          assignedEmployeeName: "Unassigned",
+        });
+      }
+    });
+  } catch (err) {
+    console.warn("Failed to unassign from registry_applications_v1:", err);
+  }
+
+  // 5. Unassign matching registry_accounting
+  try {
+    const accSnap = await getDocs(collection(db, "registry_accounting"));
+    accSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const accAssignees = [
+        data.employeeId,
+        data.employeeName,
+      ]
+        .filter(Boolean)
+        .map((s) => String(s).trim().toLowerCase());
+
+      if (accAssignees.some((val) => identifiers.includes(val))) {
+        batch.update(docSnap.ref, {
+          employeeId: "",
+          employeeName: "Unassigned",
+        });
+      }
+    });
+  } catch (err) {
+    console.warn("Failed to unassign from registry_accounting:", err);
+  }
+
+  // 6. Unassign matching DrivingSchoolApplications
+  try {
+    const dsSnap = await getDocs(collection(db, "DrivingSchoolApplications"));
+    dsSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const dsAssignees = [
+        data.assignedEmployeeId,
+        data.assignedEmployee,
+      ]
+        .filter(Boolean)
+        .map((s) => String(s).trim().toLowerCase());
+
+      if (dsAssignees.some((val) => identifiers.includes(val))) {
+        batch.update(docSnap.ref, {
+          assignedEmployeeId: "",
+          assignedEmployee: "Unassigned",
+        });
+      }
+    });
+  } catch (err) {
+    console.warn("Failed to unassign from DrivingSchoolApplications:", err);
+  }
+
+  // 7. Move to archive collection
   const archiveRef = doc(db, 'employee_archive', uid);
   batch.set(archiveRef, {
     ...userData,
@@ -689,7 +766,7 @@ export async function deleteEmployee(uid: string) {
     archivedBy: actor,
   });
 
-  // 5. Delete from users collection
+  // 8. Delete from users collection
   batch.delete(userRef);
 
   await batch.commit();

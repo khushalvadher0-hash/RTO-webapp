@@ -2,6 +2,13 @@
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 import React, { useEffect, useState, useMemo } from "react";
 import {
+  subscribeOfficeExpenses,
+  addOfficeExpense,
+  updateOfficeExpense,
+  deleteOfficeExpense,
+  type OfficeExpense,
+} from "@/lib/officeExpensesService";
+import {
   subscribeAndSyncFinance,
   subscribePaymentHistory,
   updateRecordCollectionDate,
@@ -42,6 +49,7 @@ import {
   EyeOff,
   Download,
   ExternalLink,
+  FileSpreadsheet,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import { subscribeToAllInvoices, type Invoice } from "@/lib/billing";
@@ -81,7 +89,7 @@ function AccountingDashboardPage() {
     }
   }, [location.search]);
 
-  const [activeTab, setActiveTab] = useState<"collections" | "payments" | "ledger">("collections");
+  const [activeTab, setActiveTab] = useState<"collections" | "payments" | "ledger" | "expense_profit">("collections");
   const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
   const [paymentEntries, setPaymentEntries] = useState<PaymentHistoryItem[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -126,6 +134,21 @@ function AccountingDashboardPage() {
 
   // Approval state
   const [approvalRemarks, setApprovalRemarks] = useState("");
+
+  // Office Expense states
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<OfficeExpense | null>(null);
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().slice(0, 10));
+  const [expenseCategory, setExpenseCategory] = useState("Miscellaneous");
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseRemarks, setExpenseRemarks] = useState("");
+  const [paidByEmployee, setPaidByEmployee] = useState("");
+  
+  // Office Expense filters
+  const [filterExpenseStartDate, setFilterExpenseStartDate] = useState("");
+  const [filterExpenseEndDate, setFilterExpenseEndDate] = useState("");
+  const [filterExpenseCategory, setFilterExpenseCategory] = useState("all");
   const [approving, setApproving] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<FinanceRecord | null>(null);
 
@@ -143,11 +166,13 @@ function AccountingDashboardPage() {
   const username = session?.name || session?.username || "unknown";
   const isAdmin = userRole === "admin" || userRole === "manager";
   const isStaff = userRole === "employee" || userRole === "viewer";
+  const isAdministrator = userRole === "admin";
 
   const [applications, setApplications] = useState<any[]>([]);
   const [drivingSchoolApps, setDrivingSchoolApps] = useState<DrivingSchoolApplication[]>([]);
   const [accountingMap, setAccountingMap] = useState<Map<string, AccountingRecord>>(new Map());
   const [dailyReports, setDailyReports] = useState<DrivingSchoolDailyReport[]>([]);
+  const [officeExpenses, setOfficeExpenses] = useState<OfficeExpense[]>([]);
 
   // Subscriptions
   useEffect(() => {
@@ -173,6 +198,7 @@ function AccountingDashboardPage() {
     const unsubReports = subscribeAllDailyReports((list) => {
       setDailyReports(list);
     });
+    const unsubOfficeExpenses = subscribeOfficeExpenses(setOfficeExpenses);
 
     return () => {
       unsubFinance();
@@ -185,6 +211,7 @@ function AccountingDashboardPage() {
       unsubDSApps();
       unsubAcc();
       unsubReports();
+      unsubOfficeExpenses();
     };
   }, []);
 
@@ -234,6 +261,9 @@ function AccountingDashboardPage() {
       totalOutstanding: number;
       lastPaymentDate: string;
       invoicesCount: number;
+      rtoReceipt: number;
+      rtoExpense: number;
+      profit: number;
     }>();
 
     // Populate all clients from list
@@ -249,6 +279,9 @@ function AccountingDashboardPage() {
         totalOutstanding: 0,
         lastPaymentDate: "—",
         invoicesCount: 0,
+        rtoReceipt: 0,
+        rtoExpense: 0,
+        profit: 0,
       });
     });
 
@@ -267,6 +300,9 @@ function AccountingDashboardPage() {
           totalOutstanding: 0,
           lastPaymentDate: "—",
           invoicesCount: 0,
+          rtoReceipt: 0,
+          rtoExpense: 0,
+          profit: 0,
         };
         summariesMap.set(r.clientId, s);
       }
@@ -274,6 +310,9 @@ function AccountingDashboardPage() {
       s.totalReceived += r.receivedAmount;
       s.totalOutstanding += r.balanceAmount;
       s.invoicesCount += 1;
+      s.rtoReceipt += Number((r as any).rtoReceipt) || 0;
+      s.rtoExpense += Number((r as any).rtoExpense) || 0;
+      s.profit += Number((r as any).profit) || 0;
     });
 
     // Update missing vehicle/mobile/serviceType info from invoices
@@ -302,8 +341,141 @@ function AccountingDashboardPage() {
       }
     });
 
+    // Populate registry applications
+    applications.forEach((app) => {
+      const isDrivingSchoolHolder = app.subModule === "licence" && !!app.licenseDetails?.isDrivingSchoolHolder;
+      const srvList = app.services || [];
+      const appServicesStr = isDrivingSchoolHolder 
+        ? `[Driving School Holder] ${srvList.length > 0 ? srvList.join(", ") : "General Service"}`
+        : (srvList.length > 0 ? srvList.join(", ") : "General Service");
+
+      const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
+
+      let totAmt = acc?.totalPayment ?? app.totalFee ?? app.amount ?? 0;
+      let totPaid = acc?.advancePayment ?? app.totalAdvance ?? app.totalPaid ?? 0;
+
+      if (!acc) {
+        if (app.subModule === "licence" && app.licenseDetails) {
+          let licTot = 0;
+          let licPaid = 0;
+          const lic = app.licenseDetails;
+
+          if (lic.newLearningLicence?.enabled) {
+            licTot += Number(lic.newLearningLicence.totalAmount) || 0;
+            licPaid += Number(lic.newLearningLicence.advanceAmount) || 0;
+          }
+          if (lic.dlNewLlEndorsement?.enabled) {
+            licTot += Number(lic.dlNewLlEndorsement.totalAmount) || 0;
+            licPaid += Number(lic.dlNewLlEndorsement.advanceAmount) || 0;
+          }
+          if (lic.llRenewClass?.enabled) {
+            licTot += Number(lic.llRenewClass.totalAmount) || 0;
+            licPaid += Number(lic.llRenewClass.advanceAmount) || 0;
+          }
+          if (lic.dlRenewRetest?.enabled) {
+            licTot += Number(lic.dlRenewRetest.totalAmount) || 0;
+            licPaid += Number(lic.dlRenewRetest.advanceAmount) || 0;
+          }
+          if (lic.generalLicenceServices?.serviceAccounting) {
+            Object.values(lic.generalLicenceServices.serviceAccounting).forEach((item: any) => {
+              licTot += Number(item.totalAmount) || 0;
+              licPaid += Number(item.advanceAmount) || 0;
+            });
+          }
+
+          if (licTot > 0) {
+            totAmt = licTot;
+            totPaid = licPaid;
+          }
+        } else if (app.serviceFees && Object.keys(app.serviceFees).length > 0) {
+          let calcTot = 0;
+          let calcPaid = 0;
+          Object.entries(app.serviceFees).forEach(([sKey, feeVal]) => {
+            if (srvList.length === 0 || srvList.includes(sKey)) {
+              calcTot += Number(feeVal) || 0;
+              calcPaid += Number(app.serviceAdvances?.[sKey]) || 0;
+            }
+          });
+          if (calcTot > 0) {
+            totAmt = calcTot;
+            totPaid = calcPaid;
+          }
+        } else if (app.serviceAccounting) {
+          let calcTot = 0;
+          let calcPaid = 0;
+          Object.values(app.serviceAccounting).forEach((sa: any) => {
+            calcTot += sa.totalAmount || sa.fee || 0;
+            calcPaid += sa.advancePayment || sa.advance || 0;
+          });
+          if (calcTot > 0) {
+            totAmt = calcTot;
+            totPaid = calcPaid;
+          }
+        }
+      }
+
+      const totalCharges = isDrivingSchoolHolder ? 0 : (acc?.totalCharges !== undefined ? Number(acc.totalCharges) : totAmt);
+      const advancePaid = isDrivingSchoolHolder ? 0 : (acc?.advancePaid !== undefined ? Number(acc.advancePaid) : totPaid);
+      const rtoReceipt = isDrivingSchoolHolder ? 0 : (acc?.rtoReceipt !== undefined ? Number(acc.rtoReceipt) : 0);
+      const outstanding = isDrivingSchoolHolder ? 0 : Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const rtoExpense = isDrivingSchoolHolder ? 0 : (acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : (Number(app.rtoExpense) || 0));
+      const profit = isDrivingSchoolHolder ? 0 : (outstanding - rtoExpense);
+
+      summariesMap.set(app.id, {
+        clientId: app.id,
+        clientName: app.ownerName || "Unknown Owner",
+        mobile: app.mobileNumber || "—",
+        vehicleNumber: app.vehicleNumber || "—",
+        serviceType: appServicesStr,
+        totalInvoiceAmount: totalCharges,
+        totalReceived: advancePaid + rtoReceipt,
+        totalOutstanding: outstanding,
+        lastPaymentDate: app.updatedAt?.slice(0, 10) || app.createdAt?.slice(0, 10) || "—",
+        invoicesCount: 1,
+        rtoReceipt: rtoReceipt,
+        rtoExpense: rtoExpense,
+        profit: profit,
+      });
+    });
+
+    // Populate driving school applications
+    drivingSchoolApps.forEach((ds) => {
+      const acc = accountingMap.get(ds.id) || accountingMap.get(ds.applicationId);
+      const baseTotFee = acc?.totalPayment ?? (Number(ds.totalCourseFees) || 0);
+      const advFee = acc?.advancePayment ?? (Number(ds.advancePaid) || 0);
+
+      // Sum daily report expenses for this student
+      let fuelExpense = 0;
+      let generalExpense = 0;
+      dailyReports.forEach((rep) => {
+        if (rep.studentId === ds.id || (rep.studentName && rep.studentName === ds.studentName)) {
+          fuelExpense += Number(rep.fuelAmount) || 0;
+          generalExpense += Number(rep.generalExpenseAmount) || 0;
+        }
+      });
+
+      const totFee = baseTotFee + fuelExpense + generalExpense;
+      const remFee = acc?.remainingPayment !== undefined ? acc.remainingPayment + fuelExpense + generalExpense : Math.max(0, totFee - advFee);
+
+      summariesMap.set(ds.id, {
+        clientId: ds.id,
+        clientName: ds.studentName || "Unknown Student",
+        mobile: ds.mobileNumber || "—",
+        vehicleNumber: ds.vehicleNumber || "—",
+        serviceType: ds.courseType || "Driving School Course",
+        totalInvoiceAmount: totFee,
+        totalReceived: advFee,
+        totalOutstanding: remFee,
+        lastPaymentDate: ds.courseEndDate || ds.joiningDate || ds.createdAt?.slice(0, 10) || "—",
+        invoicesCount: 1,
+        rtoReceipt: 0,
+        rtoExpense: fuelExpense + generalExpense,
+        profit: remFee - (fuelExpense + generalExpense),
+      });
+    });
+
     return Array.from(summariesMap.values());
-  }, [allClientsList, financeRecords, invoices, paymentEntries]);
+  }, [allClientsList, financeRecords, invoices, paymentEntries, applications, drivingSchoolApps, accountingMap, dailyReports]);
 
   // Unique lists for filters
   // Unique lists for filters
@@ -935,11 +1107,8 @@ function AccountingDashboardPage() {
     let totalReceivable = 0;
     let totalReceived = 0;
     let overdueCollections = 0;
-    let totalRtoExpense = 0;
     let totalFuelExpense = 0;
     let totalGeneralExpense = 0;
-
-    let totalProfit = 0;
 
     filteredRecords.forEach((r) => {
       const amt = r.invoiceAmount || 0;
@@ -951,14 +1120,6 @@ function AccountingDashboardPage() {
 
       if (pending > 0 && r.collectionDate && r.collectionDate < todayStr) {
         overdueCollections += pending;
-      }
-
-      if (r.rtoExpense) {
-        totalRtoExpense += r.rtoExpense;
-      }
-
-      if (r.subModule === "services" || !r.subModule) {
-        totalProfit += Number(r.profit) || 0;
       }
     });
 
@@ -988,6 +1149,10 @@ function AccountingDashboardPage() {
       });
     }
 
+    const totalRtoExpense = allAccountingRows.reduce((sum, r) => sum + (Number(r.rtoExpense) || 0), 0);
+    const totalOfficeExpense = officeExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const totalProfit = allAccountingRows.reduce((sum, r) => sum + (Number(r.profit) || 0), 0);
+
     return {
       totalReceivable,
       totalReceived,
@@ -998,8 +1163,9 @@ function AccountingDashboardPage() {
       totalFuelExpense,
       totalGeneralExpense,
       totalProfit,
+      totalOfficeExpense,
     };
-  }, [filteredRecords, paymentEntries, activeSubModule, dailyReports]);
+  }, [filteredRecords, paymentEntries, activeSubModule, dailyReports, officeExpenses, allAccountingRows]);
 
   // Payment allocations calculator
   const outstandingInvoicesForClient = useMemo(() => {
@@ -1444,6 +1610,174 @@ function AccountingDashboardPage() {
     window.open(`https://wa.me/${formattedNumber.startsWith("91") ? "" : "91"}${formattedNumber}?text=${encodeURIComponent(text)}`, "_blank");
   };
 
+  const filteredOfficeExpenses = useMemo(() => {
+    return officeExpenses.filter((exp) => {
+      const matchCategory = filterExpenseCategory === "all" || exp.category === filterExpenseCategory;
+      const matchStart = !filterExpenseStartDate || exp.expenseDate >= filterExpenseStartDate;
+      const matchEnd = !filterExpenseEndDate || exp.expenseDate <= filterExpenseEndDate;
+      
+      const term = searchTerm.toLowerCase();
+      const matchSearch =
+        searchTerm === "" ||
+        exp.category.toLowerCase().includes(term) ||
+        exp.description.toLowerCase().includes(term) ||
+        (exp.remarks || "").toLowerCase().includes(term) ||
+        (exp.paidByEmployee || "").toLowerCase().includes(term) ||
+        (exp.createdBy || "").toLowerCase().includes(term);
+
+      return matchCategory && matchStart && matchEnd && matchSearch;
+    });
+  }, [officeExpenses, filterExpenseCategory, filterExpenseStartDate, filterExpenseEndDate, searchTerm]);
+
+  const handleSaveOfficeExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (userRole !== "admin") {
+      toast.error("Only Admins can manage office expenses");
+      return;
+    }
+    
+    try {
+      const expenseData = {
+        expenseDate,
+        category: expenseCategory,
+        description: expenseDescription,
+        amount: Number(expenseAmount) || 0,
+        remarks: expenseRemarks,
+        paidByEmployee: paidByEmployee,
+        createdBy: username,
+      };
+
+      if (editingExpense) {
+        await updateOfficeExpense(editingExpense.id, expenseData);
+        toast.success("Office expense updated successfully");
+      } else {
+        await addOfficeExpense(expenseData);
+        toast.success("Office expense added successfully");
+      }
+      
+      setExpenseModalOpen(false);
+      setEditingExpense(null);
+      setExpenseDescription("");
+      setExpenseAmount("");
+      setExpenseRemarks("");
+      setPaidByEmployee("");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save office expense");
+    }
+  };
+
+  const handleEditOfficeExpenseClick = (exp: OfficeExpense) => {
+    setEditingExpense(exp);
+    setExpenseDate(exp.expenseDate);
+    setExpenseCategory(exp.category);
+    setExpenseDescription(exp.description);
+    setExpenseAmount(String(exp.amount));
+    setExpenseRemarks(exp.remarks);
+    setPaidByEmployee(exp.paidByEmployee || "");
+    setExpenseModalOpen(true);
+  };
+
+  const handleDeleteOfficeExpenseClick = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this office expense?")) return;
+    try {
+      await deleteOfficeExpense(id);
+      toast.success("Office expense deleted successfully");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete office expense");
+    }
+  };
+
+  const generateOfficeExpensesPDF = () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text("REGISTRY PRO - OFFICE EXPENSE REPORT", 14, 15);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Generated At: ${new Date().toLocaleString()}`, 14, 21);
+    doc.text(`Generated By: ${username}`, 14, 26);
+    
+    let y = 35;
+    doc.setFont("helvetica", "bold");
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y, 269, 7, "F");
+    
+    const colLefts = [15, 40, 75, 145, 175, 210, 240];
+    const headers = ["Date", "Category", "Description", "Amount", "Paid By", "Created By", "Remarks"];
+    
+    headers.forEach((h, idx) => {
+      doc.text(h, colLefts[idx], y + 5);
+    });
+    
+    doc.line(14, y + 7, 283, y + 7);
+    y += 12;
+    
+    doc.setFont("helvetica", "normal");
+    filteredOfficeExpenses.forEach((exp) => {
+      if (y > 185) {
+        doc.addPage();
+        y = 15;
+        doc.setFillColor(241, 245, 249);
+        doc.rect(14, y, 269, 7, "F");
+        doc.setFont("helvetica", "bold");
+        headers.forEach((h, idx) => {
+          doc.text(h, colLefts[idx], y + 5);
+        });
+        doc.line(14, y + 7, 283, y + 7);
+        y += 12;
+        doc.setFont("helvetica", "normal");
+      }
+      
+      doc.text(exp.expenseDate, colLefts[0], y);
+      doc.text(exp.category, colLefts[1], y);
+      doc.text(exp.description.slice(0, 35), colLefts[2], y);
+      doc.text(`Rs.${(exp.amount || 0).toLocaleString("en-IN")}`, colLefts[3], y);
+      doc.text(exp.paidByEmployee || "—", colLefts[4], y);
+      doc.text(exp.createdBy || "—", colLefts[5], y);
+      doc.text((exp.remarks || "").slice(0, 15), colLefts[6], y);
+      
+      doc.line(14, y + 2, 283, y + 2);
+      y += 7;
+    });
+    
+    const total = filteredOfficeExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    doc.setFont("helvetica", "bold");
+    doc.text("TOTAL OFFICE EXPENSE:", colLefts[2], y + 5);
+    doc.text(`Rs.${total.toLocaleString("en-IN")}`, colLefts[3], y + 5);
+    
+    doc.save("Office_Expenses_Report.pdf");
+  };
+
+  const generateOfficeExpensesExcel = () => {
+    const headers = ["Date", "Category", "Description", "Amount", "Paid By", "Created By", "Remarks"];
+    const rows = filteredOfficeExpenses.map((exp) => [
+      exp.expenseDate,
+      exp.category,
+      exp.description,
+      exp.amount,
+      exp.paidByEmployee || "",
+      exp.createdBy || "",
+      exp.remarks || "",
+    ]);
+    
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Office_Expenses_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // PDF exports
   const generateSummaryPDF = () => {
     const doc = new jsPDF({ orientation: "landscape" });
@@ -1616,6 +1950,10 @@ function AccountingDashboardPage() {
     doc.save(`ACCOUNTING_SUMMARY_${subTitle.replace(/\s+/g, "_").toUpperCase()}.pdf`);
   };
 
+  const cardCount = 4 + 
+    (isAdministrator ? 3 : 0) + 
+    (activeSubModule === "driving_school" ? 2 : 0);
+
   return (
     <div className="space-y-6">
       {/* Title */}
@@ -1628,7 +1966,7 @@ function AccountingDashboardPage() {
             Invoice-driven payment allocation, scheduled collections, and financial ledger summaries.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="default" size="sm" onClick={() => setPaymentDialogOpen(true)} className="text-xs bg-blue-600 hover:bg-blue-700 shadow-md">
             <Plus className="size-4 mr-1" /> Add Payment Log
           </Button>
@@ -1645,7 +1983,9 @@ function AccountingDashboardPage() {
 
       {/* Summary Cards */}
       <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
-        activeSubModule === "driving_school" || (activeSubModule === "services" && isAdmin) ? "lg:grid-cols-6" : (activeSubModule === "services" || activeSubModule === "licence") ? "lg:grid-cols-5" : "lg:grid-cols-4"
+        cardCount === 7 ? "lg:grid-cols-7" :
+        cardCount === 6 ? "lg:grid-cols-6" :
+        cardCount === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"
       }`}>
         <Card className="border border-slate-100 shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
@@ -1693,7 +2033,7 @@ function AccountingDashboardPage() {
           </CardContent>
         </Card>
 
-        {(activeSubModule === "services" || activeSubModule === "licence") && (
+        {isAdministrator && (
           <Card className="border border-slate-100 shadow-sm bg-amber-50/10">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
@@ -1707,13 +2047,27 @@ function AccountingDashboardPage() {
           </Card>
         )}
 
-        {activeSubModule === "services" && isAdmin && (
+        {isAdministrator && (
+          <Card className="border border-slate-100 shadow-sm bg-rose-50/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Office Expense</p>
+                <h3 className="text-xl font-bold mt-1 text-rose-600">₹{metrics.totalOfficeExpense.toLocaleString("en-IN")}</h3>
+              </div>
+              <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                <DollarSign className="size-5" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isAdministrator && (
           <Card className="border border-slate-100 shadow-sm bg-emerald-50/10">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Net Profit</p>
-                <h3 className={`text-xl font-bold mt-1 ${metrics.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                  ₹{metrics.totalProfit.toLocaleString("en-IN")}
+                <h3 className={`text-xl font-bold mt-1 ${(metrics.totalProfit - metrics.totalOfficeExpense) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  ₹{(metrics.totalProfit - metrics.totalOfficeExpense).toLocaleString("en-IN")}
                 </h3>
               </div>
               <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
@@ -1873,7 +2227,10 @@ function AccountingDashboardPage() {
       {/* Tabs */}
       <div className="space-y-4">
         <div className="flex border-b border-slate-200">
-          {(["collections", "payments", "ledger"] as const).map((tab) => (
+          {(isAdministrator
+            ? (["collections", "payments", "ledger", "expense_profit"] as const)
+            : (["collections", "payments", "ledger"] as const)
+          ).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1883,7 +2240,7 @@ function AccountingDashboardPage() {
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
-              {tab === "ledger" ? "Client Ledger" : tab === "payments" ? "Payment Entries" : tab}
+              {tab === "ledger" ? "Client Ledger" : tab === "payments" ? "Payment Entries" : tab === "expense_profit" ? "Expense / Profit" : tab}
             </button>
           ))}
         </div>
@@ -1913,8 +2270,8 @@ function AccountingDashboardPage() {
                         <th className="p-3 text-right">Advance Paid</th>
                         <th className="p-3 text-right">RTO Receipt</th>
                         <th className="p-3 text-right">Outstanding</th>
-                        <th className="p-3 text-right">RTO Expense</th>
-                        {isAdmin && <th className="p-3 text-right">Profit</th>}
+                        {isAdmin && <th className="p-3 text-right">RTO Expense</th>}
+                        {isAdmin && <th className="p-3 text-right">Gross Profit</th>}
                         <th className="p-3">Assigned Employee</th>
                         <th className="p-3">Status</th>
                         <th className="p-3 text-center">Actions</th>
@@ -1972,7 +2329,9 @@ function AccountingDashboardPage() {
                               <td className="p-3 text-right font-mono font-bold text-emerald-600">₹{(r.advancePaid ?? r.receivedAmount ?? 0).toLocaleString("en-IN")}</td>
                               <td className="p-3 text-right font-mono font-bold text-blue-600">₹{(r.rtoReceipt ?? 0).toLocaleString("en-IN")}</td>
                               <td className="p-3 text-right font-mono font-bold text-rose-600">₹{(r.outstanding ?? r.balanceAmount ?? 0).toLocaleString("en-IN")}</td>
-                              <td className="p-3 text-right font-mono font-bold text-amber-600">₹{(r.rtoExpense ?? 0).toLocaleString("en-IN")}</td>
+                               {isAdmin && (
+                                 <td className="p-3 text-right font-mono font-bold text-amber-600">₹{(r.rtoExpense ?? 0).toLocaleString("en-IN")}</td>
+                               )}
                               {isAdmin && (
                                 <td className={`p-3 text-right font-mono font-bold ${Number(r.profit ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                                   ₹{Number(r.profit ?? 0).toLocaleString("en-IN")}
@@ -2276,6 +2635,235 @@ function AccountingDashboardPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Tab 5: Expense / Profit */}
+        {activeTab === "expense_profit" && isAdministrator && (
+          <div className="space-y-4">
+            {/* Filter & Actions Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-slate-400 uppercase">Category</Label>
+                  <select
+                    value={filterExpenseCategory}
+                    onChange={(e) => setFilterExpenseCategory(e.target.value)}
+                    className="h-9 text-xs border rounded-xl px-3 bg-slate-50 focus:ring-1 focus:ring-primary outline-none"
+                  >
+                    <option value="all">All Categories</option>
+                    {["Rent", "Salary", "Fuel", "Electricity", "Internet", "Office", "Stationery", "Maintenance", "Miscellaneous", "Custom"].map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-slate-400 uppercase">Start Date</Label>
+                  <Input
+                    type="date"
+                    value={filterExpenseStartDate}
+                    onChange={(e) => setFilterExpenseStartDate(e.target.value)}
+                    className="h-9 text-xs border rounded-xl px-3 bg-slate-50 w-36"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-slate-400 uppercase">End Date</Label>
+                  <Input
+                    type="date"
+                    value={filterExpenseEndDate}
+                    onChange={(e) => setFilterExpenseEndDate(e.target.value)}
+                    className="h-9 text-xs border rounded-xl px-3 bg-slate-50 w-36"
+                  />
+                </div>
+                {(filterExpenseCategory !== "all" || filterExpenseStartDate || filterExpenseEndDate) && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setFilterExpenseCategory("all");
+                      setFilterExpenseStartDate("");
+                      setFilterExpenseEndDate("");
+                    }}
+                    className="text-xs text-rose-600 hover:text-rose-800 font-bold self-end h-9 mt-4"
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 self-end md:self-center">
+                <Button
+                  onClick={() => {
+                    setEditingExpense(null);
+                    setExpenseDate(new Date().toISOString().slice(0, 10));
+                    setExpenseCategory("Miscellaneous");
+                    setExpenseDescription("");
+                    setExpenseAmount("");
+                    setExpenseRemarks("");
+                    setExpenseModalOpen(true);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-xs font-bold px-4 py-2 rounded-xl shadow-md flex items-center gap-1.5 h-9"
+                >
+                  <Plus className="size-4" /> Add Expense
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={generateOfficeExpensesPDF}
+                  className="text-xs font-bold border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-xl flex items-center gap-1.5 h-9"
+                >
+                  <FileText className="size-4 text-red-600" /> Export PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={generateOfficeExpensesExcel}
+                  className="text-xs font-bold border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-xl flex items-center gap-1.5 h-9"
+                >
+                  <FileSpreadsheet className="size-4 text-emerald-600" /> Export Excel
+                </Button>
+              </div>
+            </div>
+
+            {/* Tab Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="border border-slate-100 shadow-sm bg-rose-50/5">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Total Office Expense</p>
+                    <h3 className="text-xl font-bold mt-1 text-rose-600">₹{metrics.totalOfficeExpense.toLocaleString("en-IN")}</h3>
+                  </div>
+                  <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                    <DollarSign className="size-4" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border border-slate-100 shadow-sm bg-amber-50/5">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Total RTO Expense</p>
+                    <h3 className="text-xl font-bold mt-1 text-amber-600">₹{metrics.totalRtoExpense.toLocaleString("en-IN")}</h3>
+                  </div>
+                  <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                    <TrendingUp className="size-4" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border border-slate-100 shadow-sm bg-emerald-50/5">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Gross Profit</p>
+                    <h3 className="text-xl font-bold mt-1 text-emerald-600">₹{metrics.totalProfit.toLocaleString("en-IN")}</h3>
+                  </div>
+                  <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                    <TrendingUp className="size-4" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border border-slate-100 shadow-sm bg-blue-50/5">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Net Profit</p>
+                    <h3 className="text-xl font-bold mt-1 text-blue-600">₹{(metrics.totalProfit - metrics.totalOfficeExpense).toLocaleString("en-IN")}</h3>
+                  </div>
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                    <TrendingUp className="size-4" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Expenses Table */}
+            <Card className="shadow-sm border border-slate-100">
+              <CardContent className="p-0">
+                {filteredOfficeExpenses.length === 0 ? (
+                  <div className="text-center py-20 text-muted-foreground text-sm italic">
+                    No office expenses found.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
+                          <th className="p-3">Sr No</th>
+                          <th className="p-3">Expense Date</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3">Description</th>
+                          <th className="p-3 text-right">Amount</th>
+                          <th className="p-3">Paid By Employee</th>
+                          <th className="p-3">Created By</th>
+                          <th className="p-3">Remarks</th>
+                          <th className="p-3 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y text-gray-700">
+                        {filteredOfficeExpenses.map((exp, idx) => (
+                          <tr key={exp.id} className="hover:bg-slate-50 transition">
+                            <td className="p-3 font-semibold text-slate-500">{idx + 1}</td>
+                            <td className="p-3 font-mono font-semibold">{exp.expenseDate}</td>
+                            <td className="p-3">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 uppercase">
+                                {exp.category}
+                              </span>
+                            </td>
+                            <td className="p-3 max-w-[200px] truncate" title={exp.description}>
+                              {exp.description}
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold text-rose-600">
+                              ₹{(exp.amount || 0).toLocaleString("en-IN")}
+                            </td>
+                            <td className="p-3 font-medium text-slate-600">{exp.paidByEmployee || "—"}</td>
+                            <td className="p-3 font-medium text-slate-500">{exp.createdBy || "—"}</td>
+                            <td className="p-3 max-w-[150px] truncate text-slate-500" title={exp.remarks}>
+                              {exp.remarks || "—"}
+                            </td>
+                            <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleEditOfficeExpenseClick(exp)}
+                                  className="h-7 text-xs font-semibold px-2 text-amber-600 hover:text-amber-700"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDeleteOfficeExpenseClick(exp.id)}
+                                  className="h-7 text-xs font-semibold px-2 text-rose-600 hover:text-rose-700"
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t bg-slate-50 font-bold text-slate-900">
+                          <td colSpan={4} className="p-3 text-right uppercase">Total Office Expense:</td>
+                          <td className="p-3 text-right font-mono text-rose-600">
+                            ₹{filteredOfficeExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0).toLocaleString("en-IN")}
+                          </td>
+                          <td colSpan={4}></td>
+                        </tr>
+                        <tr className="border-t bg-slate-50 font-bold text-slate-900">
+                          <td colSpan={4} className="p-3 text-right uppercase">Gross Profit:</td>
+                          <td className="p-3 text-right font-mono text-emerald-600">
+                            ₹{metrics.totalProfit.toLocaleString("en-IN")}
+                          </td>
+                          <td colSpan={4}></td>
+                        </tr>
+                        <tr className="border-t bg-slate-100 font-extrabold text-slate-900">
+                          <td colSpan={4} className="p-3 text-right uppercase">Final Net Profit:</td>
+                          <td className="p-3 text-right font-mono text-blue-600">
+                            ₹{(metrics.totalProfit - filteredOfficeExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)).toLocaleString("en-IN")}
+                          </td>
+                          <td colSpan={4}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* Add Payment Dialog */}
@@ -2520,6 +3108,108 @@ function AccountingDashboardPage() {
         </Dialog>
       )}
 
+      {/* Add/Edit Office Expense Dialog */}
+      {expenseModalOpen && isAdmin && (
+        <Dialog open={expenseModalOpen} onOpenChange={setExpenseModalOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-gray-800">
+                {editingExpense ? "Edit Office Expense" : "Add Office Expense"}
+              </DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSaveOfficeExpense} className="space-y-4 text-xs mt-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Date *</Label>
+                  <Input
+                    required
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Category *</Label>
+                  <select
+                    required
+                    value={expenseCategory}
+                    onChange={(e) => setExpenseCategory(e.target.value)}
+                    className="w-full h-9 text-xs border rounded-md px-3 bg-white"
+                  >
+                    {["Rent", "Electricity", "Internet", "Fuel", "Salary", "Marketing", "Stationery", "Equipment", "Maintenance", "Miscellaneous"].map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Amount (₹) *</Label>
+                  <Input
+                    required
+                    type="number"
+                    placeholder="Enter expense amount"
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-gray-500">Paid By Employee *</Label>
+                  <select
+                    required
+                    value={paidByEmployee}
+                    onChange={(e) => setPaidByEmployee(e.target.value)}
+                    className="w-full h-9 text-xs border rounded-md px-3 bg-white"
+                  >
+                    <option value="">-- Choose Employee --</option>
+                    {employees.map((emp) => (
+                      <option key={emp} value={emp}>{emp}</option>
+                    ))}
+                    {!employees.includes(username) && (
+                      <option value={username}>{username} (You)</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-gray-500">Description *</Label>
+                <Input
+                  required
+                  type="text"
+                  placeholder="Describe the expense"
+                  value={expenseDescription}
+                  onChange={(e) => setExpenseDescription(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-gray-500">Remarks</Label>
+                <textarea
+                  placeholder="Additional remarks/notes"
+                  value={expenseRemarks}
+                  onChange={(e) => setExpenseRemarks(e.target.value)}
+                  className="w-full h-20 text-xs border rounded-md p-2 outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <DialogFooter className="flex justify-end gap-2 pt-2 border-t mt-4">
+                <Button type="button" variant="outline" onClick={() => setExpenseModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold">
+                  {editingExpense ? "Update Expense" : "Save Expense"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Client Financial Ledger Modal */}
       {showLedgerModal && ledgerClientId && (
         <Dialog open={showLedgerModal} onOpenChange={setShowLedgerModal}>
@@ -2560,7 +3250,7 @@ function AccountingDashboardPage() {
                   </div>
 
                   {/* Ledger Metrics Summary */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className={`grid grid-cols-2 gap-3 ${isAdmin ? "md:grid-cols-4 lg:grid-cols-8" : "md:grid-cols-5"}`}>
                     <div className="p-3 border rounded-lg bg-white">
                       <span className="text-[10px] font-bold text-slate-400 uppercase">Total Invoices</span>
                       <p className="text-lg font-bold text-slate-800">{summary.invoicesCount}</p>
@@ -2581,6 +3271,24 @@ function AccountingDashboardPage() {
                       <span className="text-[10px] font-bold text-slate-400 uppercase">Last Payment Date</span>
                       <p className="text-lg font-bold text-slate-700 font-mono">{summary.lastPaymentDate}</p>
                     </div>
+                    {isAdmin && (
+                      <>
+                        <div className="p-3 border rounded-lg bg-white">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">RTO Receipt</span>
+                          <p className="text-lg font-bold text-blue-600">₹{(summary.rtoReceipt || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        <div className="p-3 border rounded-lg bg-white">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">RTO Expense</span>
+                          <p className="text-lg font-bold text-amber-600">₹{(summary.rtoExpense || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        <div className="p-3 border rounded-lg bg-white">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Net Profit</span>
+                          <p className={`text-lg font-bold ${(summary.profit || 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            ₹{(summary.profit || 0).toLocaleString("en-IN")}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Generated Invoices Section */}

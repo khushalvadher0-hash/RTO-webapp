@@ -72,5 +72,9 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if isAuth();
     }
+
+    match /office_expenses/{id} {
+      allow read, write: if isAdmin();
+    }
   }
 }

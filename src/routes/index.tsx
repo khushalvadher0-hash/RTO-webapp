@@ -1,13 +1,30 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { login, getSession } from "@/lib/auth";
+import { login, getSession, isAuthReady } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/")({
-  beforeLoad: () => {
-    if (typeof window !== "undefined" && getSession()) {
+  beforeLoad: async () => {
+    if (typeof window === "undefined") return;
+
+    if (!isAuthReady()) {
+      await new Promise<void>((resolve) => {
+        const interval = setInterval(() => {
+          if (isAuthReady()) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 30);
+        setTimeout(() => {
+          clearInterval(interval);
+          resolve();
+        }, 3000);
+      });
+    }
+
+    if (getSession()) {
       throw redirect({ to: "/dashboard" });
     }
   },

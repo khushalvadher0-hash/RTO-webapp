@@ -12,7 +12,7 @@ import {
   getAuth,
 } from "firebase/auth";
 import { initializeApp, getApps } from "firebase/app";
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch, onSnapshot, query } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch, onSnapshot, query, where } from "firebase/firestore";
 import { toast } from "sonner";
 import { auth, db } from "./firebase";
 import { STAFF_USERS } from "./records";
@@ -30,11 +30,16 @@ export type StaffUser = {
 };
 
 // ─── In-memory session cache ──────────────────────────────────────────────────
-// Populated by initAuth() so getSession() stays synchronous (needed by
-// beforeLoad guards in routes).
+// Populated eagerly so getSession() stays synchronous and reliable.
+
+// ─── In-memory session cache ──────────────────────────────────────────────────
+// Populated eagerly so getSession() stays synchronous and reliable.
 
 let _session: StaffUser | null = null;
 let _initialized = false;
+let _userDocUnsub: (() => void) | null = null;
+let _authCallbacks: ((user: StaffUser | null) => void)[] = [];
+let _isLoggingIn = false;
 
 const EMAIL_DOMAIN = "staff-focus-hub.app";
 export const toEmail = (username: string) => `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
@@ -88,7 +93,6 @@ export const STAFF_CREDENTIALS = ALL_ACCOUNTS.map((a) => ({
 
 // ─── First-run provisioning ───────────────────────────────────────────────────
 
-// Migration: ensure seed users and required document fields exist in Firestore
 async function migrateUsers(): Promise<void> {
   const usersCol = collection(db, "users");
   const snapshot = await getDocs(usersCol);
@@ -145,119 +149,79 @@ async function migrateUsers(): Promise<void> {
   }
 }
 
+// ─── Eager Authentication Listener ────────────────────────────────────────────
+
+// Run database migrations once
+(async () => {
+  await migrateUsers().catch(console.error);
+})();
+
+// Listen to Firebase Auth state eagerly on module load
+onAuthStateChanged(auth, async (firebaseUser) => {
+  if (_userDocUnsub) {
+    _userDocUnsub();
+    _userDocUnsub = null;
+  }
+
+  if (firebaseUser) {
+    if (_isLoggingIn) {
+      // Let the login() function finish document migration and initialize the session
+      return;
+    }
+    _userDocUnsub = onSnapshot(doc(db, "users", firebaseUser.uid), async (snap) => {
+      if (!snap.exists()) {
+        await logout();
+        _authCallbacks.forEach(cb => cb(null));
+        return;
+      }
+
+      const data = snap.data();
+      const isInactive = data.status === "inactive" || data.isActive === false;
+
+      if (isInactive) {
+        toast.error("Your account has been deactivated by an administrator.");
+        await logout();
+        _authCallbacks.forEach(cb => cb(null));
+        return;
+      }
+
+      _session = {
+        uid: firebaseUser.uid,
+        username: data.username,
+        name: data.fullName || data.name || data.username || "",
+        role: data.role,
+        employeeId: data.employeeId,
+        ...data,
+      } as StaffUser;
+
+      _initialized = true;
+      _authCallbacks.forEach(cb => cb(_session));
+    }, (err) => {
+      console.error("Firestore session subscription error:", err);
+    });
+  } else {
+    _session = null;
+    _initialized = true;
+    _authCallbacks.forEach(cb => cb(null));
+  }
+});
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Bootstrap Firebase auth state.  Call once in the root component.
- * The callback fires every time the signed-in user changes.
- * Returns an unsubscribe function for cleanup.
- */
-let _userDocUnsub: (() => void) | null = null;
-
 export function initAuth(onChange: (user: StaffUser | null) => void): () => void {
-  (async () => {
-    await migrateUsers().catch(console.error);
-  })();
-
-  const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
-    if (_userDocUnsub) {
-      _userDocUnsub();
-      _userDocUnsub = null;
-    }
-
-    if (firebaseUser) {
-      _userDocUnsub = onSnapshot(doc(db, "users", firebaseUser.uid), async (snap) => {
-        if (!snap.exists()) {
-          await logout();
-          onChange(null);
-          return;
-        }
-
-        const data = snap.data();
-        const isInactive = data.status === "inactive" || data.isActive === false;
-
-        if (isInactive) {
-          toast.error("Your account has been deactivated by an administrator.");
-          await logout();
-          onChange(null);
-          return;
-        }
-
-        // Active session check for credential changes
-        if (_session && _session.uid === firebaseUser.uid && _session.role !== "admin") {
-          const credsChanged =
-            (data.username && data.username !== _session.username) ||
-            (data.credentialsChangedAt && data.credentialsChangedAt !== (_session as any).credentialsChangedAt);
-
-          if (credsChanged) {
-            toast.error("Your login credentials have been changed by an administrator. Please log in again.");
-            await logout();
-            onChange(null);
-            return;
-          }
-        }
-
-        _session = {
-          uid: firebaseUser.uid,
-          username: data.username,
-          name: data.fullName || data.name || data.username || "",
-          role: data.role,
-          employeeId: data.employeeId,
-          ...data,
-        } as StaffUser;
-
-        _initialized = true;
-        try {
-          localStorage.setItem(
-            "rp_session",
-            JSON.stringify({
-              uid: _session.uid,
-              username: _session.username,
-              name: _session.name,
-              role: _session.role,
-              employeeId: _session.employeeId,
-              credentialsChangedAt: data.credentialsChangedAt,
-            }),
-          );
-        } catch {}
-        onChange(_session);
-      });
-    } else {
-      _session = null;
-      _initialized = true;
-      try {
-        localStorage.removeItem("rp_session");
-      } catch {}
-      onChange(null);
-    }
-  });
-
+  _authCallbacks.push(onChange);
+  // Trigger immediately if already initialized to prevent race conditions
+  if (_initialized) {
+    onChange(_session);
+  }
   return () => {
-    if (_userDocUnsub) {
-      _userDocUnsub();
-      _userDocUnsub = null;
-    }
-    authUnsub();
+    _authCallbacks = _authCallbacks.filter(cb => cb !== onChange);
   };
 }
 
-/** Synchronous getter — populated after initAuth fires. */
+/** Synchronous getter — populated after eagerly initialized auth fires. */
 export function getSession(): StaffUser | null {
-  if (_session) return _session;
-  // Try to restore lightweight session from localStorage to avoid redirect loops
-  try {
-    const raw = localStorage.getItem("rp_session");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // Minimal validation
-      if (parsed && parsed.username) {
-        return parsed as StaffUser;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  return _session;
 }
 
 /** True once the first onAuthStateChanged callback has fired. */
@@ -265,130 +229,171 @@ export function isAuthReady(): boolean {
   return _initialized;
 }
 
-/** Sign in by username, employeeId, or email + password (maps to Firebase email internally). */
 export async function login(usernameInput: string, passwordInput: string): Promise<StaffUser> {
-  const cleanInput = usernameInput.trim();
-  const cleanPass = passwordInput.trim();
+  _isLoggingIn = true;
+  
+  try {
+    const cleanInput = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
 
-  if (!cleanInput || !cleanPass) {
-    throw new Error("Username and password are required.");
-  }
+    if (!cleanInput || !cleanPass) {
+      throw new Error("Username and password are required.");
+    }
 
-  // 1. Search Firestore users collection by username, employeeId, or email
-  const usersCol = collection(db, "users");
-  const snapshot = await getDocs(query(usersCol));
-  const userDocSnap = snapshot.docs.find((d) => {
-    const data = d.data();
-    const uName = (data.username || "").toLowerCase();
-    const eId = (data.employeeId || "").toLowerCase();
-    const emailStr = (data.email || "").toLowerCase();
-    const target = cleanInput.toLowerCase();
-    return uName === target || eId === target || emailStr === target;
-  });
+    // 1. Search Firestore users collection using highly targeted queries
+    let userDocSnap: any = null;
+    const usersCol = collection(db, "users");
 
-  let targetUsername = cleanInput;
-  let userProfile: any = null;
+    const q1 = await getDocs(query(usersCol, where("username", "==", cleanInput.toLowerCase())));
+    if (q1.docs.length > 0) {
+      userDocSnap = q1.docs[0];
+    } else {
+      const q2 = await getDocs(query(usersCol, where("employeeId", "==", cleanInput)));
+      if (q2.docs.length > 0) {
+        userDocSnap = q2.docs[0];
+      } else {
+        const q3 = await getDocs(query(usersCol, where("email", "==", cleanInput.toLowerCase())));
+        if (q3.docs.length > 0) {
+          userDocSnap = q3.docs[0];
+        }
+      }
+    }
 
-  if (userDocSnap) {
-    userProfile = userDocSnap.data();
-    targetUsername = userProfile.username || cleanInput;
+    let targetUsername = cleanInput;
+    let userProfile: any = null;
 
-    // Check account status
-    const isInactive = userProfile.status === "inactive" || userProfile.isActive === false;
-    if (isInactive) {
+    if (userDocSnap) {
+      userProfile = userDocSnap.data();
+      targetUsername = userProfile.username || cleanInput;
+
+      // Check account status
+      const isInactive = userProfile.status === "inactive" || userProfile.isActive === false;
+      if (isInactive) {
+        throw new Error("Your account is inactive. Please contact the Administrator.");
+      }
+      if (userProfile.status === "suspended") {
+        throw new Error("Your account has been suspended.");
+      }
+
+      // Check password matching against Firestore user record or default seed account
+      const expectedPassword = userProfile.password;
+      if (expectedPassword && expectedPassword !== cleanPass) {
+        const seedAccount = ALL_ACCOUNTS.find(
+          (a) => a.username.toLowerCase() === targetUsername.toLowerCase()
+        );
+        if (!seedAccount || seedAccount.password !== cleanPass) {
+          throw new Error("Invalid username or password.");
+        }
+      }
+    }
+
+    // 2. Authenticate with Firebase Auth
+    const firebaseEmail = toEmail(targetUsername);
+    let cred;
+
+    try {
+      cred = await signInWithEmailAndPassword(auth, firebaseEmail, cleanPass);
+    } catch (err: any) {
+      console.warn("Primary sign-in failed, checking secondary auth auto-provisioning fallback...", err);
+      if (userProfile) {
+        try {
+          const secAuth = getSecondaryAuth();
+          try {
+            await secondaryCreate(secAuth, firebaseEmail, cleanPass);
+          } catch (createErr: any) {
+            if (createErr?.code === "auth/email-already-in-use") {
+              try {
+                const secCred = await secondarySignIn(secAuth, firebaseEmail, userProfile.password || cleanPass);
+                if (secCred.user) {
+                  await secondaryUpdate(secCred.user, cleanPass);
+                }
+              } catch {}
+            }
+          }
+          await secondarySignOut(secAuth);
+          cred = await signInWithEmailAndPassword(auth, firebaseEmail, cleanPass);
+        } catch (fallbackErr) {
+          throw new Error("Invalid username or password.");
+        }
+      } else {
+        throw new Error("Invalid username or password.");
+      }
+    }
+
+    // 3. Resolve Firestore profile doc strictly by authenticated Firebase UID
+    const docId = cred.user.uid;
+    let snap = await getDoc(doc(db, "users", docId));
+
+    // If the profile document exists under an old random doc ID, copy/migrate it to the correct UID
+    if (!snap.exists() && userDocSnap && userDocSnap.id !== docId) {
+      const data = userDocSnap.data();
+      await setDoc(doc(db, "users", docId), {
+        ...data,
+        uid: docId,
+        userId: docId,
+      });
+      try {
+        await deleteDoc(doc(db, "users", userDocSnap.id));
+      } catch (delErr) {
+        console.warn("Failed to clean up old mismatched seed user doc:", delErr);
+      }
+      snap = await getDoc(doc(db, "users", docId));
+    }
+
+    if (!snap.exists()) {
+      throw new Error("User profile not found — contact admin.");
+    }
+
+    const profile = snap.data() as any;
+    if (profile.status === "inactive" || profile.isActive === false) {
+      await signOut(auth);
       throw new Error("Your account is inactive. Please contact the Administrator.");
     }
-    if (userProfile.status === "suspended") {
-      throw new Error("Your account has been suspended.");
-    }
 
-    // Check password matching against Firestore user record or default seed account
-    const expectedPassword = userProfile.password;
-    if (expectedPassword && expectedPassword !== cleanPass) {
-      const seedAccount = ALL_ACCOUNTS.find(
-        (a) => a.username.toLowerCase() === targetUsername.toLowerCase()
-      );
-      if (!seedAccount || seedAccount.password !== cleanPass) {
-        throw new Error("Invalid username or password.");
+    _session = {
+      uid: docId,
+      username: profile.username,
+      name: profile.fullName || profile.name || profile.username || "",
+      role: profile.role,
+      employeeId: profile.employeeId,
+      ...profile
+    } as StaffUser;
+
+    // Start real-time snapshot listener on the migrated user profile document
+    if (_userDocUnsub) {
+      _userDocUnsub();
+    }
+    _userDocUnsub = onSnapshot(doc(db, "users", docId), (s) => {
+      if (!s.exists()) {
+        logout();
+        return;
       }
-    }
-  }
-
-  // 2. Authenticate with Firebase Auth
-  const firebaseEmail = toEmail(targetUsername);
-  let cred;
-
-  try {
-    cred = await signInWithEmailAndPassword(auth, firebaseEmail, cleanPass);
-  } catch (err: any) {
-    console.warn("Primary sign-in failed, checking secondary auth auto-provisioning fallback...", err);
-    if (userProfile) {
-      try {
-        const secAuth = getSecondaryAuth();
-        try {
-          await secondaryCreate(secAuth, firebaseEmail, cleanPass);
-        } catch (createErr: any) {
-          if (createErr?.code === "auth/email-already-in-use") {
-            try {
-              const secCred = await secondarySignIn(secAuth, firebaseEmail, userProfile.password || cleanPass);
-              if (secCred.user) {
-                await secondaryUpdate(secCred.user, cleanPass);
-              }
-            } catch {}
-          }
-        }
-        await secondarySignOut(secAuth);
-        cred = await signInWithEmailAndPassword(auth, firebaseEmail, cleanPass);
-      } catch (fallbackErr) {
-        throw new Error("Invalid username or password.");
+      const uData = s.data();
+      if (uData.status === "inactive" || uData.isActive === false) {
+        toast.error("Your account has been deactivated by an administrator.");
+        logout();
+        return;
       }
-    } else {
-      throw new Error("Invalid username or password.");
-    }
-  }
+      _session = {
+        uid: docId,
+        username: uData.username,
+        name: uData.fullName || uData.name || uData.username || "",
+        role: uData.role,
+        employeeId: uData.employeeId,
+        ...uData,
+      } as StaffUser;
+      _authCallbacks.forEach(cb => cb(_session));
+    });
 
-  // 3. Resolve Firestore profile doc
-  let docId = cred.user.uid;
-  let snap = await getDoc(doc(db, "users", docId));
-  if (!snap.exists() && userDocSnap) {
-    docId = userDocSnap.id;
-    snap = userDocSnap;
+    _initialized = true;
+    _authCallbacks.forEach(cb => cb(_session));
+    window.dispatchEvent(new Event("auth-change"));
+    return _session;
+  } catch (err) {
+    throw err;
+  } finally {
+    _isLoggingIn = false;
   }
-
-  if (!snap.exists()) {
-    throw new Error("User profile not found — contact admin.");
-  }
-
-  const profile = snap.data() as any;
-  if (profile.status === "inactive" || profile.isActive === false) {
-    await signOut(auth);
-    throw new Error("Your account is inactive. Please contact the Administrator.");
-  }
-
-  _session = {
-    uid: docId,
-    username: profile.username,
-    name: profile.fullName || profile.name || profile.username || "",
-    role: profile.role,
-    employeeId: profile.employeeId,
-    ...profile
-  } as StaffUser;
-  try {
-    localStorage.setItem(
-      "rp_session",
-      JSON.stringify({
-        uid: _session.uid,
-        username: _session.username,
-        name: _session.name,
-        role: _session.role,
-        employeeId: _session.employeeId,
-      }),
-    );
-  } catch {
-    // ignore
-  }
-  window.dispatchEvent(new Event("auth-change"));
-  return _session;
 }
 
 /** Sign out the current user. */
@@ -396,7 +401,16 @@ export async function logout(): Promise<void> {
   await signOut(auth);
   _session = null;
   try {
-    localStorage.removeItem("rp_session");
+    localStorage.clear();
+    sessionStorage.clear();
   } catch {}
+
+  try {
+    const { queryClient } = await import("@/router");
+    queryClient.clear();
+  } catch (err) {
+    console.warn("Failed to clear query cache on logout:", err);
+  }
+
   window.dispatchEvent(new Event("auth-change"));
 }

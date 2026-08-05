@@ -10,6 +10,7 @@ import {
   getDoc,
   deleteDoc,
   runTransaction,
+  limit,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { removeUndefined } from "./records";
@@ -274,6 +275,16 @@ export interface LicenseDetailsData {
       vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
       newDob?: string;
     };
+    dlNumber?: string;
+    classOfVehicle?: string[];
+    issueDate?: string;
+    validityDate?: string;
+    vehicleTypes?: { nt?: boolean; tr?: boolean; hazardous?: boolean };
+    ntValidity?: string;
+    trValidity?: string;
+    hazardousValidity?: string;
+    hazardousTrainingValidity?: string;
+    internationalLicenceValidity?: string;
   };
 }
 
@@ -298,6 +309,7 @@ export interface ApplicationRecord {
   vehicleNumber: string;
   ownerName: string;
   mobileNumber: string;
+  dateOfBirth?: string;
   services: string[];
   subModule?: "services" | "licence" | "driving_school" | "insurance" | "form5";
   licenseDetails?: LicenseDetailsData;
@@ -737,8 +749,8 @@ export async function saveApplicationAndVehicle(
       const oldVeh = oldApp.vehicleDetails || {};
       const newVeh = appData.vehicleDetails || {};
       const compareVehAndLog = (fieldKey: string, label: string) => {
-        const oldVal = oldVeh[fieldKey];
-        const newVal = newVeh[fieldKey];
+        const oldVal = (oldVeh as any)[fieldKey];
+        const newVal = (newVeh as any)[fieldKey];
         if (newVal !== undefined && String(oldVal || "") !== String(newVal || "")) {
           newLogs.push({
             id: crypto.randomUUID(),
@@ -1055,5 +1067,71 @@ export async function deleteApplication(id: string): Promise<void> {
   } catch (err) {
     console.error("Error in deleteApplication:", err);
     throw err;
+  }
+}
+
+export async function searchExistingApplication(
+  subModule: "services" | "insurance" | "licence" | "form5" | "driving_school",
+  lookupKey: string | { ownerName?: string; studentName?: string; mobileNumber: string }
+): Promise<any | null> {
+  try {
+    const colName = subModule === "driving_school" ? "DrivingSchoolApplications" : "registry_applications_v1";
+    let q;
+    
+    if (subModule === "services") {
+      const vehicleNum = typeof lookupKey === "string" ? lookupKey.trim().toUpperCase() : "";
+      if (!vehicleNum) return null;
+      q = query(
+        collection(db, colName),
+        where("vehicleNumber", "==", vehicleNum)
+      );
+    } else {
+      const keys = lookupKey as { ownerName?: string; studentName?: string; mobileNumber: string };
+      const mobile = (keys.mobileNumber || "").trim();
+      if (!mobile) return null;
+      q = query(
+        collection(db, colName),
+        where("mobileNumber", "==", mobile)
+      );
+    }
+    
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    
+    const records = snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as any))
+      .filter(docData => {
+        if (docData.archived === true || docData.isArchived === true) return false;
+        
+        if (subModule === "services") {
+          return docData.subModule === "services";
+        } else if (subModule === "insurance") {
+          const name = ((lookupKey as any).ownerName || "").trim().toLowerCase();
+          return docData.subModule === "insurance" && (docData.ownerName || "").trim().toLowerCase() === name;
+        } else if (subModule === "licence") {
+          const name = ((lookupKey as any).ownerName || "").trim().toLowerCase();
+          return docData.subModule === "licence" && (docData.ownerName || "").trim().toLowerCase() === name;
+        } else if (subModule === "form5") {
+          const name = ((lookupKey as any).ownerName || "").trim().toLowerCase();
+          return docData.subModule === "form5" && (docData.ownerName || "").trim().toLowerCase() === name;
+        } else if (subModule === "driving_school") {
+          const name = ((lookupKey as any).studentName || "").trim().toLowerCase();
+          return (docData.studentName || "").trim().toLowerCase() === name;
+        }
+        return false;
+      });
+      
+    if (records.length === 0) return null;
+    
+    records.sort((a, b) => {
+      const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
+    
+    return records[0];
+  } catch (err) {
+    console.error("Error in searchExistingApplication:", err);
+    return null;
   }
 }

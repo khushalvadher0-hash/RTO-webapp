@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AdminPinModal } from "@/components/AdminPinModal";
 import {
   fetchAllUsers,
   createEmployee,
@@ -102,7 +101,6 @@ function EmployeesPage() {
   }, [selectedEmployee]);
   
   // Delete PIN verification & confirmation modal
-  const [pinModalOpen, setPinModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [employeeToDelete, setEmployeeToDelete] = useState<UserRecord | null>(null);
   const [assignedTaskCount, setAssignedTaskCount] = useState<number>(0);
@@ -136,25 +134,16 @@ function EmployeesPage() {
     status: "active" as "active" | "inactive",
   });
 
-  const refreshData = async () => {
-    try {
-      const list = await fetchAllUsers();
-      setEmployees(list);
-    } catch (err: any) {
-      toast.error("Failed to load employees list");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Subscriptions to employees and audit logs
   useEffect(() => {
-    refreshData();
-
     // Sync users
     const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
       const list = snap.docs.map((d) => ({ uid: d.id, userId: d.id, ...d.data() }) as UserRecord);
       setEmployees(list);
+      setLoading(false);
+    }, (err) => {
+      console.error("Failed to sync users:", err);
+      setLoading(false);
     });
 
     // Sync audit logs
@@ -162,6 +151,8 @@ function EmployeesPage() {
     const unsubAudit = onSnapshot(qAudit, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as EmployeeAuditLog);
       setAuditLogs(list);
+    }, (err) => {
+      console.error("Failed to sync audit logs:", err);
     });
 
     return () => {
@@ -281,6 +272,10 @@ function EmployeesPage() {
   };
 
   const handleOpenEdit = (emp: UserRecord) => {
+    if (emp.employeeId === "Boss001" || emp.username === "admin") {
+      toast.error("Cannot edit permanent admin account");
+      return;
+    }
     setEditEmployee(emp);
     setEditForm({
       fullName: emp.fullName || "",
@@ -345,24 +340,30 @@ function EmployeesPage() {
       await updateEmployee(editEmployee.uid, editForm);
       setEditEmployee(null);
       toast.success("Employee updated successfully");
-      refreshData();
     } catch (err: any) {
       toast.error(err.message || "Failed to update employee");
     }
   };
 
   const handleToggleStatus = async (emp: UserRecord) => {
+    if (emp.employeeId === "Boss001" || emp.username === "admin") {
+      toast.error("Cannot disable permanent admin account");
+      return;
+    }
     const newStatus = emp.status === "active" ? "inactive" : "active";
     try {
       await setEmployeeStatus(emp.uid, newStatus);
       toast.success(`Employee ${newStatus === "active" ? "activated" : "deactivated"}`);
-      refreshData();
     } catch (err: any) {
       toast.error("Failed to update status");
     }
   };
 
   const handleDeleteClick = async (emp: UserRecord) => {
+    if (emp.employeeId === "Boss001" || emp.username === "admin") {
+      toast.error("Cannot delete permanent admin account");
+      return;
+    }
     setEmployeeToDelete(emp);
     setDeleteConfirmOpen(true);
     setFetchingTaskCount(true);
@@ -381,7 +382,6 @@ function EmployeesPage() {
     try {
       await deleteEmployee(employeeToDelete.uid);
       toast.success(`Employee deleted and ${assignedTaskCount} tasks unassigned successfully`);
-      refreshData();
     } catch (err: any) {
       toast.error(err.message || "Deletion failed");
     } finally {
@@ -588,7 +588,9 @@ function EmployeesPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleOpenEdit(e)}
+                          disabled={e.employeeId === "Boss001" || e.username === "admin"}
                           title="Edit"
+                          className={e.employeeId === "Boss001" || e.username === "admin" ? "opacity-30 cursor-not-allowed" : ""}
                         >
                           <Edit2 className="size-4 text-amber-600" />
                         </Button>
@@ -596,7 +598,9 @@ function EmployeesPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleToggleStatus(e)}
+                          disabled={e.employeeId === "Boss001" || e.username === "admin"}
                           title={e.status === "active" ? "Deactivate" : "Activate"}
+                          className={e.employeeId === "Boss001" || e.username === "admin" ? "opacity-30 cursor-not-allowed" : ""}
                         >
                           <Power
                             className={`size-4 ${
@@ -608,7 +612,9 @@ function EmployeesPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDeleteClick(e)}
+                          disabled={e.employeeId === "Boss001" || e.username === "admin"}
                           title="Delete Employee"
+                          className={e.employeeId === "Boss001" || e.username === "admin" ? "opacity-30 cursor-not-allowed" : ""}
                         >
                           <Trash2 className="size-4 text-red-500" />
                         </Button>
@@ -1166,18 +1172,17 @@ function EmployeesPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-rose-600">
               <AlertTriangle className="size-5" />
-              Confirm Employee Deletion
+              Are you sure?
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-sm text-gray-700">
-            <p>
-              Are you sure you want to delete employee{" "}
-              <strong className="text-gray-900 font-bold">
-                {employeeToDelete?.fullName || employeeToDelete?.username}
-              </strong>
-              ?
-            </p>
+            <p>This action cannot be undone.</p>
+            {employeeToDelete && (
+              <p className="text-xs text-muted-foreground">
+                Deleting employee: <strong className="text-gray-900 font-bold">{employeeToDelete.fullName || employeeToDelete.username}</strong>
+              </p>
+            )}
 
             {fetchingTaskCount ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground p-3 bg-slate-50 rounded-lg border">
@@ -1185,15 +1190,11 @@ function EmployeesPage() {
                 Checking assigned tasks...
               </div>
             ) : (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-900 text-xs font-medium">
-                {assignedTaskCount > 0 ? (
-                  <span>
-                    This employee currently has <strong>{assignedTaskCount} assigned tasks</strong>. These tasks will automatically become <strong>Unassigned</strong>. Continue?
-                  </span>
-                ) : (
-                  <span>This employee has 0 assigned tasks. Account will be deleted and archived.</span>
-                )}
-              </div>
+              assignedTaskCount > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-900 text-xs font-medium">
+                  This employee currently has <strong>{assignedTaskCount} assigned tasks</strong>. These tasks will automatically become <strong>Unassigned</strong>.
+                </div>
+              )
             )}
           </div>
 
@@ -1206,21 +1207,14 @@ function EmployeesPage() {
               disabled={fetchingTaskCount}
               onClick={() => {
                 setDeleteConfirmOpen(false);
-                setPinModalOpen(true);
+                handleConfirmDelete();
               }}
             >
-              Delete Employee
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Admin PIN modal for employee deletion */}
-      <AdminPinModal
-        open={pinModalOpen}
-        onOpenChange={setPinModalOpen}
-        onSuccess={handleConfirmDelete}
-      />
     </div>
   );
 }
