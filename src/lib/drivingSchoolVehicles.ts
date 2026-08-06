@@ -47,23 +47,47 @@ export interface DrivingSchoolVehicle {
   updatedAt: string;
 }
 
+export interface StudentTrip {
+  studentName: string;
+  batch?: string;
+  pickupTime: string;
+  dropTime: string;
+  pickupLocation: string;
+  dropLocation: string;
+  purpose: string;
+  remarks?: string;
+}
+
 export interface DrivingSchoolDailyReport {
   id: string;
   vehicleId: string;
   vehicleNumber: string;
-  studentId?: string;
-  studentName: string;
+  driver?: string;
   reportDate: string;
+  
+  // Odometer Info
   startOdometer: number;
-  endOdometer: number;
-  distanceTravelled: number;
   startOdometerPhoto?: string;
+  endOdometer: number;
   endOdometerPhoto?: string;
-  generalExpenseAmount?: number;
-  generalExpenseDescription?: string;
-  fuelType?: string;
+  distanceTravelled: number;
+  
+  // Expenses
+  fuelExpense?: number;
+  generalExpense?: number;
+  otherExpense?: number;
+  expenseRemarks?: string;
+  totalExpense?: number;
+  
+  // Student Trips
+  studentTrips: StudentTrip[];
+  
+  // Legacy / Compatibility fields
+  studentName?: string;
   fuelAmount?: number;
+  generalExpenseAmount?: number;
   notes?: string;
+  
   createdAt: string;
   updatedAt: string;
 }
@@ -266,7 +290,7 @@ export async function deleteDrivingSchoolVehicleRecord(id: string): Promise<void
 
 // 6. Save / Update Daily Report (Auto updates Vehicle's currentOdometer)
 export async function saveDrivingSchoolDailyReportRecord(
-  reportData: Partial<DrivingSchoolDailyReport> & { vehicleId: string; vehicleNumber: string; studentName: string; startOdometer: number; endOdometer: number },
+  reportData: Partial<DrivingSchoolDailyReport> & { vehicleId: string; vehicleNumber: string; startOdometer: number; endOdometer: number },
   existingId?: string
 ): Promise<string> {
   const session = getSession();
@@ -302,6 +326,10 @@ export async function saveDrivingSchoolDailyReportRecord(
   }
 
   const distance = Math.max(0, (Number(reportData.endOdometer) || 0) - (Number(reportData.startOdometer) || 0));
+  const fExp = Number(reportData.fuelExpense) || 0;
+  const gExp = Number(reportData.generalExpense) || 0;
+  const oExp = Number(reportData.otherExpense) || 0;
+  const totalExp = fExp + gExp + oExp;
 
   if (!isUpdate) {
     const payload = removeUndefined({
@@ -312,8 +340,11 @@ export async function saveDrivingSchoolDailyReportRecord(
       startOdometer: Number(reportData.startOdometer) || 0,
       endOdometer: Number(reportData.endOdometer) || 0,
       distanceTravelled: distance,
-      generalExpenseAmount: Number(reportData.generalExpenseAmount) || 0,
-      fuelAmount: Number(reportData.fuelAmount) || 0,
+      fuelExpense: fExp,
+      generalExpense: gExp,
+      otherExpense: oExp,
+      totalExpense: totalExp,
+      studentTrips: reportData.studentTrips || [],
       createdAt: now,
       updatedAt: now,
       createdBy: session?.name || "System",
@@ -329,8 +360,11 @@ export async function saveDrivingSchoolDailyReportRecord(
       startOdometer: Number(reportData.startOdometer) || 0,
       endOdometer: Number(reportData.endOdometer) || 0,
       distanceTravelled: distance,
-      generalExpenseAmount: Number(reportData.generalExpenseAmount) || 0,
-      fuelAmount: Number(reportData.fuelAmount) || 0,
+      fuelExpense: fExp,
+      generalExpense: gExp,
+      otherExpense: oExp,
+      totalExpense: totalExp,
+      studentTrips: reportData.studentTrips || [],
       updatedAt: now,
       updatedBy: session?.name || "System",
     });

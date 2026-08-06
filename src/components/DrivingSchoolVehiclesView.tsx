@@ -84,18 +84,36 @@ export function DrivingSchoolVehiclesView() {
 
   // Form States for Daily Report
   const [reportDate, setReportDate] = useState(new Date().toISOString().split("T")[0]);
-  const [reportStudentId, setReportStudentId] = useState("");
-  const [reportStudentName, setReportStudentName] = useState("");
+  const [reportDriver, setReportDriver] = useState("");
   const [reportStartOdometer, setReportStartOdometer] = useState<number | string>(0);
   const [reportEndOdometer, setReportEndOdometer] = useState<number | string>(0);
   const [reportStartPhoto, setReportStartPhoto] = useState("");
   const [reportEndPhoto, setReportEndPhoto] = useState("");
-  const [reportGeneralAmount, setReportGeneralAmount] = useState<number | string>("");
-  const [reportGeneralDesc, setReportGeneralDesc] = useState("");
-  const [reportFuelType, setReportFuelType] = useState("Petrol");
-  const [reportFuelAmount, setReportFuelAmount] = useState<number | string>("");
-  const [reportNotes, setReportNotes] = useState("");
+  const [reportFuelExpense, setReportFuelExpense] = useState<number | string>("");
+  const [reportGeneralExpense, setReportGeneralExpense] = useState<number | string>("");
+  const [reportOtherExpense, setReportOtherExpense] = useState<number | string>("");
+  const [reportExpenseRemarks, setReportExpenseRemarks] = useState("");
+  const [reportStudentTrips, setReportStudentTrips] = useState<StudentTrip[]>([{
+    studentName: "",
+    batch: "",
+    pickupTime: "",
+    dropTime: "",
+    pickupLocation: "",
+    dropLocation: "",
+    purpose: "",
+    remarks: ""
+  }]);
   const [savingReport, setSavingReport] = useState(false);
+
+  // View Report Details Modal States
+  const [viewReportDetailsOpen, setViewReportDetailsOpen] = useState(false);
+  const [selectedReportForView, setSelectedReportForView] = useState<DrivingSchoolDailyReport | null>(null);
+
+  // Search & Filter States for Daily Report History List
+  const [filterVehicleId, setFilterVehicleId] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filterDriver, setFilterDriver] = useState("");
+  const [filterStudentName, setFilterStudentName] = useState("");
 
   // Realtime Subscriptions
   useEffect(() => {
@@ -220,31 +238,51 @@ export function DrivingSchoolVehiclesView() {
     if (report) {
       setEditingReportId(report.id);
       setReportDate(report.reportDate || "");
-      setReportStudentId(report.studentId || "");
-      setReportStudentName(report.studentName || "");
+      setReportDriver(report.driver || "");
       setReportStartOdometer(report.startOdometer || 0);
       setReportEndOdometer(report.endOdometer || 0);
       setReportStartPhoto(report.startOdometerPhoto || "");
       setReportEndPhoto(report.endOdometerPhoto || "");
-      setReportGeneralAmount(report.generalExpenseAmount || "");
-      setReportGeneralDesc(report.generalExpenseDescription || "");
-      setReportFuelType(report.fuelType || veh.fuelType || "Petrol");
-      setReportFuelAmount(report.fuelAmount || "");
-      setReportNotes(report.notes || "");
+      setReportFuelExpense(report.fuelExpense !== undefined ? report.fuelExpense : (report.fuelAmount || ""));
+      setReportGeneralExpense(report.generalExpense !== undefined ? report.generalExpense : (report.generalExpenseAmount || ""));
+      setReportOtherExpense(report.otherExpense || "");
+      setReportExpenseRemarks(report.expenseRemarks || report.notes || "");
+      if (report.studentTrips && report.studentTrips.length > 0) {
+        setReportStudentTrips(report.studentTrips);
+      } else {
+        setReportStudentTrips([{
+          studentName: report.studentName || "",
+          batch: "",
+          pickupTime: "",
+          dropTime: "",
+          pickupLocation: "",
+          dropLocation: "",
+          purpose: "",
+          remarks: ""
+        }]);
+      }
     } else {
       setEditingReportId(null);
       setReportDate(new Date().toISOString().split("T")[0]);
-      setReportStudentId("");
-      setReportStudentName(activeStudents[0]?.studentName || "");
+      setReportDriver("");
       setReportStartOdometer(veh.currentOdometer || 0);
       setReportEndOdometer((veh.currentOdometer || 0) + 38);
       setReportStartPhoto("");
       setReportEndPhoto("");
-      setReportGeneralAmount("");
-      setReportGeneralDesc("");
-      setReportFuelType(veh.fuelType || "Petrol");
-      setReportFuelAmount("");
-      setReportNotes("");
+      setReportFuelExpense("");
+      setReportGeneralExpense("");
+      setReportOtherExpense("");
+      setReportExpenseRemarks("");
+      setReportStudentTrips([{
+        studentName: activeStudents[0]?.studentName || "",
+        batch: "",
+        pickupTime: "",
+        dropTime: "",
+        pickupLocation: "",
+        dropLocation: "",
+        purpose: "",
+        remarks: ""
+      }]);
     }
     setDailyReportOpen(true);
   };
@@ -254,8 +292,31 @@ export function DrivingSchoolVehiclesView() {
     e.preventDefault();
     if (!selectedVehicleForReport) return;
 
-    if (!reportStudentName.trim()) {
-      toast.error("Please select or enter Today's Student!");
+    // Check for duplicate reports for same vehicle and date
+    const duplicate = allReports.find(
+      (r) =>
+        r.vehicleId === selectedVehicleForReport.id &&
+        r.reportDate === reportDate &&
+        r.id !== editingReportId
+    );
+    if (duplicate) {
+      toast.error("Vehicle Daily Report already exists for this vehicle today. Do not create duplicate reports.");
+      return;
+    }
+
+    // Validate odometer photos
+    if (!reportStartPhoto) {
+      toast.error("Starting Odometer Photo is required!");
+      return;
+    }
+    if (!reportEndPhoto) {
+      toast.error("Ending Odometer Photo is required!");
+      return;
+    }
+
+    // Validate students list
+    if (reportStudentTrips.length === 0 || reportStudentTrips.some(t => !t.studentName.trim())) {
+      toast.error("Please add at least one student trip and fill in the student name.");
       return;
     }
 
@@ -269,22 +330,32 @@ export function DrivingSchoolVehiclesView() {
 
     setSavingReport(true);
     try {
+      const fExp = Number(reportFuelExpense) || 0;
+      const gExp = Number(reportGeneralExpense) || 0;
+      const oExp = Number(reportOtherExpense) || 0;
+      const totalExp = fExp + gExp + oExp;
+
       await saveDrivingSchoolDailyReportRecord({
         vehicleId: selectedVehicleForReport.id,
         vehicleNumber: selectedVehicleForReport.vehicleNumber,
-        studentId: reportStudentId,
-        studentName: reportStudentName,
         reportDate,
+        driver: reportDriver,
         startOdometer: startOdo,
         endOdometer: endOdo,
         distanceTravelled: Math.max(0, endOdo - startOdo),
         startOdometerPhoto: reportStartPhoto,
         endOdometerPhoto: reportEndPhoto,
-        generalExpenseAmount: Number(reportGeneralAmount) || 0,
-        generalExpenseDescription: reportGeneralDesc,
-        fuelType: reportFuelType,
-        fuelAmount: Number(reportFuelAmount) || 0,
-        notes: reportNotes,
+        fuelExpense: fExp,
+        generalExpense: gExp,
+        otherExpense: oExp,
+        expenseRemarks: reportExpenseRemarks,
+        totalExpense: totalExp,
+        studentTrips: reportStudentTrips,
+        // legacy compatibility fallback properties
+        studentName: reportStudentTrips[0]?.studentName || "",
+        fuelAmount: fExp,
+        generalExpenseAmount: gExp,
+        notes: reportExpenseRemarks,
       }, editingReportId || undefined);
 
       toast.success(editingReportId ? "Daily Vehicle Report updated successfully!" : "Daily Vehicle Report saved successfully!");
@@ -323,6 +394,10 @@ export function DrivingSchoolVehiclesView() {
   // Open Vehicle Info Modal
   const openVehicleInfoModal = (veh: DrivingSchoolVehicle) => {
     setSelectedVehicleForInfo(veh);
+    setFilterVehicleId(veh.id);
+    setFilterDate("");
+    setFilterDriver("");
+    setFilterStudentName("");
     setVehicleInfoOpen(true);
 
     // Subscribe to reports for this specific vehicle
@@ -331,6 +406,26 @@ export function DrivingSchoolVehiclesView() {
     });
     return unsub;
   };
+
+  const filteredReports = useMemo(() => {
+    const baseReports = selectedVehicleForInfo 
+      ? allReports.filter(r => r.vehicleId === selectedVehicleForInfo.id)
+      : allReports;
+
+    return baseReports.filter((r) => {
+      if (filterVehicleId && r.vehicleId !== filterVehicleId) return false;
+      if (filterDate && r.reportDate !== filterDate) return false;
+      if (filterDriver && !(r.driver || "").toLowerCase().includes(filterDriver.toLowerCase())) return false;
+      
+      if (filterStudentName) {
+        const q = filterStudentName.toLowerCase();
+        const matchLegacy = (r.studentName || "").toLowerCase().includes(q);
+        const matchTrips = r.studentTrips && r.studentTrips.some(t => (t.studentName || "").toLowerCase().includes(q));
+        if (!matchLegacy && !matchTrips) return false;
+      }
+      return true;
+    });
+  }, [allReports, selectedVehicleForInfo, filterVehicleId, filterDate, filterDriver, filterStudentName]);
 
   const [uploadingDocKey, setUploadingDocKey] = useState<string | null>(null);
 
@@ -640,7 +735,6 @@ export function DrivingSchoolVehiclesView() {
         </div>
       )}
 
-      {/* DAILY REPORT MODAL (MATCHING SCREENSHOT 2 EXACTLY) */}
       {dailyReportOpen && selectedVehicleForReport && (
         <div
           onClick={() => setDailyReportOpen(false)}
@@ -648,7 +742,7 @@ export function DrivingSchoolVehiclesView() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl space-y-6 my-auto p-6 border border-slate-200 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
+            className="bg-white w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl space-y-6 my-auto p-6 border border-slate-200 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
@@ -666,237 +760,385 @@ export function DrivingSchoolVehiclesView() {
             </div>
 
             <form onSubmit={handleSaveDailyReport} className="space-y-6 text-xs">
-              {/* Row 1: Report Date, Today's Student, Distance Travelled */}
-              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                    REPORT DATE
-                  </label>
-                  <input
-                    type="date"
-                    value={reportDate}
-                    onChange={(e) => setReportDate(e.target.value)}
-                    className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                    TODAY'S STUDENT
-                  </label>
-                  <select
-                    value={reportStudentName}
-                    onChange={(e) => {
-                      setReportStudentName(e.target.value);
-                      const matched = activeStudents.find((s) => s.studentName === e.target.value);
-                      if (matched) setReportStudentId(matched.id);
-                    }}
-                    className="w-full p-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-900"
+              {/* SECTION 1: STUDENT TRIP DETAILS */}
+              <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                  <h3 className="text-sm font-bold text-slate-800">SECTION 1: STUDENT TRIP DETAILS</h3>
+                  <Button
+                    type="button"
+                    onClick={() => setReportStudentTrips((prev) => [...prev, {
+                      studentName: activeStudents[0]?.studentName || "",
+                      batch: "",
+                      pickupTime: "",
+                      dropTime: "",
+                      pickupLocation: "",
+                      dropLocation: "",
+                      purpose: "",
+                      remarks: ""
+                    }])}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[10px] h-7 px-3 rounded-lg flex items-center gap-1"
                   >
-                    {activeStudents.length === 0 ? (
-                      <option value="">No Active Students</option>
-                    ) : (
-                      activeStudents.map((s) => (
-                        <option key={s.id} value={s.studentName}>
-                          {s.studentName} ({s.courseType || "15 Days"})
-                        </option>
-                      ))
-                    )}
-                  </select>
+                    <Plus className="w-3.5 h-3.5" /> Add Student
+                  </Button>
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                    DISTANCE TRAVELLED
-                  </label>
-                  <div className="p-3 bg-white border border-slate-200 rounded-xl font-mono font-bold text-slate-900 flex items-center justify-between">
-                    <span>
-                      {Math.max(
-                        0,
-                        (Number(reportEndOdometer) || 0) - (Number(reportStartOdometer) || 0)
-                      )}{" "}
-                      km
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-sans font-normal">Auto</span>
-                  </div>
-                </div>
-              </div>
+                <div className="space-y-4">
+                  {reportStudentTrips.map((trip, idx) => (
+                    <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 relative space-y-3">
+                      <div className="absolute top-2 right-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (reportStudentTrips.length === 1) {
+                              toast.error("At least one student trip is required.");
+                              return;
+                            }
+                            setReportStudentTrips((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="p-1 rounded-md text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
-              {/* Row 2: Start & End Odometer Photo Capture Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Start Odometer Photo */}
-                <div className="p-5 bg-slate-50/80 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">
-                    START ODOMETER PHOTO
-                  </span>
-                  {reportStartPhoto ? (
-                    <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200">
-                      <img src={reportStartPhoto} alt="Start Odometer" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setReportStartPhoto("")}
-                        className="absolute top-2 right-2 p-1 rounded-full bg-rose-600 text-white hover:bg-rose-700"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Student Name</label>
+                          <select
+                            value={trip.studentName}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], studentName: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-900"
+                          >
+                            {activeStudents.map((s) => (
+                              <option key={s.id} value={s.studentName}>
+                                {s.studentName} ({s.courseType || "15 Days"})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Batch / Class</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Morning Batch"
+                            value={trip.batch || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], batch: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Pickup Time</label>
+                          <input
+                            type="time"
+                            value={trip.pickupTime || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], pickupTime: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Drop Time</label>
+                          <input
+                            type="time"
+                            value={trip.dropTime || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], dropTime: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Pickup Location</label>
+                          <input
+                            type="text"
+                            placeholder="Pickup address..."
+                            value={trip.pickupLocation || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], pickupLocation: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Drop Location</label>
+                          <input
+                            type="text"
+                            placeholder="Drop address..."
+                            value={trip.dropLocation || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], dropLocation: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Purpose / Lesson Type</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Reverse parking, Highway..."
+                            value={trip.purpose || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], purpose: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Remarks (Optional)</label>
+                          <input
+                            type="text"
+                            placeholder="Student remarks..."
+                            value={trip.remarks || ""}
+                            onChange={(e) => {
+                              const next = [...reportStudentTrips];
+                              next[idx] = { ...next[idx], remarks: e.target.value };
+                              setReportStudentTrips(next);
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                          />
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        setCameraTargetField("start");
-                        setCameraModalOpen(true);
-                      }}
-                      className="w-full bg-white hover:bg-slate-100 text-blue-600 font-semibold border border-blue-200 rounded-xl py-3 flex items-center justify-center gap-2"
-                    >
-                      <Camera className="w-4 h-4 text-blue-600" />
-                      Start Odometer Photo
-                    </Button>
-                  )}
-                </div>
-
-                {/* End Odometer Photo */}
-                <div className="p-5 bg-slate-50/80 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">
-                    END ODOMETER PHOTO
-                  </span>
-                  {reportEndPhoto ? (
-                    <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200">
-                      <img src={reportEndPhoto} alt="End Odometer" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setReportEndPhoto("")}
-                        className="absolute top-2 right-2 p-1 rounded-full bg-rose-600 text-white hover:bg-rose-700"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        setCameraTargetField("end");
-                        setCameraModalOpen(true);
-                      }}
-                      className="w-full bg-white hover:bg-slate-100 text-blue-600 font-semibold border border-blue-200 rounded-xl py-3 flex items-center justify-center gap-2"
-                    >
-                      <Camera className="w-4 h-4 text-blue-600" />
-                      End Odometer Photo
-                    </Button>
-                  )}
+                  ))}
                 </div>
               </div>
 
-              {/* Row 3: Start & End Odometer Input Readings */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                    START ODOMETER READING
-                  </label>
-                  <input
-                    type="number"
-                    value={reportStartOdometer}
-                    onChange={(e) => setReportStartOdometer(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900"
-                  />
-                </div>
+              {/* SECTION 2: VEHICLE DAILY REPORT */}
+              <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-4">
+                <h3 className="text-sm font-bold text-slate-800 border-b border-slate-200/60 pb-2">SECTION 2: VEHICLE DAILY REPORT</h3>
 
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                    END ODOMETER READING
-                  </label>
-                  <input
-                    type="number"
-                    value={reportEndOdometer}
-                    onChange={(e) => setReportEndOdometer(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900"
-                  />
-                </div>
-              </div>
-
-              {/* Row 4: General Expense & Fuel Expense Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* General Expense Card */}
-                <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
-                  <div className="flex items-center gap-2 font-bold text-slate-900">
-                    <DollarSign className="w-4 h-4 text-blue-600" />
-                    <span>General Expense</span>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      AMOUNT
-                    </label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Vehicle Number</label>
+                    <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl font-semibold text-slate-700 font-mono">
+                      {selectedVehicleForReport.vehicleNumber}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Driver Name</label>
                     <input
-                      type="number"
-                      placeholder="₹"
-                      value={reportGeneralAmount}
-                      onChange={(e) => setReportGeneralAmount(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold font-mono text-slate-900"
+                      type="text"
+                      placeholder="Driver Name..."
+                      value={reportDriver}
+                      onChange={(e) => setReportDriver(e.target.value)}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium"
                     />
                   </div>
+
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      DESCRIPTION
-                    </label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Report Date</label>
+                    <input
+                      type="date"
+                      value={reportDate}
+                      onChange={(e) => setReportDate(e.target.value)}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Odometer Photo Capture Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white rounded-xl border border-dashed border-slate-300 text-center space-y-3">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">START ODOMETER PHOTO *</span>
+                    {reportStartPhoto ? (
+                      <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200">
+                        <img src={reportStartPhoto} alt="Start Odometer" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setReportStartPhoto("")}
+                          className="absolute top-2 right-2 p-1 rounded-full bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setCameraTargetField("start");
+                          setCameraModalOpen(true);
+                        }}
+                        className="w-full bg-white hover:bg-slate-100 text-blue-600 font-semibold border border-blue-200 rounded-xl py-3 flex items-center justify-center gap-2"
+                      >
+                        <Camera className="w-4 h-4 text-blue-600" /> Upload Start Odometer Photo
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-white rounded-xl border border-dashed border-slate-300 text-center space-y-3">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">END ODOMETER PHOTO *</span>
+                    {reportEndPhoto ? (
+                      <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200">
+                        <img src={reportEndPhoto} alt="End Odometer" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setReportEndPhoto("")}
+                          className="absolute top-2 right-2 p-1 rounded-full bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setCameraTargetField("end");
+                          setCameraModalOpen(true);
+                        }}
+                        className="w-full bg-white hover:bg-slate-100 text-blue-600 font-semibold border border-blue-200 rounded-xl py-3 flex items-center justify-center gap-2"
+                      >
+                        <Camera className="w-4 h-4 text-blue-600" /> Upload End Odometer Photo
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Odometer Readings */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Starting Odometer</label>
+                    <input
+                      type="number"
+                      value={reportStartOdometer}
+                      onChange={(e) => setReportStartOdometer(e.target.value)}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Ending Odometer</label>
+                    <input
+                      type="number"
+                      value={reportEndOdometer}
+                      onChange={(e) => setReportEndOdometer(e.target.value)}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Total Distance (km)</label>
+                    <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl font-mono font-bold text-slate-900">
+                      {Math.max(0, (Number(reportEndOdometer) || 0) - (Number(reportStartOdometer) || 0))} km
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expenses Card */}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center gap-2 font-bold text-slate-900 border-b border-slate-100 pb-2">
+                    <DollarSign className="w-4 h-4 text-blue-600" />
+                    <span>Expense Details</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Fuel Expense</label>
+                      <input
+                        type="number"
+                        placeholder="₹"
+                        value={reportFuelExpense}
+                        onChange={(e) => setReportFuelExpense(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">General Expense</label>
+                      <input
+                        type="number"
+                        placeholder="₹"
+                        value={reportGeneralExpense}
+                        onChange={(e) => setReportGeneralExpense(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Other Expense</label>
+                      <input
+                        type="number"
+                        placeholder="₹"
+                        value={reportOtherExpense}
+                        onChange={(e) => setReportOtherExpense(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Expense Remarks / Description</label>
                     <textarea
                       rows={2}
-                      placeholder="Car wash, parking, servicing..."
-                      value={reportGeneralDesc}
-                      onChange={(e) => setReportGeneralDesc(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
-                    />
-                  </div>
-                </div>
-
-                {/* Fuel Expense Card */}
-                <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
-                  <div className="flex items-center gap-2 font-bold text-slate-900">
-                    <Fuel className="w-4 h-4 text-amber-600" />
-                    <span>Fuel Expense</span>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      FUEL TYPE
-                    </label>
-                    <select
-                      value={reportFuelType}
-                      onChange={(e) => setReportFuelType(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-semibold text-slate-900"
-                    >
-                      <option value="Petrol">Petrol</option>
-                      <option value="Diesel">Diesel</option>
-                      <option value="CNG">CNG</option>
-                      <option value="Petrol+CNG">Petrol+CNG</option>
-                      <option value="Electric">Electric</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      FUEL AMOUNT
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="₹"
-                      value={reportFuelAmount}
-                      onChange={(e) => setReportFuelAmount(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold font-mono text-slate-900"
+                      placeholder="Details of fuel, servicing, washes, other expenses..."
+                      value={reportExpenseRemarks}
+                      onChange={(e) => setReportExpenseRemarks(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Row 5: Notes */}
-              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase block">
-                  NOTES
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Training notes for the day..."
-                  value={reportNotes}
-                  onChange={(e) => setReportNotes(e.target.value)}
-                  className="w-full p-3 bg-white border border-slate-200 rounded-xl"
-                />
+              {/* SUMMARY CARD */}
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl grid grid-cols-2 sm:grid-cols-6 gap-4 text-xs font-semibold text-slate-700">
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-bold text-blue-600/70 uppercase">Total Students</span>
+                  <div className="text-base font-bold text-slate-900">{reportStudentTrips.length}</div>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-bold text-blue-600/70 uppercase">Total Distance</span>
+                  <div className="text-base font-bold text-slate-900 font-mono">
+                    {Math.max(0, (Number(reportEndOdometer) || 0) - (Number(reportStartOdometer) || 0))} km
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-bold text-blue-600/70 uppercase">Total Expense</span>
+                  <div className="text-base font-bold text-slate-900 font-mono">
+                    ₹{(Number(reportFuelExpense) || 0) + (Number(reportGeneralExpense) || 0) + (Number(reportOtherExpense) || 0)}
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-bold text-blue-600/70 uppercase">Net Distance</span>
+                  <div className="text-base font-bold text-slate-900 font-mono">
+                    {Math.max(0, (Number(reportEndOdometer) || 0) - (Number(reportStartOdometer) || 0))} km
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-bold text-blue-600/70 uppercase">Vehicle</span>
+                  <div className="text-base font-bold text-slate-900 font-mono truncate">{selectedVehicleForReport.vehicleNumber}</div>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-bold text-blue-600/70 uppercase">Date</span>
+                  <div className="text-base font-bold text-slate-900 font-mono">{reportDate}</div>
+                </div>
               </div>
 
               {/* Footer */}
@@ -918,6 +1160,157 @@ export function DrivingSchoolVehiclesView() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW DAILY REPORT DETAILS MODAL */}
+      {viewReportDetailsOpen && selectedReportForView && (
+        <div
+          onClick={() => setViewReportDetailsOpen(false)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl space-y-6 my-auto p-6 border border-slate-200 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Vehicle Daily Report Details</h2>
+                <p className="text-xs text-slate-400 font-mono">
+                  Vehicle: {selectedReportForView.vehicleNumber} • Date: {selectedReportForView.reportDate}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewReportDetailsOpen(false)}
+                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-6 text-xs text-slate-700">
+              {/* Odometer & Distance Info */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Start Odometer</span>
+                  <div className="text-sm font-bold text-slate-900 font-mono">{selectedReportForView.startOdometer} km</div>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">End Odometer</span>
+                  <div className="text-sm font-bold text-slate-900 font-mono">{selectedReportForView.endOdometer} km</div>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Total Distance</span>
+                  <div className="text-sm font-bold text-blue-600 font-mono">{selectedReportForView.distanceTravelled} km</div>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Driver</span>
+                  <div className="text-sm font-bold text-slate-900">{selectedReportForView.driver || "—"}</div>
+                </div>
+              </div>
+
+              {/* Odometer Photos */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block text-center">Start Odometer Photo</span>
+                  {selectedReportForView.startOdometerPhoto ? (
+                    <div className="aspect-[4/3] rounded-xl overflow-hidden border border-slate-200">
+                      <img src={selectedReportForView.startOdometerPhoto} alt="Start Odometer" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="aspect-[4/3] bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-medium">No Photo</div>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block text-center">End Odometer Photo</span>
+                  {selectedReportForView.endOdometerPhoto ? (
+                    <div className="aspect-[4/3] rounded-xl overflow-hidden border border-slate-200">
+                      <img src={selectedReportForView.endOdometerPhoto} alt="End Odometer" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="aspect-[4/3] bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-medium">No Photo</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Expense Summary */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
+                <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                  <DollarSign className="w-4 h-4 text-blue-600" /> Expense Summary
+                </h3>
+                <div className="grid grid-cols-3 gap-4 text-center border-b border-slate-100 pb-3">
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Fuel Expense</span>
+                    <div className="text-sm font-bold text-slate-800 font-mono">₹{selectedReportForView.fuelExpense !== undefined ? selectedReportForView.fuelExpense : (selectedReportForView.fuelAmount || 0)}</div>
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">General Expense</span>
+                    <div className="text-sm font-bold text-slate-800 font-mono">₹{selectedReportForView.generalExpense !== undefined ? selectedReportForView.generalExpense : (selectedReportForView.generalExpenseAmount || 0)}</div>
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Other Expense</span>
+                    <div className="text-sm font-bold text-slate-800 font-mono">₹{selectedReportForView.otherExpense || 0}</div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs font-bold text-slate-900">Total Expense:</span>
+                  <span className="text-sm font-extrabold text-blue-600 font-mono">
+                    ₹{selectedReportForView.totalExpense !== undefined ? selectedReportForView.totalExpense : ((selectedReportForView.fuelAmount || 0) + (selectedReportForView.generalExpenseAmount || 0))}
+                  </span>
+                </div>
+                {selectedReportForView.expenseRemarks && (
+                  <div className="p-2.5 bg-slate-50 rounded-lg text-[11px] text-slate-600 italic">
+                    <strong>Remarks:</strong> {selectedReportForView.expenseRemarks}
+                  </div>
+                )}
+              </div>
+
+              {/* Student List */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold text-slate-900">Student Trip List</h3>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase">
+                      <tr>
+                        <th className="p-2.5">Student Name</th>
+                        <th className="p-2.5">Pickup</th>
+                        <th className="p-2.5">Drop</th>
+                        <th className="p-2.5">Lesson / Purpose</th>
+                        <th className="p-2.5">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(!selectedReportForView.studentTrips || selectedReportForView.studentTrips.length === 0) ? (
+                        <tr>
+                          <td className="p-2.5 font-bold text-slate-900">{selectedReportForView.studentName || "—"}</td>
+                          <td className="p-2.5">—</td>
+                          <td className="p-2.5">—</td>
+                          <td className="p-2.5">—</td>
+                          <td className="p-2.5 font-medium text-slate-500">{selectedReportForView.notes || "—"}</td>
+                        </tr>
+                      ) : (
+                        selectedReportForView.studentTrips.map((trip, i) => (
+                          <tr key={i} className="hover:bg-slate-50/50">
+                            <td className="p-2.5 font-bold text-slate-900">{trip.studentName}</td>
+                            <td className="p-2.5">{trip.pickupTime ? `${trip.pickupTime} (${trip.pickupLocation || "N/A"})` : "—"}</td>
+                            <td className="p-2.5">{trip.dropTime ? `${trip.dropTime} (${trip.dropLocation || "N/A"})` : "—"}</td>
+                            <td className="p-2.5">{trip.purpose || "—"}</td>
+                            <td className="p-2.5 font-medium text-slate-500">{trip.remarks || "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+              <Button onClick={() => setViewReportDetailsOpen(false)} className="px-6 py-2 rounded-xl text-xs font-semibold">
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -1143,15 +1536,70 @@ export function DrivingSchoolVehiclesView() {
               </div>
             </div>
 
-            {/* Daily Report History Table */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-900">Daily Report History</h4>
+            {/* Daily Report History Table & Filters */}
+            <div className="space-y-4 border-t border-slate-100 pt-4">
+              <div className="flex flex-col gap-3">
+                <h4 className="text-xs font-bold text-slate-900">Daily Report History</h4>
+                
+                {/* Filters */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Vehicle</label>
+                    <select
+                      value={filterVehicleId}
+                      onChange={(e) => setFilterVehicleId(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium text-slate-800"
+                    >
+                      <option value="">All Vehicles</option>
+                      {vehicles.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.vehicleNumber}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Driver</label>
+                    <input
+                      type="text"
+                      placeholder="Search driver..."
+                      value={filterDriver}
+                      onChange={(e) => setFilterDriver(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Student Name</label>
+                    <input
+                      type="text"
+                      placeholder="Search student..."
+                      value={filterStudentName}
+                      onChange={(e) => setFilterStudentName(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-400">
                     <tr>
+                      <th className="p-3">VEHICLE</th>
                       <th className="p-3">DATE</th>
-                      <th className="p-3">STUDENT</th>
+                      <th className="p-3">STUDENT(S)</th>
                       <th className="p-3">DISTANCE</th>
                       <th className="p-3">START ODO PHOTO</th>
                       <th className="p-3">END ODO PHOTO</th>
@@ -1162,19 +1610,26 @@ export function DrivingSchoolVehiclesView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {infoVehicleReports.length === 0 ? (
+                    {filteredReports.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-6 text-center text-slate-400">
-                          No daily vehicle report history recorded yet.
+                        <td colSpan={10} className="p-6 text-center text-slate-400">
+                          No matching daily vehicle report history found.
                         </td>
                       </tr>
                     ) : (
-                      infoVehicleReports.map((r) => {
-                        const totExp = (r.fuelAmount || 0) + (r.generalExpenseAmount || 0);
+                      filteredReports.map((r) => {
+                        const totExp = r.totalExpense !== undefined ? r.totalExpense : ((r.fuelAmount || 0) + (r.generalExpenseAmount || 0));
+                        const studentsStr = r.studentTrips && r.studentTrips.length > 0 
+                          ? r.studentTrips.map(t => t.studentName).join(', ') 
+                          : (r.studentName || "—");
+
                         return (
                           <tr key={r.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-mono font-semibold text-slate-900">{r.vehicleNumber}</td>
                             <td className="p-3 font-mono">{r.reportDate}</td>
-                            <td className="p-3 font-semibold text-slate-900">{r.studentName}</td>
+                            <td className="p-3 font-semibold text-slate-900 truncate max-w-[150px]" title={studentsStr}>
+                              {studentsStr}
+                            </td>
                             <td className="p-3 font-mono font-bold">{r.distanceTravelled} km</td>
                             <td className="p-3">
                               {r.startOdometerPhoto ? (
@@ -1200,14 +1655,25 @@ export function DrivingSchoolVehiclesView() {
                                 <span className="text-[10px] text-slate-400">—</span>
                               )}
                             </td>
-                            <td className="p-3 font-mono">₹{r.fuelAmount || 0}</td>
-                            <td className="p-3 font-mono">₹{r.generalExpenseAmount || 0}</td>
+                            <td className="p-3 font-mono">₹{r.fuelExpense !== undefined ? r.fuelExpense : (r.fuelAmount || 0)}</td>
+                            <td className="p-3 font-mono">₹{r.generalExpense !== undefined ? r.generalExpense : (r.generalExpenseAmount || 0)}</td>
                             <td className="p-3 font-mono font-bold text-slate-900">₹{totExp}</td>
                             <td className="p-3 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => openDailyReportModal(selectedVehicleForInfo, r)}
+                                  onClick={() => {
+                                    setSelectedReportForView(r);
+                                    setViewReportDetailsOpen(true);
+                                  }}
+                                  className="p-1 rounded text-slate-600 hover:bg-slate-100 transition"
+                                  title="View Report Details"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openDailyReportModal(vehicles.find(v => v.id === r.vehicleId) || selectedVehicleForInfo, r)}
                                   className="p-1 rounded text-blue-600 hover:bg-blue-50 transition"
                                   title="Edit Report"
                                 >
