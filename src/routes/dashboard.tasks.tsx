@@ -130,14 +130,19 @@ const priorityBadgeClass = (p: TaskPriority) =>
     Low: "bg-slate-100 text-slate-600 border-slate-200/80 rounded-full",
   })[p];
 
-const statusBadgeClass = (s: TaskStatus) =>
-  ({
-    Assigned: "bg-blue-50 text-blue-700 border-blue-200/80 rounded-full font-semibold",
-    Read: "bg-cyan-50 text-cyan-700 border-cyan-200/80 rounded-full font-semibold",
-    "In Progress": "bg-purple-50 text-purple-700 border-purple-200/80 rounded-full font-semibold",
-    Completed: "bg-emerald-50 text-emerald-700 border-emerald-200/80 rounded-full font-semibold",
-    "On Hold": "bg-amber-50 text-amber-700 border-amber-200/80 rounded-full font-semibold",
-  })[s];
+const statusBadgeClass = (s: string) => {
+  const norm = (s || "").toUpperCase();
+  if (norm === "IN RTO" || norm === "RTO") return "bg-orange-50 text-orange-700 border-orange-200/80 rounded-full font-semibold";
+  if (norm === "INWARD") return "bg-blue-50 text-blue-700 border-blue-200/80 rounded-full font-semibold";
+  if (norm === "VERIFY") return "bg-purple-50 text-purple-700 border-purple-200/80 rounded-full font-semibold";
+  if (norm === "APPROVED") return "bg-indigo-50 text-indigo-700 border-indigo-200/80 rounded-full font-semibold";
+  if (norm === "PASS") return "bg-emerald-50 text-emerald-700 border-emerald-200/80 rounded-full font-semibold";
+  if (norm === "FAIL") return "bg-rose-50 text-rose-700 border-rose-200/80 rounded-full font-semibold";
+  if (norm === "RETEST") return "bg-amber-50 text-amber-700 border-amber-200/80 rounded-full font-semibold";
+  if (norm === "ON HOLD") return "bg-amber-50 text-amber-700 border-amber-200/80 rounded-full font-semibold";
+  if (norm === "COMPLETED") return "bg-emerald-50 text-emerald-700 border-emerald-200/80 rounded-full font-semibold";
+  return "bg-slate-100 text-slate-600 border-slate-200/80 rounded-full font-semibold";
+};
 
 const getApplicationTypeStyle = (appType?: string) => {
   if (!appType) return {};
@@ -363,6 +368,8 @@ function TasksPage() {
   const [associationFilter, setAssociationFilter] = useState<string>("all");
   const [dueFilter, setDueFilter] = useState<string>("all");
   const [appTypeFilter, setAppTypeFilter] = useState<string>("all");
+  const [groupFilter, setGroupFilter] = useState<string>("all");
+  const [allAppsForGroups, setAllAppsForGroups] = useState<any[]>([]);
   const [selectedServiceFilters, setSelectedServiceFilters] = useState<string[]>([]);
   const [sort, setSort] = useState<SortMode>("latest");
 
@@ -413,6 +420,9 @@ function TasksPage() {
       setApplications(apps);
     });
     const u8 = subscribeAccountingRecords(setAccountingMap);
+    const u9 = onSnapshot(collection(db, "registry_applications_v1"), (snap) => {
+      setAllAppsForGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
     return () => {
       u1();
       u2();
@@ -421,8 +431,20 @@ function TasksPage() {
       u6();
       u7();
       u8();
+      u9();
     };
   }, [activeSubModule]);
+
+  const availableGroups = useMemo(() => {
+    const groupsSet = new Set<string>();
+    allAppsForGroups.forEach((app) => {
+      const g = app.groupName || app.vehicleDetails?.groupName || (app as any).vehicleDetails?.groupName || "";
+      if (g.trim()) {
+        groupsSet.add(g.trim());
+      }
+    });
+    return Array.from(groupsSet).sort((a, b) => a.localeCompare(b));
+  }, [allAppsForGroups]);
 
   const allTasks = useMemo(() => {
     // Helper to get linked application
@@ -466,6 +488,7 @@ function TasksPage() {
         clientName: linkedApp?.ownerName || (t as any).clientName || (t as any).ownerName || "",
         mobileNumber: linkedApp?.mobileNumber || (t as any).mobileNumber || (t as any).phone || "",
         reference: linkedApp?.reference || linkedApp?.applicationId || (t as any).reference || t.id,
+        groupName: linkedApp?.groupName || linkedApp?.vehicleDetails?.groupName || (linkedApp as any)?.vehicleDetails?.groupName || (t as any).groupName || "",
       };
     }).filter(Boolean) as Task[];
 
@@ -536,6 +559,7 @@ function TasksPage() {
         paymentStatus: linkedApp?.paymentStatus || "Pending",
         reference: linkedApp?.reference || linkedApp?.applicationId || s.reference || s.id,
         subtasks: s.subtasks || [],
+        groupName: linkedApp?.groupName || linkedApp?.vehicleDetails?.groupName || (linkedApp as any)?.vehicleDetails?.groupName || s.groupName || "",
       };
     }).filter(Boolean) as Task[];
 
@@ -592,6 +616,7 @@ function TasksPage() {
         reference: app.reference || appNum || (vehNo ? `${appNum} - ${vehNo}` : appNum),
         issueDate: app.createdAt || "",
         subtasks: [],
+        groupName: app.groupName || app.vehicleDetails?.groupName || (app as any).vehicleDetails?.groupName || "",
       } as any);
     });
 
@@ -745,6 +770,10 @@ function TasksPage() {
       );
     }
 
+    if (groupFilter !== "all") {
+      list = list.filter((t) => (t as any).groupName === groupFilter);
+    }
+
     if (selectedServiceFilters.length > 0) {
       list = list.filter((t) => {
         const fullText = (
@@ -801,6 +830,7 @@ function TasksPage() {
     selectedServiceFilters,
     sort,
     activeSubModule,
+    groupFilter,
   ]);
 
   const stats = useMemo(
@@ -852,6 +882,119 @@ function TasksPage() {
     }
   };
 
+  // Vahaan specific Hold/Complete popup states
+  const [showVahaanHoldModal, setShowVahaanHoldModal] = useState(false);
+  const [vahaanHoldTask, setVahaanHoldTask] = useState<Task | null>(null);
+  const [vahaanHoldReason, setVahaanHoldReason] = useState("");
+  const [vahaanHoldDate, setVahaanHoldDate] = useState("");
+
+  const [showVahaanCompleteModal, setShowVahaanCompleteModal] = useState(false);
+  const [vahaanCompleteTask, setVahaanCompleteTask] = useState<Task | null>(null);
+  const [vahaanRtoReceiptNo, setVahaanRtoReceiptNo] = useState("");
+  const [vahaanAppointmentDate, setVahaanAppointmentDate] = useState("");
+
+  const handleSaveVahaanHold = async () => {
+    if (!vahaanHoldTask) return;
+    if (!vahaanHoldReason.trim()) {
+      toast.error("Reason is required");
+      return;
+    }
+    if (!vahaanHoldDate) {
+      toast.error("Date is required");
+      return;
+    }
+    try {
+      await updateTask(
+        vahaanHoldTask.id,
+        {
+          status: "ON HOLD" as TaskStatus,
+          done: false,
+          holdReason: vahaanHoldReason.trim(),
+          holdDate: vahaanHoldDate,
+        },
+        session?.username || "system",
+        `Status → ON HOLD`
+      );
+      toast.success("Task updated to ON HOLD");
+      setShowVahaanHoldModal(false);
+      setVahaanHoldTask(null);
+      setVahaanHoldReason("");
+      setVahaanHoldDate("");
+    } catch (err: any) {
+      toast.error("Failed to set task on hold");
+    }
+  };
+
+  const handleSaveVahaanComplete = async () => {
+    if (!vahaanCompleteTask) return;
+    if (!vahaanRtoReceiptNo.trim()) {
+      toast.error("RTO Receipt Number is required");
+      return;
+    }
+    if (!vahaanAppointmentDate) {
+      toast.error("Appointment Date is required");
+      return;
+    }
+
+    try {
+      const appDocId = (vahaanCompleteTask as any).applicationDocId || vahaanCompleteTask.recordId || vahaanCompleteTask.id.replace("task-app-", "");
+      
+      await updateTask(
+        vahaanCompleteTask.id,
+        {
+          status: "COMPLETED" as TaskStatus,
+          done: true,
+          appointmentDate: vahaanAppointmentDate,
+          rtoReceiptNo: vahaanRtoReceiptNo.trim(),
+        },
+        session?.username || "system",
+        `Status → COMPLETED`
+      );
+      await setTaskDone(vahaanCompleteTask.id, true, session?.username || "system");
+
+      if (appDocId) {
+        const accRef = doc(db, "registry_accounting", appDocId);
+        await setDoc(accRef, {
+          rtoReceiptNo: vahaanRtoReceiptNo.trim(),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
+
+      if (!vahaanCompleteTask.id.startsWith("task-app-")) {
+        const serviceRef = doc(db, "registry_services_v2", vahaanCompleteTask.id);
+        await setDoc(
+          serviceRef,
+          {
+            id: vahaanCompleteTask.id,
+            status: "COMPLETED",
+            taskStatus: "COMPLETED",
+            appointmentDate: vahaanAppointmentDate,
+            rtoReceiptNo: vahaanRtoReceiptNo.trim(),
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        ).catch(() => {});
+      }
+
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        await updateDoc(appRef, {
+          applicationStatus: "COMPLETED",
+          rtoReceiptNo: vahaanRtoReceiptNo.trim(),
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+
+      toast.success("Task completed!");
+      setShowVahaanCompleteModal(false);
+      setVahaanCompleteTask(null);
+      setVahaanRtoReceiptNo("");
+      setVahaanAppointmentDate("");
+    } catch (err: any) {
+      toast.error("Failed to complete task");
+    }
+  };
+
   // On Hold Modal State
   const [holdTask, setHoldTask] = useState<Task | null>(null);
   const [holdReason, setHoldReason] = useState("");
@@ -869,6 +1012,22 @@ function TasksPage() {
   const [savingComplete, setSavingComplete] = useState(false);
 
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
+    if (activeSubModule === "services") {
+      if (s === "ON HOLD") {
+        setVahaanHoldTask(task);
+        setVahaanHoldReason(task.holdReason || "");
+        setVahaanHoldDate((task as any).holdDate || new Date().toISOString().split("T")[0]);
+        setShowVahaanHoldModal(true);
+        return;
+      }
+      if (s === "COMPLETED") {
+        setVahaanCompleteTask(task);
+        setVahaanRtoReceiptNo((task as any).rtoReceiptNo || "");
+        setVahaanAppointmentDate(task.appointmentDate || new Date().toISOString().split("T")[0]);
+        setShowVahaanCompleteModal(true);
+        return;
+      }
+    }
     if (s === "On Hold") {
       setHoldTask(task);
       setHoldReason(task.holdReason || "");
@@ -1175,7 +1334,7 @@ function TasksPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Status" />
@@ -1239,6 +1398,20 @@ function TasksPage() {
                   <SelectItem value="Out Of Bhavnagar To Bhavnagar">
                     Out Of Bhavnagar To Bhavnagar
                   </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={groupFilter} onValueChange={setGroupFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Group Name" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ALL GROUPS</SelectItem>
+                  {availableGroups.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
@@ -1335,6 +1508,7 @@ function TasksPage() {
               onAddRemark={(t) => setRemarkTaskId(t.id)}
               onChangeStatus={handleQuickChangeStatus}
               onDuplicate={handleDuplicateTask}
+              activeSubModule={activeSubModule}
             />
           ) : (
             <TaskTable
@@ -1372,7 +1546,7 @@ function TasksPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Status" />
@@ -1436,6 +1610,20 @@ function TasksPage() {
                   <SelectItem value="Out Of Bhavnagar To Bhavnagar">
                     Out Of Bhavnagar To Bhavnagar
                   </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={groupFilter} onValueChange={setGroupFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Group Name" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ALL GROUPS</SelectItem>
+                  {availableGroups.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
@@ -1533,6 +1721,7 @@ function TasksPage() {
               onChangeStatus={handleQuickChangeStatus}
               onDuplicate={handleDuplicateTask}
               accountingMap={accountingMap}
+              activeSubModule={activeSubModule}
             />
           ) : (
             <TaskTable
@@ -1586,6 +1775,7 @@ function TasksPage() {
           actor={session?.username ?? "system"}
           isAdmin={!!isAdmin}
           onEdit={openEdit}
+          activeSubModule={activeSubModule}
         />
       )}
 
@@ -1639,6 +1829,56 @@ function TasksPage() {
               >
                 {savingRemark ? <Loader2 className="size-4 animate-spin" /> : "Save Remark"}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Vahaan On Hold Modal */}
+      {vahaanHoldTask && (
+        <Dialog open={showVahaanHoldModal} onOpenChange={setShowVahaanHoldModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Put Task On Hold</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Hold Reason *</Label>
+                <Input value={vahaanHoldReason} onChange={(e) => setVahaanHoldReason(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Date *</Label>
+                <Input type="date" value={vahaanHoldDate} onChange={(e) => setVahaanHoldDate(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowVahaanHoldModal(false)}>Cancel</Button>
+              <Button onClick={handleSaveVahaanHold}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Vahaan Complete Modal */}
+      {vahaanCompleteTask && (
+        <Dialog open={showVahaanCompleteModal} onOpenChange={setShowVahaanCompleteModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Complete Task</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>RTO Receipt Number *</Label>
+                <Input value={vahaanRtoReceiptNo} onChange={(e) => setVahaanRtoReceiptNo(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Appointment Date *</Label>
+                <Input type="date" value={vahaanAppointmentDate} onChange={(e) => setVahaanAppointmentDate(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowVahaanCompleteModal(false)}>Cancel</Button>
+              <Button onClick={handleSaveVahaanComplete}>Complete</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -2139,7 +2379,12 @@ function TaskTable({
                             statusBadgeClass(t.status)
                           )}
                         >
-                          {TASK_STATUS_OPTIONS.map((s) => (
+                          {(activeSubModule === "services"
+                            ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                            : activeSubModule === "licence"
+                            ? ["RTO", "PASS", "FAIL", "RETEST"]
+                            : TASK_STATUS_OPTIONS
+                          ).map((s) => (
                             <option key={s} value={s}>
                               {s}
                             </option>
@@ -2362,7 +2607,12 @@ function TaskTable({
                           statusBadgeClass(t.status),
                         )}
                       >
-                        {TASK_STATUS_OPTIONS.map((s) => (
+                        {(activeSubModule === "services"
+                          ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                          : activeSubModule === "licence"
+                          ? ["RTO", "PASS", "FAIL", "RETEST"]
+                          : TASK_STATUS_OPTIONS
+                        ).map((s) => (
                           <option key={s} value={s}>
                             {s}
                           </option>
@@ -2490,6 +2740,7 @@ function TaskCards({
   onChangeStatus,
   onDuplicate,
   accountingMap,
+  activeSubModule = "services",
 }: {
   tasks: Task[];
   clients: RegistryRecord[];
@@ -2505,6 +2756,7 @@ function TaskCards({
   onChangeStatus: (t: Task, s: TaskStatus) => void;
   onDuplicate: (t: Task) => void;
   accountingMap?: Map<string, AccountingRecord>;
+  activeSubModule?: SubModuleType;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 9; // 3 columns * 3 rows looks best
@@ -2539,7 +2791,12 @@ function TaskCards({
                       statusBadgeClass(t.status),
                     )}
                   >
-                    {TASK_STATUS_OPTIONS.map((s) => (
+                    {(activeSubModule === "services"
+                      ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                      : activeSubModule === "licence"
+                      ? ["RTO", "PASS", "FAIL", "RETEST"]
+                      : TASK_STATUS_OPTIONS
+                    ).map((s) => (
                       <option key={s} value={s}>
                         {s}
                       </option>
@@ -3230,7 +3487,12 @@ function TaskFormDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TASK_STATUS_OPTIONS.map((s) => (
+                  {(activeSubModule === "services"
+                    ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                    : activeSubModule === "licence"
+                    ? ["RTO", "PASS", "FAIL", "RETEST"]
+                    : TASK_STATUS_OPTIONS
+                  ).map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -3310,6 +3572,7 @@ function TaskDetailsSheet({
   actor,
   isAdmin,
   onEdit,
+  activeSubModule = "services",
 }: {
   open: boolean;
   onClose: () => void;
@@ -3322,17 +3585,29 @@ function TaskDetailsSheet({
   actor: string;
   isAdmin: boolean;
   onEdit: (t: Task) => void;
+  activeSubModule?: SubModuleType;
 }) {
+  const [activeTab, setActiveTab] = useState<"details" | "comments" | "attachments" | "activity">("details");
+  const [remarkInput, setRemarkInput] = useState("");
   const [comment, setComment] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [liveTask, setLiveTask] = useState<Task | null>(null);
   
   const [expectedDate, setExpectedDate] = useState("");
-  const [remarkInput, setRemarkInput] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState<TaskStatus>("Assigned");
+  const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [sheetApplicationId, setSheetApplicationId] = useState("");
   const [sheetApplicationType, setSheetApplicationType] = useState("Home");
+  
+  // Vahaan specific states
+  const [showVahaanHoldModal, setShowVahaanHoldModal] = useState(false);
+  const [vahaanHoldTask, setVahaanHoldTask] = useState<Task | null>(null);
+  const [vahaanHoldReason, setVahaanHoldReason] = useState("");
+  const [vahaanHoldDate, setVahaanHoldDate] = useState("");
+  const [showVahaanCompleteModal, setShowVahaanCompleteModal] = useState(false);
+  const [vahaanCompleteTask, setVahaanCompleteTask] = useState<Task | null>(null);
+  const [vahaanRtoReceiptNo, setVahaanRtoReceiptNo] = useState("");
+  const [vahaanAppointmentDate, setVahaanAppointmentDate] = useState("");
 
   const assignedEmp = useMemo(() => {
     return (
@@ -3364,7 +3639,6 @@ function TaskDetailsSheet({
       setExpectedDate("");
     }
 
-    // Subscribe to registry_tasks
     const unsubTasks = onSnapshot(doc(db, "registry_tasks", initialTask.id), (snap) => {
       let currentTask: Task | null = null;
       if (snap.exists()) {
@@ -3383,35 +3657,18 @@ function TaskDetailsSheet({
         setExpectedDate("");
       }
 
-      // Fetch linked application record strictly by Application ID or document ID
       const targetAppId = (currentTask as any).applicationDocId || currentTask.recordId || currentTask.applicationId || currentTask.id.replace("task-app-", "");
       if (targetAppId) {
         getDoc(doc(db, "registry_applications_v1", targetAppId)).then((aSnap) => {
           if (aSnap.exists()) {
             setLinkedApp({ id: aSnap.id, ...aSnap.data() });
-          } else {
-            // Secondary lookup by applicationId string field
-            const appId = currentTask?.applicationId || targetAppId;
-            const q = query(collection(db, "registry_applications_v1"), where("applicationId", "==", appId));
-            getDocs(q).then((qSnap) => {
-              if (!qSnap.empty) {
-                setLinkedApp({ id: qSnap.docs[0].id, ...qSnap.docs[0].data() });
-              } else if (currentTask?.vehicleNumber) {
-                const qVeh = query(collection(db, "registry_applications_v1"), where("vehicleNumber", "==", currentTask.vehicleNumber));
-                getDocs(qVeh).then((vSnap) => {
-                  if (!vSnap.empty) {
-                    setLinkedApp({ id: vSnap.docs[0].id, ...vSnap.docs[0].data() });
-                  }
-                }).catch(console.error);
-              }
-            }).catch(console.error);
           }
         }).catch(console.error);
       }
     });
 
     return () => unsubTasks();
-  }, [open, initialTask.id, initialTask.applicationId, initialTask.recordId]);
+  }, [open, initialTask.id]);
 
   const activeTask = useMemo(() => {
     const base = liveTask || initialTask;
@@ -3431,12 +3688,26 @@ function TaskDetailsSheet({
 
   const handleSaveProgress = async () => {
     try {
+      if (activeSubModule === "services" && selectedStatus === "ON HOLD") {
+        setVahaanHoldTask(activeTask);
+        setVahaanHoldReason(activeTask.holdReason || "");
+        setVahaanHoldDate((activeTask as any).holdDate || new Date().toISOString().split("T")[0]);
+        setShowVahaanHoldModal(true);
+        return;
+      }
+      if (activeSubModule === "services" && selectedStatus === "COMPLETED") {
+        setVahaanCompleteTask(activeTask);
+        setVahaanRtoReceiptNo((activeTask as any).rtoReceiptNo || "");
+        setVahaanAppointmentDate(activeTask.appointmentDate || new Date().toISOString().split("T")[0]);
+        setShowVahaanCompleteModal(true);
+        return;
+      }
+      
       const updates: any = {
         status: selectedStatus,
-        done: selectedStatus === "Completed",
-        applicationId: sheetApplicationId.trim(),
-        applicationType: sheetApplicationType,
+        done: selectedStatus === "Completed" || selectedStatus === "COMPLETED",
       };
+      
       if (expectedDate) {
         updates.dueDate = new Date(expectedDate).toISOString();
       }
@@ -3462,13 +3733,22 @@ function TaskDetailsSheet({
   const handleMarkCompleted = async () => {
     try {
       const now = new Date().toISOString();
+      const statusVal = activeSubModule === "services" ? "COMPLETED" : "Completed";
       const updates = {
-        status: "Completed" as TaskStatus,
+        status: statusVal as TaskStatus,
         done: true,
         completedAt: now,
         completedOn: now,
         completedBy: actor,
       };
+      
+      if (activeSubModule === "services") {
+        setVahaanCompleteTask(activeTask);
+        setVahaanRtoReceiptNo((activeTask as any).rtoReceiptNo || "");
+        setVahaanAppointmentDate(activeTask.appointmentDate || new Date().toISOString().split("T")[0]);
+        setShowVahaanCompleteModal(true);
+        return;
+      }
       
       if (remarkInput.trim()) {
         await addComment(activeTask.id, actor, remarkInput.trim());
@@ -3592,6 +3872,36 @@ function TaskDetailsSheet({
                 value={activeTask.status}
                 onValueChange={(v) => {
                   const s = v as TaskStatus;
+                  if (activeSubModule === "services" && s === "ON HOLD") {
+                    setVahaanHoldTask(activeTask);
+                    setVahaanHoldReason(activeTask.holdReason || "");
+                    setVahaanHoldDate((activeTask as any).holdDate || new Date().toISOString().split("T")[0]);
+                    setShowVahaanHoldModal(true);
+                    return;
+                  }
+                  if (activeSubModule === "services" && s === "COMPLETED") {
+                    setVahaanCompleteTask(activeTask);
+                    setVahaanRtoReceiptNo((activeTask as any).rtoReceiptNo || "");
+                    setVahaanAppointmentDate(activeTask.appointmentDate || new Date().toISOString().split("T")[0]);
+                    setShowVahaanCompleteModal(true);
+                    return;
+                  }
+                  if (s === "On Hold") {
+                    setHoldTask(activeTask);
+                    setHoldReason(activeTask.holdReason || "");
+                    setHoldRemarks(activeTask.holdRemarks || activeTask.remarks || "");
+                    return;
+                  }
+                  if (s === "Completed") {
+                    setCompleteModalTask(activeTask);
+                    setCompleteAppointmentDate(activeTask.appointmentDate || new Date().toISOString().split("T")[0]);
+                    setCompleteRtoExpense(activeTask.rtoExpense ? String(activeTask.rtoExpense) : "");
+                    setCompleteRemarks(activeTask.remarks || "");
+                    setCompleteNewDob("");
+                    setCompleteApplicationId(activeTask.applicationId || "");
+                    setCompleteApplicationType(activeTask.applicationType || "Home");
+                    return;
+                  }
                   updateTask(
                     activeTask.id,
                     { status: s, done: s === "Completed" },
@@ -3605,7 +3915,12 @@ function TaskDetailsSheet({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TASK_STATUS_OPTIONS.map((s) => (
+                  {(activeSubModule === "services"
+                    ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                    : activeSubModule === "licence"
+                    ? ["RTO", "PASS", "FAIL", "RETEST"]
+                    : TASK_STATUS_OPTIONS
+                  ).map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -3633,7 +3948,12 @@ function TaskDetailsSheet({
               <div>
                 <Label className="text-xs uppercase font-bold text-gray-400 block mb-2">Status Stages</Label>
                 <div className="flex flex-wrap gap-2">
-                  {TASK_STATUS_OPTIONS.map((statusOption) => {
+                  {(activeSubModule === "services"
+                    ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                    : activeSubModule === "licence"
+                    ? ["RTO", "PASS", "FAIL", "RETEST"]
+                    : TASK_STATUS_OPTIONS
+                  ).map((statusOption) => {
                     const isSelected = selectedStatus === statusOption;
                     return (
                       <button

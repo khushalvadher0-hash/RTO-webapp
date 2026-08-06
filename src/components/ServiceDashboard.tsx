@@ -49,7 +49,7 @@ import { generateServicePDF } from "@/lib/pdfServiceHelper";
 import { ApplicationFullDetailsModal } from "./ApplicationFullDetailsModal";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ApplicationTypeBadge } from "./ApplicationTypeBadge";
+import { ApplicationTypeBadge, getApplicationTypeStyle } from "./ApplicationTypeBadge";
 import {
   Dialog,
   DialogContent,
@@ -217,9 +217,21 @@ export function ServiceDashboard({
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [groupFilter, setGroupFilter] = useState("all");
   const [appsList, setAppsList] = useState<any[]>([]);
   const [selectedAppModal, setSelectedAppModal] = useState<any>(null);
   const [appModalOpen, setAppModalOpen] = useState(false);
+
+  const availableGroups = useMemo(() => {
+    const groupsSet = new Set<string>();
+    appsList.forEach((app) => {
+      const g = app.groupName || app.vehicleDetails?.groupName || (app as any).vehicleDetails?.groupName || "";
+      if (g.trim()) {
+        groupsSet.add(g.trim());
+      }
+    });
+    return Array.from(groupsSet).sort((a, b) => a.localeCompare(b));
+  }, [appsList]);
 
   // RTO Expense popup states
   const [showRtoExpenseModal, setShowRtoExpenseModal] = useState(false);
@@ -403,6 +415,7 @@ export function ServiceDashboard({
           gujaratPermitExpiryDate: app?.gujaratPermitExpiryDate || item.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "—",
           npAuthExpiryDate: app?.npAuthExpiryDate || item.npAuthExpiryDate || v.npAuthExpiryDate || v.permitDetails?.nationalAuthExpiryDate || "—",
           registrationRenewalExpiryDate: app?.registrationRenewalExpiryDate || item.registrationRenewalExpiryDate || v.registrationRenewalExpiryDate || v.registrationDetails?.registrationValidity || "—",
+          groupName: app?.groupName || item.groupName || "",
         };
         uniqueMap.set(item.id, enriched);
       });
@@ -484,6 +497,10 @@ export function ServiceDashboard({
       });
     }
 
+    if (groupFilter !== "all") {
+      list = list.filter((t: any) => t.groupName === groupFilter);
+    }
+
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
     return list.filter((t: any) => {
@@ -495,7 +512,7 @@ export function ServiceDashboard({
       const matchService = (t.serviceName || t.serviceType || "").toLowerCase().includes(q);
       return matchTitle || matchVehicle || matchClient || matchPhone || matchAppNo || matchService;
     });
-  }, [completedTasks, searchQuery, activeSubModule]);
+  }, [completedTasks, searchQuery, activeSubModule, groupFilter]);
 
   const openWorkflow = (record: RegistryRecord) => {
     setSelectedRecord(record);
@@ -597,14 +614,28 @@ export function ServiceDashboard({
               Real-time completed applications transferred automatically from Task Module
             </p>
           </div>
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Search Completed Services..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 text-xs"
-            />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <select
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-9"
+            >
+              <option value="all">ALL GROUPS</option>
+              {availableGroups.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                placeholder="Search Completed Services..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 text-xs"
+              />
+            </div>
           </div>
         </div>
 
@@ -798,93 +829,16 @@ export function ServiceDashboard({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  const appDoc =
-                                    appsList.find(
-                                      (a: any) =>
-                                        a.id === (t.applicationDocId || t.recordId || t.clientId) ||
-                                        a.applicationId === t.applicationId ||
-                                        (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
-                                    ) || t;
-                                  setSelectedAppModal(appDoc);
-                                  setAppModalOpen(true);
-                                }}
-                                title="View Full Licence Application Details"
-                              >
-                                <Eye className="size-3.5 text-blue-600" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    const srvCount = t.services?.length || (t.serviceName ? t.serviceName.split(",").length : 1);
-
-                    return (
-                      <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
-                        <td className="p-3 font-mono font-semibold text-slate-900">
-                          {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
-                        </td>
-                        <td className="p-3 font-semibold text-indigo-600 text-center">{daysDiffStr}</td>
-                        <td className="p-3 font-semibold text-amber-600 text-center">{daysAfterApptStr}</td>
-                        <td className="p-3 font-mono font-bold text-slate-900">{t.vehicleNumber || t.vehicleId || "—"}</td>
-                        <td className="p-3 font-semibold text-slate-800">{t.clientName || t.ownerName || "—"}</td>
-                        <td className="p-3 text-center font-bold text-slate-800">{srvCount}</td>
-                        <td className="p-3 text-slate-700">{t.assignedEmployeeName || t.assignee || "Unassigned"}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            {t.status || t.taskStatus || "Completed"}
-                          </span>
-                        </td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.pucExpiryDate || ""}</td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.taxExpiryDate || ""}</td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.fitnessExpiryDate || ""}</td>
-                        {activeSubModule !== "services" && <td className="p-3 font-mono text-xs text-slate-600">{t.insuranceExpiryDate || ""}</td>}
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.nationalPermitExpiryDate || ""}</td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.gujaratPermitExpiryDate || ""}</td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.npAuthExpiryDate || ""}</td>
-                        <td className="p-3 font-mono text-xs text-slate-600">{t.registrationRenewalExpiryDate || ""}</td>
-                        <td className="p-3 font-bold text-slate-900 font-mono">
-                          ₹{Number(t.amount || t.totalAmount || 0).toLocaleString("en-IN")}
-                        </td>
-                        <td className="p-3 font-bold text-emerald-700 font-mono">
-                          ₹{Number(t.totalPaid || t.advanceAmount || 0).toLocaleString("en-IN")}
-                        </td>
-                        <td className="p-3 font-mono text-xs font-semibold text-blue-600">{t.applicationId || "—"}</td>
-                         <td className="p-3">
-                          <ApplicationTypeBadge appType={t.applicationType} />
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                const appDoc =
-                                  appsList.find(
-                                    (a: any) =>
-                                      a.id === (t.applicationDocId || t.recordId || t.clientId) ||
-                                      a.applicationId === t.applicationId ||
-                                      (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
-                                  ) || t;
+                                const linkedApp = appsList.find(
+                                  (a: any) =>
+                                    a.id === (t.applicationDocId || t.recordId || t.clientId || t.id.replace("task-app-", "")) ||
+                                    a.applicationId === t.applicationId
+                                );
+                                const appDoc = { ...t, ...linkedApp };
                                 setSelectedAppModal(appDoc);
                                 setAppModalOpen(true);
                               }}
-                              title="View Full Application Form Details"
-                            >
-                              <FileText className="size-3.5 text-indigo-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (t.recordId || t.clientId) {
-                                  setSelectedRecord({ id: t.recordId || t.clientId } as any);
-                                  setProfileOpen(true);
-                                }
-                              }}
-                              title="View Client Workspace"
+                              title="View Full Licence Application Details"
                             >
                               <Eye className="size-3.5 text-blue-600" />
                             </Button>
@@ -892,62 +846,125 @@ export function ServiceDashboard({
                         </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                  }
+
+                  const srvCount = t.services?.length || (t.serviceName ? t.serviceName.split(",").length : 1);
+
+                  return (
+                    <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/40 border-b border-slate-100 transition-colors">
+                      <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                      <td className="p-3 font-mono font-semibold text-slate-900">
+                        {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                      </td>
+                      <td className="p-3 font-semibold text-indigo-600 text-center">{daysDiffStr}</td>
+                      <td className="p-3 font-semibold text-amber-600 text-center">{daysAfterApptStr}</td>
+                      <td className="p-3 font-mono font-bold text-slate-900">{t.vehicleNumber || t.vehicleId || "—"}</td>
+                      <td className="p-3 font-semibold text-slate-800">{t.clientName || t.ownerName || "—"}</td>
+                      <td className="p-3 text-center font-bold text-slate-800">{srvCount}</td>
+                      <td className="p-3 text-slate-700">{t.assignedEmployeeName || t.assignee || "Unassigned"}</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          {t.status || t.taskStatus || "Completed"}
+                        </span>
+                      </td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.pucExpiryDate || ""}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.taxExpiryDate || ""}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.fitnessExpiryDate || ""}</td>
+                      {activeSubModule !== "services" && <td className="p-3 font-mono text-xs text-slate-600">{t.insuranceExpiryDate || ""}</td>}
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.nationalPermitExpiryDate || ""}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.gujaratPermitExpiryDate || ""}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.npAuthExpiryDate || ""}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{t.registrationRenewalExpiryDate || ""}</td>
+                      <td className="p-3 font-bold text-slate-900 font-mono">
+                        ₹{Number(t.amount || t.totalAmount || 0).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3 font-bold text-emerald-700 font-mono">
+                        ₹{Number(t.totalPaid || t.advanceAmount || 0).toLocaleString("en-IN")}
+                      </td>
+                      <td className="p-3 font-mono text-xs font-semibold text-blue-600">{t.applicationId || "—"}</td>
+                       <td className="p-3">
+                        <ApplicationTypeBadge appType={t.applicationType} />
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const appDoc =
+                                appsList.find(
+                                  (a: any) =>
+                                    a.id === (t.applicationDocId || t.recordId || t.clientId) ||
+                                    a.applicationId === t.applicationId ||
+                                    (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
+                                ) || t;
+                              setSelectedAppModal(appDoc);
+                              setAppModalOpen(true);
+                            }}
+                            title="View Completed Vaahan Service Details"
+                          >
+                            <Eye className="size-3.5 text-blue-600" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
+    </div>
 
-      <ApplicationFullDetailsModal
-        open={appModalOpen}
-        onOpenChange={setAppModalOpen}
-        application={selectedAppModal}
+    <ApplicationFullDetailsModal
+      open={appModalOpen}
+      onOpenChange={setAppModalOpen}
+      application={selectedAppModal}
+    />
+
+    {selectedRecord && (
+      <ClientDetailWorkspace
+        clientId={selectedRecord.id}
+        open={profileOpen}
+        onOpenChange={setProfileOpen}
       />
+    )}
+    <AddClientWizardDialog
+      open={wizardOpen}
+      onOpenChange={setWizardOpen}
+      defaultServiceType={serviceType}
+      onSuccess={refreshData}
+    />
 
-      {selectedRecord && (
-        <ClientDetailWorkspace
-          clientId={selectedRecord.id}
-          open={profileOpen}
-          onOpenChange={setProfileOpen}
-        />
-      )}
-      <AddClientWizardDialog
-        open={wizardOpen}
-        onOpenChange={setWizardOpen}
-        defaultServiceType={serviceType}
-        onSuccess={refreshData}
-      />
-
-      {/* RTO Expense Popup Modal */}
-      <Dialog open={showRtoExpenseModal} onOpenChange={(open) => { if (!open) handleCancelRtoExpense(); }}>
-        <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900">RTO EXPENSE</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4 text-xs">
-            <div className="space-y-1.5">
-              <label className="font-bold text-slate-700 block">RTO EXPENSE (₹)</label>
-              <Input
-                type="number"
-                value={rtoExpenseValue === 0 ? "" : rtoExpenseValue}
-                onChange={(e) => setRtoExpenseValue(Number(e.target.value) || 0)}
-                placeholder="Enter RTO expense amount..."
-                className="w-full p-2 border rounded-lg"
-              />
-            </div>
+    {/* RTO Expense Popup Modal */}
+    <Dialog open={showRtoExpenseModal} onOpenChange={(open) => { if (!open) handleCancelRtoExpense(); }}>
+      <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-slate-900">RTO EXPENSE DETAILS</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4 text-xs">
+          <div className="space-y-1.5">
+            <label className="font-bold text-slate-700 block">RTO Expense (Optional)</label>
+            <Input
+              type="number"
+              value={rtoExpenseValue === 0 ? "" : rtoExpenseValue}
+              onChange={(e) => setRtoExpenseValue(e.target.value === "" ? "" : Number(e.target.value))}
+              placeholder="Enter RTO expense amount..."
+              className="w-full p-2 border rounded-lg"
+            />
           </div>
-          <DialogFooter className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={handleCancelRtoExpense} className="px-4 py-2 text-xs rounded-lg">
-              CANCEL
-            </Button>
-            <Button onClick={handleSaveRtoExpense} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
-              SAVE
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+        <DialogFooter className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={handleCancelRtoExpense} className="px-4 py-2 text-xs rounded-lg">
+            CANCEL
+          </Button>
+          <Button onClick={handleSaveRtoExpense} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
+            SAVE
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }

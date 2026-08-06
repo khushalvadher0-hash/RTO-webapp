@@ -213,6 +213,7 @@ function ApplicationsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<ApplicationRecord | null>(null);
   const [viewingApp, setViewingApp] = useState<ApplicationRecord | null>(null);
@@ -266,6 +267,23 @@ function ApplicationsPage() {
       unsubDS();
     };
   }, []);
+
+  const availableGroups = useMemo(() => {
+    const groupsSet = new Set<string>();
+    applications.forEach((app) => {
+      const g = app.groupName || app.vehicleDetails?.groupName || (app as any).vehicleDetails?.groupName || "";
+      if (g.trim()) {
+        groupsSet.add(g.trim());
+      }
+    });
+    drivingSchoolApps.forEach((app: any) => {
+      const g = app.groupName || app.vehicleDetails?.groupName || (app as any).vehicleDetails?.groupName || "";
+      if (g.trim()) {
+        groupsSet.add(g.trim());
+      }
+    });
+    return Array.from(groupsSet).sort((a, b) => a.localeCompare(b));
+  }, [applications, drivingSchoolApps]);
 
   const handlePrintPDF = () => {
     const tableEl = document.querySelector("table");
@@ -455,8 +473,9 @@ function ApplicationsPage() {
 
     const matchStatus = statusFilter === "all" || app.applicationStatus === statusFilter;
     const matchPayment = paymentFilter === "all" || app.paymentStatus === paymentFilter;
+    const matchGroup = groupFilter === "all" || app.groupName === groupFilter;
 
-    return matchSearch && matchStatus && matchPayment;
+    return matchSearch && matchStatus && matchPayment && matchGroup;
   });
 
   const filteredDrivingSchoolApps = useMemo(() => {
@@ -475,10 +494,11 @@ function ApplicationsPage() {
       const matchCourse = dsCourseFilter === "all" || ds.courseType === dsCourseFilter;
       const matchEmployee = dsEmployeeFilter === "all" || ds.assignedEmployee === dsEmployeeFilter;
       const matchStatus = dsStatusFilter === "all" || ds.status === dsStatusFilter;
+      const matchGroup = groupFilter === "all" || (ds as any).groupName === groupFilter;
 
-      return matchSearch && matchPayment && matchCourse && matchEmployee && matchStatus;
+      return matchSearch && matchPayment && matchCourse && matchEmployee && matchStatus && matchGroup;
     });
-  }, [drivingSchoolApps, searchTerm, paymentFilter, dsCourseFilter, dsEmployeeFilter, dsStatusFilter]);
+  }, [drivingSchoolApps, searchTerm, paymentFilter, dsCourseFilter, dsEmployeeFilter, dsStatusFilter, groupFilter]);
 
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
@@ -589,6 +609,19 @@ function ApplicationsPage() {
             <option value="Paid">Paid</option>
             <option value="Pending">Pending</option>
             <option value="Partial">Partial</option>
+          </select>
+
+          <select
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="all">ALL GROUPS</option>
+            {availableGroups.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
           </select>
         </div>
       </div>

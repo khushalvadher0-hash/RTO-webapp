@@ -9,7 +9,7 @@ interface ApplicationTypeBadgeProps {
 export const getApplicationTypeStyle = (appType?: string) => {
   if (!appType) return {};
   const t = appType.trim().toLowerCase();
-  if (t === "home") return { backgroundColor: "#FFFFFF" };
+  if (t === "home") return { backgroundColor: "#F8F9FA" };
   if (t === "faceless") return { backgroundColor: "#EAF4FF" };
   if (t === "out of bhavnagar") return { backgroundColor: "#FFEAEA" };
   if (t === "cng") return { backgroundColor: "#ECFFF0" };
