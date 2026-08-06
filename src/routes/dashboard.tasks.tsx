@@ -3226,33 +3226,6 @@ function TaskFormDialog({
                 onChange={(e) => setAppointmentDate(e.target.value)}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4 p-2 bg-slate-50 border rounded-lg text-xs">
-              <div className="grid gap-1">
-                <span className="font-bold text-gray-500 uppercase block text-[10px]">Application No.</span>
-                <Input
-                  type="text"
-                  placeholder="e.g. APL-2026-3084"
-                  value={applicationId}
-                  onChange={(e) => setApplicationId(e.target.value)}
-                  className="bg-white"
-                />
-              </div>
-              <div className="grid gap-1">
-                <span className="font-bold text-gray-500 uppercase block text-[10px]">Application Type</span>
-                <Select value={applicationType} onValueChange={setApplicationType}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder="Select type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Home">Home</SelectItem>
-                    <SelectItem value="Faceless">Faceless</SelectItem>
-                    <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                    <SelectItem value="CNG">CNG</SelectItem>
-                    <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-3">
@@ -3335,6 +3308,8 @@ function TaskDetailsSheet({
   const [expectedDate, setExpectedDate] = useState("");
   const [remarkInput, setRemarkInput] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus>("Assigned");
+  const [sheetApplicationId, setSheetApplicationId] = useState("");
+  const [sheetApplicationType, setSheetApplicationType] = useState("Home");
 
   const assignedEmp = useMemo(() => {
     return (
@@ -3358,6 +3333,8 @@ function TaskDetailsSheet({
     setRemarkInput("");
     
     setSelectedStatus(initialTask.status || "Assigned");
+    setSheetApplicationId(initialTask.applicationId || "");
+    setSheetApplicationType(initialTask.applicationType || "Home");
     if (initialTask.dueDate) {
       setExpectedDate(new Date(initialTask.dueDate).toISOString().slice(0, 10));
     } else {
@@ -3375,6 +3352,8 @@ function TaskDetailsSheet({
 
       setLiveTask(currentTask);
       setSelectedStatus(currentTask.status || "Assigned");
+      setSheetApplicationId(currentTask.applicationId || "");
+      setSheetApplicationType(currentTask.applicationType || "Home");
       if (currentTask.dueDate) {
         setExpectedDate(new Date(currentTask.dueDate).toISOString().slice(0, 10));
       } else {
@@ -3432,6 +3411,8 @@ function TaskDetailsSheet({
       const updates: any = {
         status: selectedStatus,
         done: selectedStatus === "Completed",
+        applicationId: sheetApplicationId.trim(),
+        applicationType: sheetApplicationType,
       };
       if (expectedDate) {
         updates.dueDate = new Date(expectedDate).toISOString();
@@ -3647,6 +3628,35 @@ function TaskDetailsSheet({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Application Details */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border rounded-xl">
+                <div className="space-y-1">
+                  <Label className="text-xs uppercase font-bold text-gray-400">Application Number</Label>
+                  <Input
+                    type="text"
+                    placeholder="APL-XXXX-XXXX"
+                    value={sheetApplicationId}
+                    onChange={(e) => setSheetApplicationId(e.target.value)}
+                    className="bg-white text-xs font-semibold text-slate-900 h-9"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs uppercase font-bold text-gray-400">Application Type</Label>
+                  <Select value={sheetApplicationType} onValueChange={setSheetApplicationType}>
+                    <SelectTrigger className="bg-white text-xs font-semibold text-slate-900 h-9">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Home">Home</SelectItem>
+                      <SelectItem value="Faceless">Faceless</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                      <SelectItem value="CNG">CNG</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
