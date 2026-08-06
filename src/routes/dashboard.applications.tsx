@@ -473,7 +473,8 @@ function ApplicationsPage() {
 
     const matchStatus = statusFilter === "all" || app.applicationStatus === statusFilter;
     const matchPayment = paymentFilter === "all" || app.paymentStatus === paymentFilter;
-    const matchGroup = groupFilter === "all" || app.groupName === groupFilter;
+    const appGroup = app.groupName || app.vehicleDetails?.groupName || (app as any).vehicleDetails?.groupName || "";
+    const matchGroup = groupFilter === "all" || appGroup === groupFilter;
 
     return matchSearch && matchStatus && matchPayment && matchGroup;
   });

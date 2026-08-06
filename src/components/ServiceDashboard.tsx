@@ -415,7 +415,7 @@ export function ServiceDashboard({
           gujaratPermitExpiryDate: app?.gujaratPermitExpiryDate || item.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "—",
           npAuthExpiryDate: app?.npAuthExpiryDate || item.npAuthExpiryDate || v.npAuthExpiryDate || v.permitDetails?.nationalAuthExpiryDate || "—",
           registrationRenewalExpiryDate: app?.registrationRenewalExpiryDate || item.registrationRenewalExpiryDate || v.registrationRenewalExpiryDate || v.registrationDetails?.registrationValidity || "—",
-          groupName: app?.groupName || item.groupName || "",
+          groupName: app?.groupName || app?.vehicleDetails?.groupName || (app as any)?.vehicleDetails?.groupName || item.groupName || "",
         };
         uniqueMap.set(item.id, enriched);
       });
