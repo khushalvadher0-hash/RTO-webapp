@@ -77,6 +77,46 @@ const toDateString = (ts: any) => {
   return "";
 };
 
+const compressImageBase64 = (base64Str: string, callback: (compressed: string) => void) => {
+  if (!base64Str || !base64Str.startsWith("data:image/")) {
+    callback(base64Str);
+    return;
+  }
+  const img = new Image();
+  img.src = base64Str;
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    let width = img.width;
+    let height = img.height;
+    const MAX_WIDTH = 800;
+    const MAX_HEIGHT = 800;
+    if (width > height) {
+      if (width > MAX_WIDTH) {
+        height *= MAX_WIDTH / width;
+        width = MAX_WIDTH;
+      }
+    } else {
+      if (height > MAX_HEIGHT) {
+        width *= MAX_HEIGHT / height;
+        height = MAX_HEIGHT;
+      }
+    }
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      callback(base64Str);
+      return;
+    }
+    ctx.drawImage(img, 0, 0, width, height);
+    const compressedData = canvas.toDataURL("image/jpeg", 0.35);
+    callback(compressedData);
+  };
+  img.onerror = () => {
+    callback(base64Str);
+  };
+};
+
 export const DEFAULT_APP_TYPES = [
   "Home",
   "Faceless",
@@ -1247,7 +1287,33 @@ function InlineDocUpload({
   setUploadedDocs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setPreviewDoc: (doc: { name: string; url: string } | null) => void;
 }) {
-  const docUrl = uploadedDocs[docName];
+  let docUrl = uploadedDocs[docName];
+  if (!docUrl) {
+    if (docName === "Registration RC Document" || docName === "Tax RC Document") {
+      docUrl = uploadedDocs["RC Book"];
+    }
+    if (docName === "Tax Receipt Document" || docName === "Tax RC Document") {
+      docUrl = docUrl || uploadedDocs["Tax Receipt"];
+    }
+    if (docName === "Fitness Document") {
+      docUrl = uploadedDocs["Fitness"];
+    }
+    if (docName === "Gujarat Permit Document") {
+      docUrl = uploadedDocs["Gujarat Permit"];
+    }
+    if (docName === "National Permit(Gujrat Permit) Document") {
+      docUrl = uploadedDocs["National Permit(Gujrat Permit)"];
+    }
+    if (docName === "National Permit Authorization Document") {
+      docUrl = uploadedDocs["National Permit Authorization"];
+    }
+    if (docName === "PUC Document") {
+      docUrl = uploadedDocs["PUC"];
+    }
+    if (docName === "Insurance Document") {
+      docUrl = uploadedDocs["Insurance"];
+    }
+  }
   const isUploaded = !!docUrl;
 
   const printDoc = (url: string, name: string) => {
@@ -1309,6 +1375,30 @@ function InlineDocUpload({
                   setUploadedDocs((prev) => {
                     const next = { ...prev };
                     delete next[docName];
+                    if (docName === "Registration RC Document" || docName === "Tax RC Document") {
+                      delete next["RC Book"];
+                    }
+                    if (docName === "Tax Receipt Document" || docName === "Tax RC Document") {
+                      delete next["Tax Receipt"];
+                    }
+                    if (docName === "Fitness Document") {
+                      delete next["Fitness"];
+                    }
+                    if (docName === "Gujarat Permit Document") {
+                      delete next["Gujarat Permit"];
+                    }
+                    if (docName === "National Permit(Gujrat Permit) Document") {
+                      delete next["National Permit(Gujrat Permit)"];
+                    }
+                    if (docName === "National Permit Authorization Document") {
+                      delete next["National Permit Authorization"];
+                    }
+                    if (docName === "PUC Document") {
+                      delete next["PUC"];
+                    }
+                    if (docName === "Insurance Document") {
+                      delete next["Insurance"];
+                    }
                     return next;
                   });
                 }}
@@ -1331,11 +1421,17 @@ function InlineDocUpload({
                   toast.error("File size must be under 15MB");
                   return;
                 }
+                if (file.type === "application/pdf" && file.size > 200 * 1024) {
+                  toast.error("PDF file size must be under 200KB to fit database limit");
+                  return;
+                }
                 const reader = new FileReader();
                 reader.onload = (evt) => {
                   const result = evt.target?.result as string;
-                  setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
-                  toast.success(`${docName} uploaded!`);
+                  compressImageBase64(result, (compressed) => {
+                    setUploadedDocs((prev) => ({ ...prev, [docName]: compressed }));
+                    toast.success(`${docName} uploaded!`);
+                  });
                 };
                 reader.readAsDataURL(file);
               }}
@@ -2623,6 +2719,25 @@ function ApplicationFormModal({
     toast.success(`${docName} uploaded!`);
   };
 
+  const sanitizeFirestoreData = (obj: any): any => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj === "number") {
+      return isNaN(obj) || !isFinite(obj) ? 0 : obj;
+    }
+    if (typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) {
+      return obj.map(sanitizeFirestoreData);
+    }
+    const clean: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        clean[key] = sanitizeFirestoreData(val);
+      }
+    }
+    return clean;
+  };
+
   const handleSave = async (status: "Draft" | "Submitted") => {
     if (activeSubModule === "driving_school") {
       if (!ownerName.trim()) {
@@ -2913,6 +3028,9 @@ function ApplicationFormModal({
       });
     }
 
+    let generatedInvoiceNumber = "";
+    let generatedInvoiceId = "";
+
     // Connect to Accounting & Generate Invoice if selected
     if (shouldGenerateInvoice) {
       try {
@@ -2979,7 +3097,7 @@ function ApplicationFormModal({
 
     try {
       await saveApplicationAndVehicle(
-        {
+        sanitizeFirestoreData({
           subModule: activeSubModule,
           dateOfBirth: activeSubModule === "form5" ? form5Details.dateOfBirth : (activeSubModule === "licence" || activeSubModule === "insurance" ? dateOfBirth : undefined),
           licenseDetails: activeSubModule === "licence" ? {
@@ -3035,7 +3153,7 @@ function ApplicationFormModal({
             fitness: activeSubModule === "insurance" ? false : (showFitnessDetails && !!fitnessExpiryDate),
           },
           vehicleDetails: vehicleDetails as any,
-        },
+        }),
         editingApp?.id
       );
 
@@ -4916,7 +5034,7 @@ function ApplicationFormModal({
                   <div className="space-y-3 pt-3 border-t border-slate-100">
                     <h4 className="font-bold text-slate-800 text-xs">Service Wise Accounting (General License Services)</h4>
                     {generalLicServices.selected.map((genSrv) => {
-                      const acc = generalLicServices.accounting[genSrv] || { totalAmount: "", advanceAmount: "" };
+                      const acc = serviceAccountingMap[genSrv] || { totalAmount: 0, advancePayment: 0 };
                       return (
                         <div key={genSrv} className="p-3 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-3 items-center text-xs">
                           <span className="font-bold text-slate-800">{genSrv}</span>
@@ -4925,17 +5043,8 @@ function ApplicationFormModal({
                             <input
                               type="number"
                               placeholder="0"
-                              value={acc.totalAmount}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setGeneralLicServices((prev) => ({
-                                  ...prev,
-                                  accounting: {
-                                    ...prev.accounting,
-                                    [genSrv]: { ...acc, totalAmount: val },
-                                  },
-                                }));
-                              }}
+                              value={acc.totalAmount || ""}
+                              onChange={(e) => updateServiceAccounting(genSrv, "totalAmount", Number(e.target.value))}
                               className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold"
                             />
                           </div>
@@ -4944,17 +5053,8 @@ function ApplicationFormModal({
                             <input
                               type="number"
                               placeholder="0"
-                              value={acc.advanceAmount}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setGeneralLicServices((prev) => ({
-                                  ...prev,
-                                  accounting: {
-                                    ...prev.accounting,
-                                    [genSrv]: { ...acc, advanceAmount: val },
-                                  },
-                                }));
-                              }}
+                              value={acc.advancePayment || ""}
+                              onChange={(e) => updateServiceAccounting(genSrv, "advancePayment", Number(e.target.value))}
                               className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold text-emerald-700"
                             />
                           </div>
@@ -7503,11 +7603,17 @@ function ApplicationFormModal({
                             toast.error("File size must be under 15MB");
                             return;
                           }
+                          if (file.type === "application/pdf" && file.size > 200 * 1024) {
+                            toast.error("PDF file size must be under 200KB to fit database limit");
+                            return;
+                          }
                           const reader = new FileReader();
                           reader.onload = (evt) => {
                             const result = evt.target?.result as string;
-                            setUploadedDocs((prev) => ({ ...prev, [docName]: result }));
-                            toast.success(`${docName} file uploaded!`);
+                            compressImageBase64(result, (compressed) => {
+                              setUploadedDocs((prev) => ({ ...prev, [docName]: compressed }));
+                              toast.success(`${docName} file uploaded!`);
+                            });
                           };
                           reader.readAsDataURL(file);
                         }}
