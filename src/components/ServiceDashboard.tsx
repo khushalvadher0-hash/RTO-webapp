@@ -48,6 +48,15 @@ import {
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
 import { ApplicationFullDetailsModal } from "./ApplicationFullDetailsModal";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { ApplicationTypeBadge } from "./ApplicationTypeBadge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface ServiceDashboardProps {
   serviceType: ServiceType;
@@ -212,6 +221,70 @@ export function ServiceDashboard({
   const [selectedAppModal, setSelectedAppModal] = useState<any>(null);
   const [appModalOpen, setAppModalOpen] = useState(false);
 
+  // RTO Expense popup states
+  const [showRtoExpenseModal, setShowRtoExpenseModal] = useState(false);
+  const [rtoExpenseValue, setRtoExpenseValue] = useState<number>(0);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ task: any; newStatus: string } | null>(null);
+
+  const handleLicenceStatusChange = (task: any, newStatus: string) => {
+    if (newStatus === "FAIL" || newStatus === "RETEST") {
+      setPendingStatusChange({ task, newStatus });
+      setRtoExpenseValue(task.rtoExpense || 0);
+      setShowRtoExpenseModal(true);
+    } else {
+      updateLicenceStatusAndExpense(task, newStatus, task.rtoExpense || 0);
+    }
+  };
+
+  const handleSaveRtoExpense = () => {
+    if (pendingStatusChange) {
+      const { task, newStatus } = pendingStatusChange;
+      updateLicenceStatusAndExpense(task, newStatus, rtoExpenseValue);
+      setShowRtoExpenseModal(false);
+      setPendingStatusChange(null);
+    }
+  };
+
+  const handleCancelRtoExpense = () => {
+    setShowRtoExpenseModal(false);
+    setPendingStatusChange(null);
+    toast.info("Status change cancelled");
+  };
+
+  const updateLicenceStatusAndExpense = async (task: any, status: string, expense: number) => {
+    try {
+      const coll = task.sourceCollection || "registry_tasks";
+      const docRef = doc(db, coll, task.id);
+      
+      const updateData: any = {
+        rtoExpense: Number(expense) || 0,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (coll === "registry_tasks") {
+        updateData.status = status;
+      } else {
+        updateData.taskStatus = status;
+      }
+
+      await setDoc(docRef, updateData, { merge: true });
+      toast.success("Licence status updated successfully!");
+
+      const appId = task.applicationDocId || task.applicationId || task.recordId;
+      if (appId) {
+        const appRef = doc(db, "registry_applications_v1", appId);
+        await setDoc(appRef, {
+          rtoExpense: Number(expense) || 0,
+          status: status,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
+    } catch (error) {
+      console.error("Error updating licence status and expense:", error);
+      toast.error("Failed to update status");
+    }
+  };
+
   // Subscribe to Firestore tasks & registry_services_v2 to dynamically display Completed Services
   useEffect(() => {
     const session = getSession();
@@ -239,21 +312,30 @@ export function ServiceDashboard({
 
       setCompletedTasks(allowed);
     };
-
     let snap1Data: any = null;
     let snap2Data: any = null;
     let snap3Data: any = null;
     let accMapData: Map<string, AccountingRecord> = new Map();
 
     const handleDocsUpdateAll = () => {
-      const docs1 = snap1Data ? snap1Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
-      const docs2 = snap2Data ? snap2Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
+      const docs1 = snap1Data ? snap1Data.docs.map((d: any) => ({ id: d.id, sourceCollection: "registry_tasks", ...d.data() })) : [];
+      const docs2 = snap2Data ? snap2Data.docs.map((d: any) => ({ id: d.id, sourceCollection: "registry_services_v2", ...d.data() })) : [];
       const apps = snap3Data ? snap3Data.docs.map((d: any) => ({ id: d.id, ...d.data() })) : [];
       setAppsList(apps);
       const appsMap = new Map<string, any>(apps.map((a: any) => [a.id, a]));
 
       const combined = [...docs1, ...docs2];
-      const completedList = combined.filter((t: any) => t.status === "Completed" || t.taskStatus === "Completed" || t.done === true);
+      const completedList = combined.filter((t: any) => {
+        const targetAppId = t.applicationDocId || t.applicationId || t.recordId || t.clientId || t.id.replace("task-app-", "");
+        const app = appsMap.get(targetAppId) || apps.find((a: any) => a.id === t.id || a.id === t.recordId || a.id === t.applicationDocId);
+        const resolvedSubModule = app?.subModule || (app?.licenseDetails ? "licence" : t.subModule || "services");
+
+        if (resolvedSubModule === "licence") {
+          const s = (t.status || t.taskStatus || "").toUpperCase();
+          return ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"].includes(s) || t.done === true;
+        }
+        return t.status === "Completed" || t.taskStatus === "Completed" || t.done === true;
+      });
 
       // Deduplicate by ID and enrich with Application & Accounting record details
       const uniqueMap = new Map();
@@ -326,7 +408,6 @@ export function ServiceDashboard({
       });
       const uniqueCompleted = Array.from(uniqueMap.values());
 
-      // Permission filtering for Completed Services
       // Permission filtering for Completed Services
       const allowed = uniqueCompleted.filter((t: any) => {
         if (isAdmin) return true;
@@ -693,9 +774,22 @@ export function ServiceDashboard({
                             </span>
                           </td>
                           <td className="p-3">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              {t.status || t.taskStatus || "Completed"}
-                            </span>
+                            {(() => {
+                              const sVal = t.status || t.taskStatus || "Completed";
+                              const statusVal = ["RTO", "PASS", "FAIL", "RETEST"].includes(sVal) ? sVal : "RTO";
+                              return (
+                                <select
+                                  value={statusVal}
+                                  onChange={(e) => handleLicenceStatusChange(t, e.target.value)}
+                                  className="px-2 py-1 rounded text-[10px] font-bold border bg-white cursor-pointer border-slate-200"
+                                >
+                                  <option value="RTO">RTO</option>
+                                  <option value="PASS">PASS</option>
+                                  <option value="FAIL">FAIL</option>
+                                  <option value="RETEST">RETEST</option>
+                                </select>
+                              );
+                            })()}
                           </td>
                           <td className="p-3 font-mono text-slate-700 font-semibold">{refCode}</td>
                           <td className="p-3 text-center">
@@ -714,20 +808,7 @@ export function ServiceDashboard({
                                   setSelectedAppModal(appDoc);
                                   setAppModalOpen(true);
                                 }}
-                                title="View Full Application Form Details"
-                              >
-                                <FileText className="size-3.5 text-indigo-600" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  if (t.recordId || t.clientId) {
-                                    setSelectedRecord({ id: t.recordId || t.clientId } as any);
-                                    setProfileOpen(true);
-                                  }
-                                }}
-                                title="View Client Workspace"
+                                title="View Full Licence Application Details"
                               >
                                 <Eye className="size-3.5 text-blue-600" />
                               </Button>
@@ -771,7 +852,9 @@ export function ServiceDashboard({
                           ₹{Number(t.totalPaid || t.advanceAmount || 0).toLocaleString("en-IN")}
                         </td>
                         <td className="p-3 font-mono text-xs font-semibold text-blue-600">{t.applicationId || "—"}</td>
-                        <td className="p-3 text-xs font-semibold">{t.applicationType || "Home"}</td>
+                         <td className="p-3">
+                          <ApplicationTypeBadge appType={t.applicationType} />
+                        </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button
@@ -836,6 +919,35 @@ export function ServiceDashboard({
         defaultServiceType={serviceType}
         onSuccess={refreshData}
       />
+
+      {/* RTO Expense Popup Modal */}
+      <Dialog open={showRtoExpenseModal} onOpenChange={(open) => { if (!open) handleCancelRtoExpense(); }}>
+        <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900">RTO EXPENSE</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4 text-xs">
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-700 block">RTO EXPENSE (₹)</label>
+              <Input
+                type="number"
+                value={rtoExpenseValue === 0 ? "" : rtoExpenseValue}
+                onChange={(e) => setRtoExpenseValue(Number(e.target.value) || 0)}
+                placeholder="Enter RTO expense amount..."
+                className="w-full p-2 border rounded-lg"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={handleCancelRtoExpense} className="px-4 py-2 text-xs rounded-lg">
+              CANCEL
+            </Button>
+            <Button onClick={handleSaveRtoExpense} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
+              SAVE
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

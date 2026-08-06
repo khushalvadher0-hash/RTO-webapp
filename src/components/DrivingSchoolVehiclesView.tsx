@@ -10,6 +10,7 @@ import {
   CheckCircle,
   X,
   User,
+  Users,
   Fuel,
   DollarSign,
   Info,
@@ -23,6 +24,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { db } from "@/lib/firebase";
+import { collection, doc, setDoc } from "firebase/firestore";
+import { getSession } from "@/lib/auth";
+import { removeUndefined } from "@/lib/records";
+import { DRIVING_SCHOOL_DAILY_REPORTS_COL, DRIVING_SCHOOL_VEHICLES_COL, uploadImageToStorage } from "@/lib/drivingSchoolVehicles";
 import { toast } from "sonner";
 import {
   subscribeDrivingSchoolVehiclesList,
@@ -287,38 +293,54 @@ export function DrivingSchoolVehiclesView() {
     setDailyReportOpen(true);
   };
 
-  // Handle Save Daily Report
-  const handleSaveDailyReport = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle Save Student Report (Decoupled Section 1)
+  const handleSaveStudentReport = async () => {
     if (!selectedVehicleForReport) return;
-
-    // Check for duplicate reports for same vehicle and date
-    const duplicate = allReports.find(
-      (r) =>
-        r.vehicleId === selectedVehicleForReport.id &&
-        r.reportDate === reportDate &&
-        r.id !== editingReportId
-    );
-    if (duplicate) {
-      toast.error("Vehicle Daily Report already exists for this vehicle today. Do not create duplicate reports.");
-      return;
-    }
-
-    // Validate odometer photos
-    if (!reportStartPhoto) {
-      toast.error("Starting Odometer Photo is required!");
-      return;
-    }
-    if (!reportEndPhoto) {
-      toast.error("Ending Odometer Photo is required!");
-      return;
-    }
-
-    // Validate students list
     if (reportStudentTrips.length === 0 || reportStudentTrips.some(t => !t.studentName.trim())) {
       toast.error("Please add at least one student trip and fill in the student name.");
       return;
     }
+
+    setSavingReport(true);
+    try {
+      const now = new Date().toISOString();
+      const session = getSession();
+
+      for (const trip of reportStudentTrips) {
+        const docRef = doc(collection(db, DRIVING_SCHOOL_DAILY_REPORTS_COL));
+        await setDoc(docRef, {
+          id: docRef.id,
+          reportType: "student",
+          vehicleId: selectedVehicleForReport.id,
+          vehicleNumber: selectedVehicleForReport.vehicleNumber,
+          reportDate,
+          studentName: trip.studentName,
+          batch: trip.batch || "",
+          pickupTime: trip.pickupTime || "",
+          dropTime: trip.dropTime || "",
+          pickupLocation: trip.pickupLocation || "",
+          dropLocation: trip.dropLocation || "",
+          purpose: trip.purpose || "",
+          remarks: trip.remarks || "", // student remarks
+          createdAt: now,
+          updatedAt: now,
+          createdBy: session?.name || "System",
+        });
+      }
+
+      toast.success("Student Report(s) saved successfully!");
+      setDailyReportOpen(false);
+    } catch (err) {
+      console.error("Error saving student report:", err);
+      toast.error("Failed to save student report");
+    } finally {
+      setSavingReport(false);
+    }
+  };
+
+  // Handle Save Vehicle Report (Decoupled Section 2)
+  const handleSaveVehicleReport = async () => {
+    if (!selectedVehicleForReport) return;
 
     const startOdo = Number(reportStartOdometer) || 0;
     const endOdo = Number(reportEndOdometer) || 0;
@@ -328,14 +350,62 @@ export function DrivingSchoolVehiclesView() {
       return;
     }
 
+    if (!reportStartPhoto) {
+      toast.error("Starting Odometer Photo is required!");
+      return;
+    }
+    if (!reportEndPhoto) {
+      toast.error("Ending Odometer Photo is required!");
+      return;
+    }
+
     setSavingReport(true);
     try {
+      const now = new Date().toISOString();
+      const session = getSession();
+
       const fExp = Number(reportFuelExpense) || 0;
       const gExp = Number(reportGeneralExpense) || 0;
       const oExp = Number(reportOtherExpense) || 0;
       const totalExp = fExp + gExp + oExp;
 
-      await saveDrivingSchoolDailyReportRecord({
+      // Check if there is an existing vehicle report for this vehicle and date
+      const existingRep = allReports.find(
+        (r) =>
+          r.vehicleId === selectedVehicleForReport.id &&
+          r.reportDate === reportDate &&
+          (r.reportType === "vehicle" || (!r.reportType && (r.startOdometer !== undefined || r.endOdometer !== undefined)))
+      );
+
+      let targetId = existingRep?.id;
+      let docRef;
+
+      if (targetId) {
+        docRef = doc(db, DRIVING_SCHOOL_DAILY_REPORTS_COL, targetId);
+      } else {
+        docRef = doc(collection(db, DRIVING_SCHOOL_DAILY_REPORTS_COL));
+        targetId = docRef.id;
+      }
+
+      let startOdoPhotoUrl = reportStartPhoto;
+      if (startOdoPhotoUrl && (startOdoPhotoUrl.startsWith("data:") || (startOdoPhotoUrl as any) instanceof File)) {
+        startOdoPhotoUrl = await uploadImageToStorage(
+          startOdoPhotoUrl,
+          `vehicles/${selectedVehicleForReport.id}/reports/${targetId}_start_${Date.now()}.jpg`
+        );
+      }
+
+      let endOdoPhotoUrl = reportEndPhoto;
+      if (endOdoPhotoUrl && (endOdoPhotoUrl.startsWith("data:") || (endOdoPhotoUrl as any) instanceof File)) {
+        endOdoPhotoUrl = await uploadImageToStorage(
+          endOdoPhotoUrl,
+          `vehicles/${selectedVehicleForReport.id}/reports/${targetId}_end_${Date.now()}.jpg`
+        );
+      }
+
+      const payload: any = {
+        id: targetId,
+        reportType: "vehicle",
         vehicleId: selectedVehicleForReport.id,
         vehicleNumber: selectedVehicleForReport.vehicleNumber,
         reportDate,
@@ -343,26 +413,43 @@ export function DrivingSchoolVehiclesView() {
         startOdometer: startOdo,
         endOdometer: endOdo,
         distanceTravelled: Math.max(0, endOdo - startOdo),
-        startOdometerPhoto: reportStartPhoto,
-        endOdometerPhoto: reportEndPhoto,
+        startOdometerPhoto: startOdoPhotoUrl,
+        endOdometerPhoto: endOdoPhotoUrl,
         fuelExpense: fExp,
         generalExpense: gExp,
         otherExpense: oExp,
         expenseRemarks: reportExpenseRemarks,
         totalExpense: totalExp,
-        studentTrips: reportStudentTrips,
-        // legacy compatibility fallback properties
-        studentName: reportStudentTrips[0]?.studentName || "",
-        fuelAmount: fExp,
-        generalExpenseAmount: gExp,
-        notes: reportExpenseRemarks,
-      }, editingReportId || undefined);
+        updatedAt: now,
+      };
 
-      toast.success(editingReportId ? "Daily Vehicle Report updated successfully!" : "Daily Vehicle Report saved successfully!");
+      if (existingRep) {
+        payload.updatedBy = session?.name || "System";
+      } else {
+        payload.createdAt = now;
+        payload.createdBy = session?.name || "System";
+      }
+
+      await setDoc(docRef, removeUndefined(payload), { merge: true });
+
+      // Auto-update currentOdometer on Vehicle document
+      if (endOdo > 0) {
+        const vehRef = doc(db, DRIVING_SCHOOL_VEHICLES_COL, selectedVehicleForReport.id);
+        await setDoc(
+          vehRef,
+          {
+            currentOdometer: endOdo,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
+
+      toast.success(existingRep ? "Daily Vehicle Report updated successfully!" : "Daily Vehicle Report saved successfully!");
       setDailyReportOpen(false);
     } catch (err) {
-      console.error("Error saving daily report:", err);
-      toast.error("Failed to save daily report");
+      console.error("Error saving vehicle report:", err);
+      toast.error("Failed to save vehicle report");
     } finally {
       setSavingReport(false);
     }
@@ -395,7 +482,7 @@ export function DrivingSchoolVehiclesView() {
   const openVehicleInfoModal = (veh: DrivingSchoolVehicle) => {
     setSelectedVehicleForInfo(veh);
     setFilterVehicleId(veh.id);
-    setFilterDate("");
+    setFilterDate(new Date().toISOString().split("T")[0]);
     setFilterDriver("");
     setFilterStudentName("");
     setVehicleInfoOpen(true);
@@ -426,6 +513,50 @@ export function DrivingSchoolVehiclesView() {
       return true;
     });
   }, [allReports, selectedVehicleForInfo, filterVehicleId, filterDate, filterDriver, filterStudentName]);
+
+  const todayStudentReports = useMemo(() => {
+    if (!selectedVehicleForInfo || !filterDate) return [];
+    const list: any[] = [];
+    allReports.forEach((r) => {
+      if (r.vehicleId !== selectedVehicleForInfo.id || r.reportDate !== filterDate) return;
+      
+      if (r.reportType === "student") {
+        list.push(r);
+      } else if (!r.reportType) {
+        // Legacy record containing both
+        if (r.studentTrips && r.studentTrips.length > 0) {
+          r.studentTrips.forEach((t: any) => {
+            list.push({
+              ...r,
+              studentName: t.studentName,
+              batch: t.batch,
+              pickupTime: t.pickupTime,
+              dropTime: t.dropTime,
+              pickupLocation: t.pickupLocation,
+              dropLocation: t.dropLocation,
+              purpose: t.purpose,
+              remarks: t.remarks
+            });
+          });
+        } else if (r.studentName) {
+          list.push({
+            ...r,
+            studentName: r.studentName,
+            remarks: r.notes
+          });
+        }
+      }
+    });
+    return list;
+  }, [allReports, selectedVehicleForInfo, filterDate]);
+
+  const todayVehicleReport = useMemo(() => {
+    if (!selectedVehicleForInfo || !filterDate) return null;
+    return allReports.find((r) => {
+      if (r.vehicleId !== selectedVehicleForInfo.id || r.reportDate !== filterDate) return false;
+      return r.reportType === "vehicle" || (!r.reportType && (r.startOdometer !== undefined || r.endOdometer !== undefined));
+    }) || null;
+  }, [allReports, selectedVehicleForInfo, filterDate]);
 
   const [uploadingDocKey, setUploadingDocKey] = useState<string | null>(null);
 
@@ -759,7 +890,7 @@ export function DrivingSchoolVehiclesView() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveDailyReport} className="space-y-6 text-xs">
+            <div className="space-y-6 text-xs">
               {/* SECTION 1: STUDENT TRIP DETAILS */}
               <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
@@ -928,6 +1059,17 @@ export function DrivingSchoolVehiclesView() {
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    disabled={savingReport}
+                    onClick={handleSaveStudentReport}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md shadow-blue-500/20"
+                  >
+                    {savingReport ? "Saving..." : "Save Student Report"}
+                  </Button>
                 </div>
               </div>
 
@@ -1105,6 +1247,17 @@ export function DrivingSchoolVehiclesView() {
                     />
                   </div>
                 </div>
+
+                <div className="pt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    disabled={savingReport}
+                    onClick={handleSaveVehicleReport}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md shadow-blue-500/20"
+                  >
+                    {savingReport ? "Uploading Photos & Saving..." : "Save Vehicle Report"}
+                  </Button>
+                </div>
               </div>
 
               {/* SUMMARY CARD */}
@@ -1142,7 +1295,7 @@ export function DrivingSchoolVehiclesView() {
               </div>
 
               {/* Footer */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-3">
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
                 <Button
                   type="button"
                   variant="outline"
@@ -1151,15 +1304,8 @@ export function DrivingSchoolVehiclesView() {
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={savingReport}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-8 py-2.5 rounded-xl shadow-md shadow-blue-500/20"
-                >
-                  {savingReport ? "Uploading Photos & Saving..." : "Save Report"}
-                </Button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
@@ -1531,6 +1677,161 @@ export function DrivingSchoolVehiclesView() {
                         </div>
                       </div>
                     ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* TODAY'S STUDENT & VEHICLE REPORTS FOR THE SELECTED DATE */}
+            <div className="border-t border-slate-200 pt-6 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <span>Reports for Date: </span>
+                  <input
+                    type="date"
+                    value={filterDate}
+                    onChange={(e) => setFilterDate(e.target.value)}
+                    className="p-1.5 border border-slate-200 rounded-lg text-xs font-semibold"
+                  />
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* SECTION 1: TODAY'S STUDENT REPORTS */}
+                <div className="bg-slate-50/60 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-blue-600" />
+                    <span>TODAY'S STUDENT REPORTS ({todayStudentReports.length})</span>
+                  </h4>
+                  <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                    {todayStudentReports.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-6 text-center italic">No student reports recorded for this day.</p>
+                    ) : (
+                      todayStudentReports.map((st, idx) => (
+                        <div key={st.id || idx} className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-2 relative shadow-sm">
+                          <div className="flex justify-between items-start">
+                            <span className="font-bold text-slate-900">{st.studentName}</span>
+                            {st.batch && (
+                              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold text-[9px] border border-blue-200">
+                                {st.batch}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-600 text-[11px]">
+                            {st.pickupTime && (
+                              <div>
+                                <span className="font-semibold text-slate-400">Pickup:</span> {st.pickupTime} {st.pickupLocation && `(${st.pickupLocation})`}
+                              </div>
+                            )}
+                            {st.dropTime && (
+                              <div>
+                                <span className="font-semibold text-slate-400">Drop:</span> {st.dropTime} {st.dropLocation && `(${st.dropLocation})`}
+                              </div>
+                            )}
+                            {st.purpose && (
+                              <div className="col-span-2">
+                                <span className="font-semibold text-slate-400">Purpose:</span> {st.purpose}
+                              </div>
+                            )}
+                            {st.remarks && (
+                              <div className="col-span-2 bg-slate-50 p-1.5 rounded-md border border-slate-100 italic text-slate-500">
+                                <strong>Remarks:</strong> {st.remarks}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* SECTION 2: TODAY'S VEHICLE REPORT */}
+                <div className="bg-slate-50/60 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                    <Car className="w-4 h-4 text-blue-600" />
+                    <span>TODAY'S VEHICLE REPORT</span>
+                  </h4>
+                  {!todayVehicleReport ? (
+                    <div className="h-[250px] flex items-center justify-center border border-dashed border-slate-200 rounded-xl bg-white p-4">
+                      <p className="text-xs text-slate-400 text-center italic">No vehicle report recorded for this day.</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 text-xs space-y-3 shadow-sm">
+                      <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Driver</span>
+                          <div className="font-semibold text-slate-800">{todayVehicleReport.driver || "—"}</div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Distance travelled</span>
+                          <div className="font-bold text-slate-900 font-mono">{todayVehicleReport.distanceTravelled || 0} km</div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Start Odometer</span>
+                          <div className="font-semibold font-mono text-slate-700">{todayVehicleReport.startOdometer || 0} km</div>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">End Odometer</span>
+                          <div className="font-semibold font-mono text-slate-700">{todayVehicleReport.endOdometer || 0} km</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg border">
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Fuel</span>
+                          <span className="font-bold font-mono text-slate-800">₹{todayVehicleReport.fuelExpense || 0}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">General</span>
+                          <span className="font-bold font-mono text-slate-800">₹{todayVehicleReport.generalExpense || 0}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Other</span>
+                          <span className="font-bold font-mono text-slate-800">₹{todayVehicleReport.otherExpense || 0}</span>
+                        </div>
+                        <div className="col-span-3 border-t border-slate-200/60 pt-1.5 flex justify-between items-center text-[10px]">
+                          <span className="font-bold uppercase text-slate-500">Total Expense:</span>
+                          <span className="font-extrabold font-mono text-blue-600">₹{todayVehicleReport.totalExpense || 0}</span>
+                        </div>
+                      </div>
+
+                      {/* Photos */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Start Odometer Photo</span>
+                          {todayVehicleReport.startOdometerPhoto ? (
+                            <img
+                              src={todayVehicleReport.startOdometerPhoto}
+                              alt="Start Odometer"
+                              className="w-full h-20 object-cover rounded-lg border border-slate-200 hover:scale-105 transition cursor-pointer"
+                              onClick={() => setActiveLightboxImg(todayVehicleReport.startOdometerPhoto || null)}
+                            />
+                          ) : (
+                            <div className="h-20 bg-slate-50 rounded-lg border border-dashed flex items-center justify-center text-[10px] text-slate-400">No photo</div>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">End Odometer Photo</span>
+                          {todayVehicleReport.endOdometerPhoto ? (
+                            <img
+                              src={todayVehicleReport.endOdometerPhoto}
+                              alt="End Odometer"
+                              className="w-full h-20 object-cover rounded-lg border border-slate-200 hover:scale-105 transition cursor-pointer"
+                              onClick={() => setActiveLightboxImg(todayVehicleReport.endOdometerPhoto || null)}
+                            />
+                          ) : (
+                            <div className="h-20 bg-slate-50 rounded-lg border border-dashed flex items-center justify-center text-[10px] text-slate-400">No photo</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {todayVehicleReport.expenseRemarks && (
+                        <div className="p-2 bg-slate-50 border rounded-lg italic text-[11px] text-slate-500">
+                          <strong>Remarks:</strong> {todayVehicleReport.expenseRemarks}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

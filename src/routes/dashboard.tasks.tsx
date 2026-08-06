@@ -112,6 +112,7 @@ import { generateTaskPDF, printWindow } from "@/lib/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
 import { toast } from "sonner";
+import { ApplicationTypeBadge } from "@/components/ApplicationTypeBadge";
 
 export const Route = createFileRoute("/dashboard/tasks")({ component: TasksPage });
 
@@ -2384,23 +2385,7 @@ function TaskTable({
                       ₹{Number(advPay).toLocaleString("en-IN")}
                     </td>
                     <td className="p-3">
-                      <span
-                        className={cn(
-                          "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border",
-                          appType.trim().toLowerCase() === "home" && "bg-white text-slate-700 border-slate-300",
-                          appType.trim().toLowerCase() === "faceless" && "bg-blue-100 text-blue-800 border-blue-300",
-                          appType.trim().toLowerCase() === "out of bhavnagar" && "bg-red-100 text-red-800 border-red-300",
-                          appType.trim().toLowerCase() === "cng" && "bg-green-100 text-green-800 border-green-300",
-                          appType.trim().toLowerCase() === "out of bhavnagar to bhavnagar" && "bg-orange-100 text-orange-800 border-orange-300"
-                        )}
-                        style={
-                          !["home", "faceless", "out of bhavnagar", "cng", "out of bhavnagar to bhavnagar"].includes(appType.trim().toLowerCase())
-                            ? getApplicationTypeStyle(appType)
-                            : undefined
-                        }
-                      >
-                        {appType}
-                      </span>
+                      <ApplicationTypeBadge appType={appType} />
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
