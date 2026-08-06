@@ -120,3 +120,24 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Global uppercase text styling */
+html, body {
+  text-transform: uppercase;
+}
+
+/* Ensure inputs, textareas, and specific elements retain their original casing */
+input, 
+textarea, 
+.keep-case, 
+[data-keep-case],
+.normal-case {
+  text-transform: none !important;
+}
+
+/* Ensure placeholder text is still transformed to uppercase */
+input::placeholder, 
+textarea::placeholder {
+  text-transform: uppercase !important;
+}
+
