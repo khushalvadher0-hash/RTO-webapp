@@ -1092,33 +1092,59 @@ function TasksPage() {
             {stats.completed} done
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex border rounded-lg overflow-hidden bg-slate-50">
-            <Button
-              variant={viewMode === "table" ? "secondary" : "ghost"}
-              size="sm"
-              className={`rounded-none px-3 h-9 ${viewMode === "table" ? "bg-white border shadow-sm font-semibold text-primary" : ""}`}
-              onClick={() => setViewMode("table")}
-              title="Table View"
-            >
-              <List className="size-4 mr-1" /> Table
-            </Button>
-            <Button
-              variant={viewMode === "card" ? "secondary" : "ghost"}
-              size="sm"
-              className={`rounded-none px-3 h-9 ${viewMode === "card" ? "bg-white border shadow-sm font-semibold text-primary" : ""}`}
-              onClick={() => setViewMode("card")}
-              title="Card View"
-            >
-              <LayoutGrid className="size-4 mr-1" /> Cards
-            </Button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex border rounded-lg overflow-hidden bg-slate-50">
+              <Button
+                variant={viewMode === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className={`rounded-none px-3 h-9 ${viewMode === "table" ? "bg-white border shadow-sm font-semibold text-primary" : ""}`}
+                onClick={() => setViewMode("table")}
+                title="Table View"
+              >
+                <List className="size-4 mr-1" /> Table
+              </Button>
+              <Button
+                variant={viewMode === "card" ? "secondary" : "ghost"}
+                size="sm"
+                className={`rounded-none px-3 h-9 ${viewMode === "card" ? "bg-white border shadow-sm font-semibold text-primary" : ""}`}
+                onClick={() => setViewMode("card")}
+                title="Card View"
+              >
+                <LayoutGrid className="size-4 mr-1" /> Cards
+              </Button>
+            </div>
+            {isAdmin && (
+              <Button onClick={openCreate}>
+                <Plus className="size-4 mr-1" />
+                Add task
+              </Button>
+            )}
           </div>
-          {isAdmin && (
-            <Button onClick={openCreate}>
-              <Plus className="size-4 mr-1" />
-              Add task
-            </Button>
-          )}
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 p-2 bg-white border border-slate-200 rounded-lg text-[10px] md:text-xs font-semibold text-slate-600 shadow-sm">
+            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mr-1">Application Type Legend</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-white border border-slate-300 shadow-xs inline-block" />
+              <span>HOME</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-blue-500 inline-block" />
+              <span>FACELESS</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-red-500 inline-block" />
+              <span>OUT OF BHAVNAGAR</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block" />
+              <span>CNG</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-orange-500 inline-block" />
+              <span>OUT OF BHAVNAGAR TO BHAVNAGAR</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1320,6 +1346,7 @@ function TasksPage() {
               applications={applications}
               onView={(t) => setDetailsId(t.id)}
               onEdit={openEdit}
+              activeSubModule={activeSubModule}
               onDelete={(t) => {
                 setTaskToDelete(t);
                 setDeleteOpen(true);
@@ -1975,6 +2002,7 @@ function TaskTable({
                     <th className="p-3 text-center">TOTAL SERVICES</th>
                     <th className="p-3">ASSIGNED EMPLOYEE</th>
                     <th className="p-3">TASK STATUS</th>
+                    <th className="p-3">APPLICATION NO.</th>
                     <th className="p-3">PUC EXPIRY</th>
                     <th className="p-3">TAX EXPIRY</th>
                     <th className="p-3">FITNESS EXPIRY</th>
@@ -1983,7 +2011,6 @@ function TaskTable({
                     <th className="p-3">GUJARAT PERMIT EXPIRY</th>
                     <th className="p-3 font-bold text-slate-900">કુલ રકમ</th>
                     <th className="p-3 font-bold text-emerald-700">કુલ જમા</th>
-                    <th className="p-3">APPLICATION NO.</th>
                     <th className="p-3">APPLICATION TYPE</th>
                   </>
                 )}
@@ -2341,6 +2368,9 @@ function TaskTable({
                         ))}
                       </select>
                     </td>
+                    <td className="p-3 font-semibold text-blue-600 font-mono">
+                      {appNo}
+                    </td>
                     <td className="p-3 font-mono text-slate-600">{pucExp}</td>
                     <td className="p-3 font-mono text-slate-600">{taxExp}</td>
                     <td className="p-3 font-mono text-slate-600">{fitExp}</td>
@@ -2353,13 +2383,21 @@ function TaskTable({
                     <td className="p-3 font-bold text-emerald-700 font-mono">
                       ₹{Number(advPay).toLocaleString("en-IN")}
                     </td>
-                    <td className="p-3 font-semibold text-blue-600 font-mono">
-                      {appNo}
-                    </td>
                     <td className="p-3">
                       <span
-                        className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border border-slate-200"
-                        style={getApplicationTypeStyle(appType)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border",
+                          appType.trim().toLowerCase() === "home" && "bg-white text-slate-700 border-slate-300",
+                          appType.trim().toLowerCase() === "faceless" && "bg-blue-100 text-blue-800 border-blue-300",
+                          appType.trim().toLowerCase() === "out of bhavnagar" && "bg-red-100 text-red-800 border-red-300",
+                          appType.trim().toLowerCase() === "cng" && "bg-green-100 text-green-800 border-green-300",
+                          appType.trim().toLowerCase() === "out of bhavnagar to bhavnagar" && "bg-orange-100 text-orange-800 border-orange-300"
+                        )}
+                        style={
+                          !["home", "faceless", "out of bhavnagar", "cng", "out of bhavnagar to bhavnagar"].includes(appType.trim().toLowerCase())
+                            ? getApplicationTypeStyle(appType)
+                            : undefined
+                        }
                       >
                         {appType}
                       </span>
