@@ -1831,6 +1831,16 @@ function ApplicationFormModal({
     Record<string, { totalAmount: number; advancePayment: number }>
   >(() => {
     const map: Record<string, { totalAmount: number; advancePayment: number }> = {};
+    if (editingApp?.services) {
+      editingApp.services.forEach((srv) => {
+        map[srv] = { totalAmount: 0, advancePayment: 0 };
+      });
+    }
+    if (editingApp?.licenseDetails?.generalLicenceServices?.selectedServices) {
+      editingApp.licenseDetails.generalLicenceServices.selectedServices.forEach((srv: string) => {
+        map[srv] = { totalAmount: 0, advancePayment: 0 };
+      });
+    }
     if (editingApp?.serviceAccounting) {
       Object.entries(editingApp.serviceAccounting).forEach(([key, item]) => {
         map[key] = { totalAmount: Number(item.totalAmount) || 0, advancePayment: Number(item.advancePayment) || 0 };
@@ -2588,51 +2598,14 @@ function ApplicationFormModal({
     });
   };
 
-  // Calculate dynamic totals
   const overallTotals = useMemo(() => {
-    if (activeSubModule === "licence" && isDrivingSchoolHolder) {
-      return { totalAmt: 0, totalAdv: 0, pending: 0, payStatus: "Driving School Holder" as any };
-    }
-
     let totalAmt = 0;
     let totalAdv = 0;
 
-    if (activeSubModule === "insurance") {
-      totalAmt = Number(insTotalFees) || 0;
-      totalAdv = Number(insAdvancePayment) || 0;
-    } else if (activeSubModule === "licence") {
-      if (newLL.enabled) {
-        totalAmt += Number(newLL.totalAmount) || 0;
-        totalAdv += Number(newLL.advanceAmount) || 0;
-      }
-      if (dlEndorsement.enabled) {
-        totalAmt += Number(dlEndorsement.totalAmount) || 0;
-        totalAdv += Number(dlEndorsement.advanceAmount) || 0;
-      }
-      if (llRenew.enabled) {
-        totalAmt += Number(llRenew.totalAmount) || 0;
-        totalAdv += Number(llRenew.advanceAmount) || 0;
-      }
-      if (dlRenewRetest.enabled) {
-        totalAmt += Number(dlRenewRetest.totalAmount) || 0;
-        totalAdv += Number(dlRenewRetest.advanceAmount) || 0;
-      }
-      if (generalLicServices.accounting) {
-        Object.values(generalLicServices.accounting).forEach((item: any) => {
-          totalAmt += Number(item.totalAmount) || 0;
-          totalAdv += Number(item.advanceAmount) || 0;
-        });
-      }
-    } else if (activeSubModule === "form5") {
-      totalAmt = 0;
-      totalAdv = 0;
-    } else {
-      selectedServices.forEach((srv) => {
-        const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
-        totalAmt += item.totalAmount;
-        totalAdv += item.advancePayment;
-      });
-    }
+    Object.values(serviceAccountingMap).forEach((item) => {
+      totalAmt += item.totalAmount || 0;
+      totalAdv += item.advancePayment || 0;
+    });
 
     const pending = Math.max(0, totalAmt - totalAdv);
     let payStatus: "Paid" | "Pending" | "Partial" = "Pending";
@@ -2640,19 +2613,7 @@ function ApplicationFormModal({
     else if (totalAdv > 0) payStatus = "Partial";
 
     return { totalAmt, totalAdv, pending, payStatus };
-  }, [
-    activeSubModule,
-    isDrivingSchoolHolder,
-    newLL,
-    dlEndorsement,
-    llRenew,
-    dlRenewRetest,
-    generalLicServices,
-    selectedServices,
-    serviceAccountingMap,
-    insTotalFees,
-    insAdvancePayment,
-  ]);
+  }, [serviceAccountingMap]);
 
   const handleDocSimulateUpload = (docName: string) => {
     setUploadedDocs((prev) => ({
@@ -2915,30 +2876,6 @@ function ApplicationFormModal({
       documents: uploadedDocs,
     };
 
-    // Format service accounting details map
-    const serviceAccountingPayload: Record<string, ServiceAccountingItem> = {};
-    if (activeSubModule === "insurance") {
-      serviceAccountingPayload["Insurance"] = {
-        serviceName: "Insurance",
-        totalAmount: Number(insTotalFees) || 0,
-        advancePayment: Number(insAdvancePayment) || 0,
-        pendingAmount: Math.max(0, (Number(insTotalFees) || 0) - (Number(insAdvancePayment) || 0)),
-      };
-    } else {
-      selectedServices.forEach((srv) => {
-        const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
-        serviceAccountingPayload[srv] = {
-          serviceName: srv,
-          totalAmount: item.totalAmount,
-          advancePayment: item.advancePayment,
-          pendingAmount: Math.max(0, item.totalAmount - item.advancePayment),
-        };
-      });
-    }
-
-    let generatedInvoiceNumber = "";
-    let generatedInvoiceId = "";
-
     const selectedLicServices: string[] = [];
     if (newLL.enabled) selectedLicServices.push("New Learning Licence");
     if (dlEndorsement.enabled) selectedLicServices.push("DL New LL Endorsement");
@@ -2954,6 +2891,27 @@ function ApplicationFormModal({
         : activeSubModule === "insurance"
         ? ["Insurance"]
         : selectedServices;
+
+    // Format service accounting details map
+    const serviceAccountingPayload: Record<string, ServiceAccountingItem> = {};
+    if (activeSubModule === "insurance") {
+      serviceAccountingPayload["Insurance"] = {
+        serviceName: "Insurance",
+        totalAmount: Number(insTotalFees) || 0,
+        advancePayment: Number(insAdvancePayment) || 0,
+        pendingAmount: Math.max(0, (Number(insTotalFees) || 0) - (Number(insAdvancePayment) || 0)),
+      };
+    } else {
+      finalServicesList.forEach((srv) => {
+        const item = serviceAccountingMap[srv] || { totalAmount: 0, advancePayment: 0 };
+        serviceAccountingPayload[srv] = {
+          serviceName: srv,
+          totalAmount: item.totalAmount,
+          advancePayment: item.advancePayment,
+          pendingAmount: Math.max(0, item.totalAmount - item.advancePayment),
+        };
+      });
+    }
 
     // Connect to Accounting & Generate Invoice if selected
     if (shouldGenerateInvoice) {
@@ -7347,13 +7305,10 @@ function ApplicationFormModal({
                   </div>
                 </div>
 
-                {/* 2. National Permit (5 Yrs Gap) */}
+                {/* 2. National Permit */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800 text-xs">National Permit(Gujrat Permit)</span>
-                    <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
-                      Fixed 5 Years Expiry Gap
-                    </span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
@@ -7361,19 +7316,19 @@ function ApplicationFormModal({
                       <input
                         type="date"
                         value={nationalPermitIssueDate}
-                        onChange={(e) => handleNationalIssueChange(e.target.value)}
+                        onChange={(e) => setNationalPermitIssueDate(e.target.value)}
                         className="w-full p-2.5 bg-white border border-slate-200 rounded-xl"
                       />
                     </div>
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">
-                        EXPIRY DATE (+5 YEARS AUTO)
+                        EXPIRY DATE
                       </label>
                       <input
                         type="date"
                         value={nationalPermitExpiryDate}
-                        readOnly
-                        className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
+                        onChange={(e) => setNationalPermitExpiryDate(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold font-mono text-slate-800"
                       />
                     </div>
                   </div>
@@ -7501,7 +7456,31 @@ function ApplicationFormModal({
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {documentItems.map((docName) => {
                 const docUrl = uploadedDocs[docName];
-                const isUploaded = !!docUrl;
+                let isUploaded = !!docUrl;
+                if (docName === "RC Book" && (uploadedDocs["Registration RC Document"] || uploadedDocs["Tax RC Document"])) {
+                  isUploaded = true;
+                }
+                if (docName === "Tax Receipt" && uploadedDocs["Tax RC Document"]) {
+                  isUploaded = true;
+                }
+                if (docName === "Fitness" && uploadedDocs["Fitness Document"]) {
+                  isUploaded = true;
+                }
+                if (docName === "Gujarat Permit" && uploadedDocs["Gujarat Permit Document"]) {
+                  isUploaded = true;
+                }
+                if (docName === "National Permit(Gujrat Permit)" && uploadedDocs["National Permit(Gujrat Permit) Document"]) {
+                  isUploaded = true;
+                }
+                if (docName === "National Permit Authorization" && uploadedDocs["National Permit Authorization Document"]) {
+                  isUploaded = true;
+                }
+                if (docName === "PUC" && uploadedDocs["PUC Document"]) {
+                  isUploaded = true;
+                }
+                if (docName === "Insurance" && uploadedDocs["Insurance Document"]) {
+                  isUploaded = true;
+                }
                 return (
                   <div
                     key={docName}
