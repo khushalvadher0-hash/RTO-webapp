@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { WhatsAppDialogContent } from "@/components/WhatsAppDialogContent";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -734,29 +735,14 @@ REGISTRY PRO`;
               <span>💬 WHATSAPP MESSAGE</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="py-4 space-y-3">
-            <textarea
-              value={whatsappMessage}
-              onChange={(e) => setWhatsappMessage(e.target.value)}
-              rows={15}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[11px] leading-relaxed resize-y focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <DialogFooter className="flex justify-end gap-2 pt-2">
-            <Button
-              variant="outline"
-              onClick={() => setWhatsappPreviewOpen(false)}
-              className="px-4 py-2 text-xs rounded-lg"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSendWhatsapp}
-              className="px-5 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1"
-            >
-              Send
-            </Button>
-          </DialogFooter>
+          <WhatsAppDialogContent
+            name={app.ownerName || app.clientName || veh.ownerName || "Customer"}
+            phone={app.phone || app.mobile || veh.phone || ""}
+            defaultMessage={generateDefaultWhatsappMessage()}
+            onClose={() => setWhatsappPreviewOpen(false)}
+            vehicleNumber={app.vehicleNumber || veh.vehicleNumber || ""}
+            dueAmount={Math.max(0, Number(totalFee) - Number(totalAdvance))}
+          />
         </DialogContent>
       </Dialog>
     </Dialog>
