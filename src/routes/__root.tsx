@@ -3,6 +3,7 @@ import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/r
 import { useEffect, useState } from "react";
 import { initAuth, type StaffUser } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
+import { LanguageProvider } from "@/lib/i18n";
 
 import appCss from "../styles.css?url";
 
@@ -167,20 +168,22 @@ function RootComponent() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {authReady || authFallbackElapsed ? (
-        <Outlet />
-      ) : (
-        <div className="flex min-h-screen items-center justify-center bg-background">
-          <div className="flex flex-col items-center gap-3">
-            <div className="size-10 rounded-lg bg-primary grid place-items-center font-bold text-primary-foreground animate-pulse">
-              R
+    <LanguageProvider>
+      <QueryClientProvider client={queryClient}>
+        {authReady || authFallbackElapsed ? (
+          <Outlet />
+        ) : (
+          <div className="flex min-h-screen items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-3">
+              <div className="size-10 rounded-lg bg-primary grid place-items-center font-bold text-primary-foreground animate-pulse">
+                R
+              </div>
+              <p className="text-sm text-muted-foreground">Starting up…</p>
             </div>
-            <p className="text-sm text-muted-foreground">Starting up…</p>
           </div>
-        </div>
-      )}
-      <Toaster />
-    </QueryClientProvider>
+        )}
+        <Toaster />
+      </QueryClientProvider>
+    </LanguageProvider>
   );
 }

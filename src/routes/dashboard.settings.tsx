@@ -16,6 +16,7 @@ import {
   saveStaffPermissions,
   subscribeStaffPermissions,
 } from "@/lib/permissions";
+import { useLanguage } from "@/lib/i18n";
 
 interface Settings {
   officeName: string;
@@ -36,6 +37,7 @@ const defaultPermissions = {
 export const Route = createFileRoute("/dashboard/settings")({ component: SettingsPage });
 
 function SettingsPage() {
+  const { language, setLanguage, t } = useLanguage();
   const [s, setS] = useState<Settings>(DEFAULTS);
   const [forceCaps, setForceCapsState] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -148,16 +150,32 @@ function SettingsPage() {
         </div>
         <div className="flex items-center justify-between pt-3 border-t">
           <div className="space-y-0.5">
-            <Label>Force capital letters</Label>
+            <Label>{t("Force capital letters")}</Label>
             <p className="text-xs text-muted-foreground">
-              Automatically convert text inputs to uppercase
+              {t("Automatically convert text inputs to uppercase")}
             </p>
           </div>
           <Switch checked={forceCaps} onCheckedChange={toggleForceCaps} />
         </div>
+        <div className="flex items-center justify-between pt-3 border-t">
+          <div className="space-y-0.5">
+            <Label>{t("Language")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t("Select your preferred language")}
+            </p>
+          </div>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as any)}
+            className="flex h-9 w-[180px] rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="en">English</option>
+            <option value="gu">ગુજરાતી (Gujarati)</option>
+          </select>
+        </div>
         <div className="flex items-center gap-3 pt-2">
-          <Button onClick={save}>Save changes</Button>
-          {saved && <span className="text-sm text-success">Saved.</span>}
+          <Button onClick={save}>{t("Save changes")}</Button>
+          {saved && <span className="text-sm text-success">{t("Saved")}</span>}
         </div>
       </div>
 
