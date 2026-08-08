@@ -22,6 +22,7 @@ import { Route as DashboardClientsRouteImport } from './routes/dashboard.clients
 import { Route as DashboardCheckCompletedRouteImport } from './routes/dashboard.check-completed'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard.billing'
 import { Route as DashboardApplicationsRouteImport } from './routes/dashboard.applications'
+import { Route as DashboardAnalyticsRouteImport } from './routes/dashboard.analytics'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
 import { Route as DashboardSettingsMigrationRouteImport } from './routes/dashboard.settings.migration'
 import { Route as DashboardServiceServiceTypeRouteImport } from './routes/dashboard.service.$serviceType'
@@ -93,6 +94,11 @@ const DashboardApplicationsRoute = DashboardApplicationsRouteImport.update({
   path: '/applications',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAnalyticsRoute = DashboardAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAccountingRoute = DashboardAccountingRouteImport.update({
   id: '/accounting',
   path: '/accounting',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/accounting': typeof DashboardAccountingRoute
+  '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/check-completed': typeof DashboardCheckCompletedRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
+  '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/check-completed': typeof DashboardCheckCompletedRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/accounting': typeof DashboardAccountingRoute
+  '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/applications': typeof DashboardApplicationsRoute
   '/dashboard/billing': typeof DashboardBillingRoute
   '/dashboard/check-completed': typeof DashboardCheckCompletedRoute
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/dashboard/accounting'
+    | '/dashboard/analytics'
     | '/dashboard/applications'
     | '/dashboard/billing'
     | '/dashboard/check-completed'
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard/accounting'
+    | '/dashboard/analytics'
     | '/dashboard/applications'
     | '/dashboard/billing'
     | '/dashboard/check-completed'
@@ -228,6 +239,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/dashboard/accounting'
+    | '/dashboard/analytics'
     | '/dashboard/applications'
     | '/dashboard/billing'
     | '/dashboard/check-completed'
@@ -343,6 +355,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardApplicationsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/analytics': {
+      id: '/dashboard/analytics'
+      path: '/analytics'
+      fullPath: '/dashboard/analytics'
+      preLoaderRoute: typeof DashboardAnalyticsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/accounting': {
       id: '/dashboard/accounting'
       path: '/accounting'
@@ -409,6 +428,7 @@ const DashboardSettingsRouteWithChildren =
 
 interface DashboardRouteChildren {
   DashboardAccountingRoute: typeof DashboardAccountingRoute
+  DashboardAnalyticsRoute: typeof DashboardAnalyticsRoute
   DashboardApplicationsRoute: typeof DashboardApplicationsRoute
   DashboardBillingRoute: typeof DashboardBillingRoute
   DashboardCheckCompletedRoute: typeof DashboardCheckCompletedRoute
@@ -426,6 +446,7 @@ interface DashboardRouteChildren {
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAccountingRoute: DashboardAccountingRoute,
+  DashboardAnalyticsRoute: DashboardAnalyticsRoute,
   DashboardApplicationsRoute: DashboardApplicationsRoute,
   DashboardBillingRoute: DashboardBillingRoute,
   DashboardCheckCompletedRoute: DashboardCheckCompletedRoute,

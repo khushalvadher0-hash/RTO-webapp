@@ -94,6 +94,7 @@ const GROUPS: NavGroup[] = [
       { to: "/dashboard/accounting", label: "Accounting", icon: DollarSign },
       { to: "/dashboard/billing", label: "Billing", icon: Receipt },
       { to: "/dashboard/targets", label: "Target Management", icon: Target },
+      { to: "/dashboard/analytics", label: "Business Analytics", icon: BarChart3 },
     ],
   },
   {
