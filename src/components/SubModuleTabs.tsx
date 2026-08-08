@@ -12,10 +12,10 @@ interface SubModuleTabsProps {
 
 export const SUB_MODULE_TABS: { id: SubModuleType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "services", label: "Vahaan", icon: Wrench },
-  { id: "licence", label: "Licence", icon: Shield },
-  { id: "driving_school", label: "Driving School", icon: GraduationCap },
   { id: "insurance", label: "Insurance", icon: ShieldCheck },
+  { id: "licence", label: "Licence", icon: Shield },
   { id: "form5", label: "Form 5", icon: FileText },
+  { id: "driving_school", label: "Driving School", icon: GraduationCap },
 ];
 
 export function SubModuleTabs({ activeTab, onChange, className }: SubModuleTabsProps) {

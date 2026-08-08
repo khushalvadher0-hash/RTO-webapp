@@ -141,3 +141,20 @@ textarea::placeholder {
   text-transform: uppercase !important;
 }
 
+/* Application Form Modal font size enhancement */
+.application-form-modal input,
+.application-form-modal select,
+.application-form-modal textarea,
+.application-form-modal button,
+.application-form-modal label,
+.application-form-modal span:not(.text-\[10px\]):not(.text-\[11px\]) {
+  font-size: 0.875rem !important; /* text-sm (14px) instead of text-xs */
+}
+
+.application-form-modal .text-xs,
+.application-form-modal .text-\[11px\],
+.application-form-modal .text-\[10px\],
+.application-form-modal p.text-\[11px\],
+.application-form-modal p.text-\[10px\] {
+  font-size: 0.775rem !important; /* Helper text: 12.4px instead of 10/11px */
+}
