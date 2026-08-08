@@ -6,14 +6,12 @@ import {
   AlertCircle,
   Loader2,
   Edit2,
-  Target,
+  Target as TargetIcon,
   CheckCircle2,
   Clock,
-  ArrowRight,
-  TrendingDown,
   Calendar,
-  Users,
   Zap,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,9 +31,8 @@ import { db } from "@/lib/firebase";
 import {
   subscribeToTargets,
   updateTargetValue,
-  updateCompletedCount,
   createOrInitializeTarget,
-  type TargetCategory,
+  deleteTarget,
   type TargetMetrics,
 } from "@/lib/targets";
 import {
@@ -53,41 +50,79 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/targets")({
   component: TargetsPage,
 });
 
-const CATEGORIES: TargetCategory[] = [
-  "Insurance",
-  "Fitness",
-  "Gujarat Permit",
-  "National Permit",
-  "National Permit(Gujrat Permit)",
-  "Tax",
-  "License New",
-  "License Renew",
-  "RC Transfer",
-  "HP Addition",
-  "HP Termination",
-];
+export const SUBMODULE_SERVICES: Record<SubModuleType, string[]> = {
+  services: [
+    "RC Transfer of Ownership",
+    "Duplicate RC",
+    "Change Address",
+    "Registration Renewal",
+    "RC Particular",
+    "Vehicle Correction",
+    "Vahan Correction",
+    "Backlog",
+    "Hypothecation Addition",
+    "Hypothecation Terminate",
+    "Hypothecation Continuation",
+    "No Objection Certificate",
+    "Fitness Renewal RTO",
+    "Fitness Renewal ATS",
+    "Duplicate Fitness Certificate",
+    "Gujarat Permit",
+    "National Permit (Gujarat Permit)",
+    "Gujarat Permit Renewal",
+    "National Permit (Gujarat Permit) Renewal",
+    "Vehicle Alteration",
+    "Vehicle Conversion",
+    "Tax",
+    "PUC",
+    "Tax Detail Update"
+  ],
+  licence: [
+    "Issue Of Duplicate DL",
+    "Change Of Address In DL",
+    "Change Of Name In DL",
+    "Photo & Signature Change",
+    "Hazardous Material Endorsement",
+    "DL Replacement",
+    "DL Extract",
+    "Hazardous Training Card",
+    "International Licence",
+    "Change Date Of Birth In DL",
+    "DL New"
+  ],
+  insurance: [
+    "Insurance"
+  ],
+  form5: [
+    "Form 5 New HGV",
+    "Form 5A Renew HGV"
+  ],
+  driving_school: [
+    "Driving School Course"
+  ]
+};
 
-const CATEGORY_COLORS: Record<TargetCategory, string> = {
-  Insurance: "#3b82f6",
-  Fitness: "#10b981",
-  "Gujarat Permit": "#8b5cf6",
-  "National Permit": "#ec4899",
-  "National Permit(Gujrat Permit)": "#ec4899",
-  Tax: "#06b6d4",
-  "License New": "#6366f1",
-  "License Renew": "#38bdf8",
-  "RC Transfer": "#14b8a6",
-  "HP Addition": "#f97316",
-  "HP Termination": "#ef4444",
+const getServiceColor = (service: string, targetColor?: string) => {
+  if (targetColor) return targetColor;
+  const colors = ["#3b82f6", "#10b981", "#8b5cf6", "#ec4899", "#06b6d4", "#6366f1", "#38bdf8", "#14b8a6", "#f97316", "#ef4444"];
+  let hash = 0;
+  for (let i = 0; i < service.length; i++) {
+    hash = service.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
 };
 
 function TargetsPage() {
   const session = getSession();
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("services");
   const [targets, setTargets] = useState<TargetMetrics[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -95,16 +130,7 @@ function TargetsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingTarget, setEditingTarget] = useState<TargetMetrics | null>(null);
   const [error, setError] = useState("");
-  const [selectedCat, setSelectedCat] = useState<TargetCategory | "">("");
-  const selectedCategoryForModal = selectedCat;
-
-  function setSelectedCategoryForModal(category: TargetCategory | null) {
-    if (category) {
-      setSelectedCat(category);
-    } else {
-      setSelectedCat("");
-    }
-  }
+  const [selectedService, setSelectedService] = useState("");
 
   const isAdmin = session?.role === "admin";
 
@@ -146,14 +172,19 @@ function TargetsPage() {
     };
   }, []);
 
+  // Filter targets by active submodule
+  const filteredTargets = useMemo(() => {
+    return targets.filter((t) => (t.submodule || "services") === activeSubModule);
+  }, [targets, activeSubModule]);
+
   // Top Card Computations
   const totalTargets = useMemo(() => {
-    return targets.reduce((sum, t) => sum + (t.monthlyTarget || t.target || 0), 0);
-  }, [targets]);
+    return filteredTargets.reduce((sum, t) => sum + (t.target || 0), 0);
+  }, [filteredTargets]);
 
   const totalAchieved = useMemo(() => {
-    return targets.reduce((sum, t) => sum + t.completed, 0);
-  }, [targets]);
+    return filteredTargets.reduce((sum, t) => sum + t.completed, 0);
+  }, [filteredTargets]);
 
   const totalRemaining = useMemo(() => {
     return Math.max(0, totalTargets - totalAchieved);
@@ -169,11 +200,13 @@ function TargetsPage() {
     const currentYear = now.getFullYear();
 
     return services.filter((s: any) => {
-      if (s.taskStatus !== "Completed" || !s.createdAt) return false;
-      const date = new Date(s.createdAt);
+      if ((s.subModule || "services") !== activeSubModule) return false;
+      if (s.taskStatus !== "Completed" && s.status !== "Completed") return false;
+      const date = s.createdAt || s.updatedAt || s.date ? new Date(s.createdAt || s.updatedAt || s.date) : null;
+      if (!date || isNaN(date.getTime())) return false;
       return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
     }).length;
-  }, [services]);
+  }, [services, activeSubModule]);
 
   const completedToday = useMemo(() => {
     const now = new Date();
@@ -182,21 +215,24 @@ function TargetsPage() {
     const currentYear = now.getFullYear();
 
     return services.filter((s: any) => {
-      if (s.taskStatus !== "Completed" || !s.createdAt) return false;
-      const date = new Date(s.createdAt);
+      if ((s.subModule || "services") !== activeSubModule) return false;
+      if (s.taskStatus !== "Completed" && s.status !== "Completed") return false;
+      const date = s.createdAt || s.updatedAt || s.date ? new Date(s.createdAt || s.updatedAt || s.date) : null;
+      if (!date || isNaN(date.getTime())) return false;
       return (
         date.getDate() === currentDay &&
         date.getMonth() === currentMonth &&
         date.getFullYear() === currentYear
       );
     }).length;
-  }, [services]);
+  }, [services, activeSubModule]);
 
-  // Employee Performance Table Mappings
+  // Employee Performance Table Mappings (filtered by active submodule)
   const employeePerformance = useMemo(() => {
     return employees
       .map((emp) => {
         const empServices = services.filter((s: any) => {
+          if ((s.subModule || "services") !== activeSubModule) return false;
           return (
             s.employeeId === emp.employeeId ||
             s.assignedTo === emp.id ||
@@ -204,8 +240,8 @@ function TargetsPage() {
             s.assignee === emp.username
           );
         });
-        const completed = empServices.filter((s: any) => s.taskStatus === "Completed").length;
-        const pending = empServices.filter((s: any) => s.taskStatus !== "Completed").length;
+        const completed = empServices.filter((s: any) => s.taskStatus === "Completed" || s.status === "Completed").length;
+        const pending = empServices.filter((s: any) => s.taskStatus !== "Completed" && s.status !== "Completed").length;
         const total = completed + pending;
         const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
         return {
@@ -218,7 +254,7 @@ function TargetsPage() {
       })
       .filter((e) => e.total > 0)
       .sort((a, b) => b.completed - a.completed);
-  }, [employees, services]);
+  }, [employees, services, activeSubModule]);
 
   // Recharts Computations
   const monthlyData = useMemo(() => {
@@ -226,8 +262,10 @@ function TargetsPage() {
     const currentYear = new Date().getFullYear();
     return months.map((monthName, index) => {
       const achieved = services.filter((s: any) => {
-        if (s.taskStatus !== "Completed" || !s.createdAt) return false;
-        const date = new Date(s.createdAt);
+        if ((s.subModule || "services") !== activeSubModule) return false;
+        if (s.taskStatus !== "Completed" && s.status !== "Completed") return false;
+        const date = s.createdAt || s.updatedAt || s.date ? new Date(s.createdAt || s.updatedAt || s.date) : null;
+        if (!date || isNaN(date.getTime())) return false;
         return date.getMonth() === index && date.getFullYear() === currentYear;
       }).length;
 
@@ -237,23 +275,23 @@ function TargetsPage() {
         Achieved: achieved,
       };
     });
-  }, [services, totalTargets]);
+  }, [services, totalTargets, activeSubModule]);
 
   const pieData = useMemo(() => {
-    return targets
+    return filteredTargets
       .map((t) => ({
-        name: t.category,
+        name: t.service,
         value: t.completed,
       }))
       .filter((d) => d.value > 0);
-  }, [targets]);
+  }, [filteredTargets]);
 
   const progressChartData = useMemo(() => {
-    return targets.map((t) => ({
-      name: t.category,
+    return filteredTargets.map((t) => ({
+      name: t.service,
       Progress: t.achievementPercentage,
     }));
-  }, [targets]);
+  }, [filteredTargets]);
 
   const dailyData = useMemo(() => {
     return Array.from({ length: 7 }).map((_, i) => {
@@ -261,8 +299,10 @@ function TargetsPage() {
       d.setDate(d.getDate() - (6 - i));
       const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const count = services.filter((s: any) => {
-        if (s.taskStatus !== "Completed" || !s.createdAt) return false;
-        const sDate = new Date(s.createdAt);
+        if ((s.subModule || "services") !== activeSubModule) return false;
+        if (s.taskStatus !== "Completed" && s.status !== "Completed") return false;
+        const sDate = s.createdAt || s.updatedAt || s.date ? new Date(s.createdAt || s.updatedAt || s.date) : null;
+        if (!sDate || isNaN(sDate.getTime())) return false;
         return (
           sDate.getDate() === d.getDate() &&
           sDate.getMonth() === d.getMonth() &&
@@ -275,7 +315,7 @@ function TargetsPage() {
         Completed: count,
       };
     });
-  }, [services]);
+  }, [services, activeSubModule]);
 
   const employeeChartData = useMemo(() => {
     return employeePerformance.map((emp) => ({
@@ -297,6 +337,19 @@ function TargetsPage() {
     setError("");
   };
 
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this target configuration?")) {
+      try {
+        await deleteTarget(id);
+        toast.success("Target configuration deleted successfully!");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to delete target";
+        toast.error(msg);
+        setError(msg);
+      }
+    }
+  };
+
   const handleFormClose = () => {
     setShowForm(false);
     setEditingTarget(null);
@@ -312,24 +365,33 @@ function TargetsPage() {
     );
   }
 
+  const activeServices = SUBMODULE_SERVICES[activeSubModule] || [];
+
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between border-b pb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
             Target Management
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Enterprise target configurations, completion rates, and real-time sales performance.
+            Enterprise target configurations, completion rates, and real-time submodule performance.
           </p>
         </div>
-        {isAdmin && (
-          <Button onClick={handleAddNew} className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90">
-            <Plus className="size-4" />
-            Configure Target
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <Button onClick={handleAddNew} className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90">
+              <Plus className="size-4" />
+              Configure Target
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Submodule tabs */}
+      <div className="flex justify-start">
+        <SubModuleTabs activeTab={activeSubModule} onChange={setActiveSubModule} />
       </div>
 
       {error && (
@@ -342,7 +404,7 @@ function TargetsPage() {
       {/* Top Cards Grid */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         {[
-          { label: "Total Targets", value: totalTargets, icon: Target, color: "text-blue-600 bg-blue-50" },
+          { label: "Total Targets", value: totalTargets, icon: TargetIcon, color: "text-blue-600 bg-blue-50" },
           { label: "Total Achieved", value: totalAchieved, icon: CheckCircle2, color: "text-emerald-600 bg-emerald-50" },
           { label: "Remaining", value: totalRemaining, icon: Clock, color: "text-amber-600 bg-amber-50" },
           { label: "Achievement %", value: `${overallAchievementPercent}%`, icon: TrendingUp, color: "text-indigo-600 bg-indigo-50" },
@@ -373,7 +435,8 @@ function TargetsPage() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b bg-slate-100/50 text-[10px] uppercase font-bold text-muted-foreground">
-                <th className="p-3">Service Category</th>
+                <th className="p-3">Service</th>
+                <th className="p-3 text-center">Period</th>
                 <th className="p-3 text-center">Target</th>
                 <th className="p-3 text-center">Completed</th>
                 <th className="p-3 text-center">Remaining</th>
@@ -383,42 +446,42 @@ function TargetsPage() {
               </tr>
             </thead>
             <tbody>
-              {CATEGORIES.map((cat) => {
-                const target = targets.find((t) => t.category === cat) || {
-                  id: "",
-                  category: cat,
-                  target: 0,
-                  completed: services.filter((s: any) => s.serviceType === cat).length,
-                  remaining: 0,
-                  achievementPercentage: 0,
-                  status: "Inactive",
-                };
+              {filteredTargets.map((target) => {
                 const completedVal = target.completed;
                 const targetVal = target.target;
                 const remainingVal = Math.max(0, targetVal - completedVal);
                 const percent = targetVal > 0 ? Math.round((completedVal / targetVal) * 100) : 0;
                 
-                let statusBadge = "Inactive";
+                let statusBadge = "Not Started";
                 let statusColor = "bg-gray-100 text-gray-700";
                 if (targetVal > 0) {
-                  if (percent >= 100) {
-                    statusBadge = "Completed";
+                  if (completedVal === 0) {
+                    statusBadge = "Not Started";
+                    statusColor = "bg-gray-100 text-gray-700";
+                  } else if (percent > 100) {
+                    statusBadge = "Exceeded";
+                    statusColor = "bg-indigo-100 text-indigo-700";
+                  } else if (percent === 100) {
+                    statusBadge = "Target Achieved";
                     statusColor = "bg-emerald-100 text-emerald-700";
-                  } else if (percent >= 50) {
-                    statusBadge = "On Track";
-                    statusColor = "bg-blue-100 text-blue-700";
                   } else {
                     statusBadge = "Behind Target";
                     statusColor = "bg-rose-100 text-rose-700";
                   }
+                } else {
+                  statusBadge = "No Target";
+                  statusColor = "bg-gray-100 text-gray-700";
                 }
 
+                const srvColor = getServiceColor(target.service, target.color);
+
                 return (
-                  <tr key={cat} className="border-b hover:bg-slate-50/50 transition-colors">
+                  <tr key={target.id} className="border-b hover:bg-slate-50/50 transition-colors">
                     <td className="p-3 font-semibold text-slate-800 flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[cat] }} />
-                      {cat}
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: srvColor }} />
+                      {target.service}
                     </td>
+                    <td className="p-3 text-center font-medium text-slate-500 capitalize">{target.period || "Monthly"}</td>
                     <td className="p-3 text-center font-mono font-bold text-slate-700">{targetVal || "—"}</td>
                     <td className="p-3 text-center font-mono font-bold text-emerald-600">{completedVal}</td>
                     <td className="p-3 text-center font-mono font-semibold text-amber-600">{targetVal > 0 ? remainingVal : "—"}</td>
@@ -430,7 +493,7 @@ function TargetsPage() {
                               className="h-2 rounded-full transition-all duration-500"
                               style={{
                                 width: `${Math.min(percent, 100)}%`,
-                                backgroundColor: CATEGORY_COLORS[cat],
+                                backgroundColor: srvColor,
                               }}
                             />
                           </div>
@@ -447,33 +510,36 @@ function TargetsPage() {
                     </td>
                     {isAdmin && (
                       <td className="p-3 text-right">
-                        {target.id ? (
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0"
-                            onClick={() => handleEdit(target as TargetMetrics)}
+                            onClick={() => handleEdit(target)}
                           >
-                            <Edit2 className="size-3.5 text-muted-foreground" />
+                            <Edit2 className="size-3.5 text-muted-foreground hover:text-blue-600" />
                           </Button>
-                        ) : (
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-[10px] text-primary"
-                            onClick={() => {
-                              setSelectedCategoryForModal(cat);
-                              setShowForm(true);
-                            }}
+                            className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700"
+                            onClick={() => handleDelete(target.id)}
                           >
-                            Set Target
+                            <Trash2 className="size-3.5" />
                           </Button>
-                        )}
+                        </div>
                       </td>
                     )}
                   </tr>
                 );
               })}
+              {filteredTargets.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="p-8 text-center text-muted-foreground text-xs">
+                    No targets configured for this submodule. Click "Configure Target" to set one.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -513,7 +579,7 @@ function TargetsPage() {
                     label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                   >
                     {pieData.map((entry) => (
-                      <Cell key={`cell-${entry.name}`} fill={CATEGORY_COLORS[entry.name as TargetCategory] || "#ccc"} />
+                      <Cell key={`cell-${entry.name}`} fill={getServiceColor(entry.name) || "#ccc"} />
                     ))}
                   </Pie>
                   <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
@@ -528,15 +594,19 @@ function TargetsPage() {
         {/* Chart 3: Horizontal Progress */}
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-4">Achievement Progress</h4>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={progressChartData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
-              <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 9 }} />
-              <Tooltip formatter={(v) => `${v}%`} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-              <Bar dataKey="Progress" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {progressChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={progressChartData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 9 }} />
+                <Tooltip formatter={(v) => `${v}%`} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <Bar dataKey="Progress" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-center py-20 text-xs text-muted-foreground">No targets configured yet.</div>
+          )}
         </div>
 
         {/* Chart 4: Daily Completion Trend */}
@@ -618,14 +688,13 @@ function TargetsPage() {
         open={showForm}
         onOpenChange={handleFormClose}
         editingTarget={editingTarget}
-        preselectedCategory={selectedCategoryForModal}
+        preselectedSubModule={activeSubModule}
+        preselectedService={selectedService}
         onSuccess={handleFormClose}
         onError={setError}
       />
     </div>
   );
-
-
 }
 
 // ─── Target Form Dialog Rebuilt ────────────────────────────────────────────────
@@ -633,7 +702,8 @@ interface TargetFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingTarget: TargetMetrics | null;
-  preselectedCategory: TargetCategory | "";
+  preselectedSubModule: SubModuleType;
+  preselectedService: string;
   onSuccess: () => void;
   onError: (error: string) => void;
 }
@@ -642,15 +712,16 @@ function TargetFormDialog({
   open,
   onOpenChange,
   editingTarget,
-  preselectedCategory,
+  preselectedSubModule,
+  preselectedService,
   onSuccess,
   onError,
 }: TargetFormDialogProps) {
   const session = getSession();
-  const [selectedCategory, setSelectedCategory] = useState<TargetCategory | "">("");
-  const [monthlyTarget, setMonthlyTarget] = useState("");
-  const [quarterlyTarget, setQuarterlyTarget] = useState("");
-  const [yearlyTarget, setYearlyTarget] = useState("");
+  const [selectedSubModule, setSelectedSubModule] = useState<SubModuleType>("services");
+  const [selectedService, setSelectedService] = useState("");
+  const [selectedPeriod, setSelectedPeriod] = useState("Monthly");
+  const [targetQuantity, setTargetQuantity] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [color, setColor] = useState("");
@@ -660,39 +731,51 @@ function TargetFormDialog({
 
   useEffect(() => {
     if (editingTarget) {
-      setSelectedCategory(editingTarget.category);
-      setMonthlyTarget(String(editingTarget.monthlyTarget || editingTarget.target || ""));
-      setQuarterlyTarget(String(editingTarget.quarterlyTarget || ""));
-      setYearlyTarget(String(editingTarget.yearlyTarget || ""));
+      setSelectedSubModule((editingTarget.submodule || "services") as SubModuleType);
+      setSelectedService(editingTarget.service || editingTarget.category || "");
+      setSelectedPeriod(editingTarget.period || "Monthly");
+      setTargetQuantity(String(editingTarget.target || ""));
       setStartDate(editingTarget.startDate || "");
       setEndDate(editingTarget.endDate || "");
-      setColor(editingTarget.color || CATEGORY_COLORS[editingTarget.category] || "");
+      setColor(editingTarget.color || getServiceColor(editingTarget.service || "") || "");
       setStatus(editingTarget.status || "Active");
     } else {
-      setSelectedCategory(preselectedCategory);
-      setMonthlyTarget("");
-      setQuarterlyTarget("");
-      setYearlyTarget("");
+      setSelectedSubModule(preselectedSubModule);
+      setSelectedService(preselectedService);
+      setSelectedPeriod("Monthly");
+      setTargetQuantity("");
       setStartDate("");
       setEndDate("");
-      setColor(preselectedCategory ? CATEGORY_COLORS[preselectedCategory] : "");
+      setColor(preselectedService ? getServiceColor(preselectedService) : "");
       setStatus("Active");
     }
     setLocalError("");
-  }, [editingTarget, preselectedCategory, open]);
+  }, [editingTarget, preselectedSubModule, preselectedService, open]);
+
+  // Sync service selection color
+  useEffect(() => {
+    if (selectedService && !editingTarget) {
+      setColor(getServiceColor(selectedService));
+    }
+  }, [selectedService]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError("");
 
-    if (!selectedCategory) {
-      setLocalError("Please select a category");
+    if (!selectedSubModule) {
+      setLocalError("Please select a submodule");
       return;
     }
 
-    const mTarget = parseInt(monthlyTarget, 10);
-    if (isNaN(mTarget) || mTarget <= 0) {
-      setLocalError("Please enter a valid monthly target");
+    if (!selectedService) {
+      setLocalError("Please select a service");
+      return;
+    }
+
+    const tQty = parseInt(targetQuantity, 10);
+    if (isNaN(tQty) || tQty <= 0) {
+      setLocalError("Please enter a valid target quantity");
       return;
     }
 
@@ -705,9 +788,6 @@ function TargetFormDialog({
 
     try {
       const extraData: any = {
-        monthlyTarget: mTarget,
-        quarterlyTarget: quarterlyTarget ? parseInt(quarterlyTarget, 10) : undefined,
-        yearlyTarget: yearlyTarget ? parseInt(yearlyTarget, 10) : undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         color: color || undefined,
@@ -715,9 +795,18 @@ function TargetFormDialog({
       };
 
       if (editingTarget) {
-        await updateTargetValue(editingTarget.id, mTarget, session.username, extraData);
+        await updateTargetValue(editingTarget.id, tQty, session.username, extraData);
+        toast.success("Target updated successfully!");
       } else {
-        await createOrInitializeTarget(selectedCategory as TargetCategory, mTarget, session.username, extraData);
+        await createOrInitializeTarget(
+          selectedSubModule,
+          selectedService,
+          selectedPeriod,
+          tQty,
+          session.username,
+          extraData
+        );
+        toast.success("Target created successfully!");
       }
 
       onSuccess();
@@ -731,11 +820,13 @@ function TargetFormDialog({
     }
   };
 
+  const servicesForSelectedSubModule = SUBMODULE_SERVICES[selectedSubModule] || [];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editingTarget ? "Configure Target Record" : "Set New Service Target"}</DialogTitle>
+          <DialogTitle>{editingTarget ? "Configure Target" : "Set New Service Target"}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
@@ -747,84 +838,83 @@ function TargetFormDialog({
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            {/* Category */}
+            {/* Submodule */}
             <div className="space-y-1">
-              <Label htmlFor="category" className="text-[11px] font-semibold text-slate-700">Category *</Label>
+              <Label htmlFor="submodule" className="text-[11px] font-semibold text-slate-700">Submodule *</Label>
               <Select
-                value={selectedCategory}
+                value={selectedSubModule}
                 onValueChange={(val) => {
-                  setSelectedCategory(val as TargetCategory);
-                  setColor(CATEGORY_COLORS[val as TargetCategory] || "");
+                  setSelectedSubModule(val as SubModuleType);
+                  setSelectedService(""); // Reset service on submodule change
                 }}
                 disabled={!!editingTarget}
               >
-                <SelectTrigger id="category">
+                <SelectTrigger id="submodule">
+                  <SelectValue placeholder="Select submodule..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="services">Vahaan</SelectItem>
+                  <SelectItem value="insurance">Insurance</SelectItem>
+                  <SelectItem value="licence">Licence</SelectItem>
+                  <SelectItem value="form5">Form 5</SelectItem>
+                  <SelectItem value="driving_school">Driving School</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Service */}
+            <div className="space-y-1">
+              <Label htmlFor="service" className="text-[11px] font-semibold text-slate-700">Service *</Label>
+              <Select
+                value={selectedService}
+                onValueChange={(val) => setSelectedService(val)}
+                disabled={!!editingTarget}
+              >
+                <SelectTrigger id="service">
                   <SelectValue placeholder="Select service..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
+                  {servicesForSelectedSubModule.map((srv) => (
+                    <SelectItem key={srv} value={srv}>
+                      {srv}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+          </div>
 
-            {/* Status */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Period */}
             <div className="space-y-1">
-              <Label htmlFor="status" className="text-[11px] font-semibold text-slate-700">Status</Label>
-              <Select value={status} onValueChange={(val) => setStatus(val)}>
-                <SelectTrigger id="status">
+              <Label htmlFor="period" className="text-[11px] font-semibold text-slate-700">Period *</Label>
+              <Select
+                value={selectedPeriod}
+                onValueChange={(val) => setSelectedPeriod(val)}
+                disabled={!!editingTarget}
+              >
+                <SelectTrigger id="period">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
+                  <SelectItem value="Daily">Daily</SelectItem>
+                  <SelectItem value="Weekly">Weekly</SelectItem>
+                  <SelectItem value="Monthly">Monthly</SelectItem>
+                  <SelectItem value="Yearly">Yearly</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {/* Monthly Target */}
+            {/* Target Quantity */}
             <div className="space-y-1">
-              <Label htmlFor="monthly" className="text-[11px] font-semibold text-slate-700">Monthly Target *</Label>
+              <Label htmlFor="target" className="text-[11px] font-semibold text-slate-700">Target Quantity *</Label>
               <Input
-                id="monthly"
+                id="target"
                 type="number"
                 min="1"
-                value={monthlyTarget}
-                onChange={(e) => setMonthlyTarget(e.target.value)}
-                placeholder="e.g. 50"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            {/* Quarterly Target */}
-            <div className="space-y-1">
-              <Label htmlFor="quarterly" className="text-[11px] font-semibold text-slate-700">Quarterly Target</Label>
-              <Input
-                id="quarterly"
-                type="number"
-                min="1"
-                value={quarterlyTarget}
-                onChange={(e) => setQuarterlyTarget(e.target.value)}
-                placeholder="e.g. 150"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            {/* Yearly Target */}
-            <div className="space-y-1">
-              <Label htmlFor="yearly" className="text-[11px] font-semibold text-slate-700">Yearly Target</Label>
-              <Input
-                id="yearly"
-                type="number"
-                min="1"
-                value={yearlyTarget}
-                onChange={(e) => setYearlyTarget(e.target.value)}
-                placeholder="e.g. 600"
+                value={targetQuantity}
+                onChange={(e) => setTargetQuantity(e.target.value)}
+                placeholder="e.g. 100"
                 disabled={isSubmitting}
               />
             </div>
@@ -856,32 +946,48 @@ function TargetFormDialog({
             </div>
           </div>
 
-          {/* Color Customization */}
-          <div className="space-y-1">
-            <Label htmlFor="color" className="text-[11px] font-semibold text-slate-700">Chart Color hex</Label>
-            <div className="flex gap-2 items-center">
-              <Input
-                id="color"
-                type="text"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="#3b82f6"
-                disabled={isSubmitting}
-                className="font-mono w-32"
-              />
-              <input
-                type="color"
-                value={color || "#3b82f6"}
-                onChange={(e) => setColor(e.target.value)}
-                disabled={isSubmitting}
-                className="w-8 h-8 rounded border p-0 cursor-pointer"
-              />
+          <div className="grid grid-cols-2 gap-4">
+            {/* Chart Color hex */}
+            <div className="space-y-1">
+              <Label htmlFor="color" className="text-[11px] font-semibold text-slate-700">Chart Color</Label>
+              <div className="flex gap-2 items-center">
+                <Input
+                  id="color"
+                  type="text"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="#3b82f6"
+                  disabled={isSubmitting}
+                  className="font-mono w-28"
+                />
+                <input
+                  type="color"
+                  value={color || "#3b82f6"}
+                  onChange={(e) => setColor(e.target.value)}
+                  disabled={isSubmitting}
+                  className="w-8 h-8 rounded border p-0 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Status */}
+            <div className="space-y-1">
+              <Label htmlFor="status" className="text-[11px] font-semibold text-slate-700">Status</Label>
+              <Select value={status} onValueChange={(val) => setStatus(val)}>
+                <SelectTrigger id="status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           {/* Buttons */}
           <div className="flex gap-2 justify-end border-t pt-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting} className="h-9">
+            <Button variant="outline" type="button" onClick={() => onOpenChange(false)} disabled={isSubmitting} className="h-9">
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 h-9">
@@ -902,3 +1008,4 @@ function TargetFormDialog({
     </Dialog>
   );
 }
+

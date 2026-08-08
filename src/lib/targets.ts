@@ -9,39 +9,29 @@ import {
   updateDoc,
   getDoc,
   arrayUnion,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { createActivity, type ActivityLog } from "./activity";
-import { getServiceStats } from "./services";
-import { removeUndefined, type ServiceType } from "./records";
+import { removeUndefined } from "./records";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TargetCategory =
-  | "Insurance"
-  | "Fitness"
-  | "Gujarat Permit"
-  | "National Permit"
-  | "National Permit(Gujrat Permit)"
-  | "Tax"
-  | "License New"
-  | "License Renew"
-  | "RC Transfer"
-  | "HP Addition"
-  | "HP Termination";
-
 export interface Target {
   id: string;
-  category: TargetCategory;
+  category: string; // Used for UI compatibility, but now maps to service
+  submodule: string; // services (Vahaan), insurance, licence, form5, driving_school
+  service: string; // Service name/id
+  period: string; // Monthly, Weekly, Yearly
   target: number;
-  monthlyTarget?: number;
-  quarterlyTarget?: number;
-  yearlyTarget?: number;
+  completed: number;
   startDate?: string;
   endDate?: string;
   color?: string;
   status?: string;
-  completed: number;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
   lastUpdatedBy?: string;
   lastUpdatedAt?: string;
   activityLogs?: ActivityLog[];
@@ -68,66 +58,147 @@ export function calculateTargetMetrics(target: Target): TargetMetrics {
   };
 }
 
+// ─── Period & Service matching helpers ────────────────────────────────────────
+
+function isDateInPeriod(dateStr: string | undefined, period: string): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return false;
+  const now = new Date();
+
+  const p = period.toLowerCase();
+  if (p === "daily") {
+    return date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  } else if (p === "monthly") {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  } else if (p === "weekly") {
+    const startOfWeek = new Date(now);
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+    return date >= startOfWeek && date < endOfWeek;
+  } else if (p === "yearly") {
+    return date.getFullYear() === now.getFullYear();
+  }
+  return true;
+}
+
+
+
+function matchService(dbService: string | undefined, targetService: string): boolean {
+  if (!dbService) return false;
+  const dbNorm = dbService.trim().toLowerCase();
+  const targetNorm = targetService.trim().toLowerCase();
+  if (dbNorm === targetNorm) return true;
+
+  // Handle common aliases/normalizations
+  if (targetNorm === "rc transfer of ownership" || targetNorm === "rc transfer") {
+    return dbNorm === "transfer of ownership" || dbNorm === "rc transfer" || dbNorm === "rc transfer of ownership";
+  }
+  if (targetNorm === "national permit (gujarat permit)") {
+    return dbNorm === "national permit(gujrat permit)" || dbNorm === "national permit (gujarat permit)";
+  }
+  if (targetNorm === "national permit (gujarat permit) renewal") {
+    return dbNorm === "national permit(gujrat permit) renewal" || dbNorm === "national permit (gujarat permit) renewal";
+  }
+  if (targetNorm === "dl new" || targetNorm === "license new") {
+    return dbNorm === "license new" || dbNorm === "dl new";
+  }
+  if (targetNorm === "dl renew" || targetNorm === "license renew") {
+    return dbNorm === "license renew" || dbNorm === "dl renew" || dbNorm === "license renewal";
+  }
+
+  return false;
+}
+
 // ─── Firestore helpers ────────────────────────────────────────────────────────
 
 const TARGETS_COLLECTION = "targets";
 
 /**
- * Map TargetCategory to ServiceType.
- * They share the same names except for "PUC" and the split License categories.
- */
-function categoryToServiceType(category: TargetCategory): ServiceType {
-  return category as ServiceType;
-}
-
-/**
- * Get actual completed count from service records.
- */
-async function getRealCompletedCount(category: TargetCategory): Promise<number> {
-  try {
-    const serviceType = categoryToServiceType(category);
-    const stats = await getServiceStats(serviceType);
-    return stats.completed;
-  } catch (error) {
-    console.warn(`[getRealCompletedCount] Failed to get count for ${category}:`, error);
-    return 0;
-  }
-}
-
-/**
- * Enrich a target with real completed count from service records.
- */
-async function enrichTargetWithRealCount(target: Target): Promise<Target> {
-  const realCompleted = await getRealCompletedCount(target.category);
-  return {
-    ...target,
-    completed: realCompleted, // Override with real count
-  };
-}
-
-/**
  * Subscribe to all targets with live updates (with real completed counts).
- * Returns an unsubscribe function for cleanup.
  */
 export function subscribeToTargets(callback: (targets: TargetMetrics[]) => void): () => void {
   let targetsList: Target[] = [];
   let servicesList: any[] = [];
+  let applicationsList: any[] = [];
+  let drivingSchoolList: any[] = [];
 
   const update = () => {
     const enrichedTargets = targetsList.map((target) => {
-      const serviceType = categoryToServiceType(target.category);
-      const completedCount = servicesList.filter((s) => {
-        return s.serviceType === serviceType;
+      const targetSubmodule = target.submodule || "services";
+      const targetService = target.service || target.category || "";
+      const targetPeriod = target.period || "Monthly";
+
+      // Count completed/created from services collection
+      const completedServices = servicesList.filter((s) => {
+        const status = (s.taskStatus || s.status || "").toLowerCase();
+        // Count all services except rejected/cancelled/deleted
+        if (status === "rejected" || status === "cancelled" || s.isDeleted === true) return false;
+
+        // Match submodule
+        const dbSubmodule = s.subModule || "services";
+        if (dbSubmodule.toLowerCase() !== targetSubmodule.toLowerCase()) return false;
+
+        // Match service
+        const dbService = s.serviceType || s.serviceName || "";
+        if (!matchService(dbService, targetService)) return false;
+
+        // Match period
+        return isDateInPeriod(s.createdAt || s.updatedAt || s.date, targetPeriod);
       }).length;
+
+      // Count completed/created from applications collection
+      const completedApps = applicationsList.filter((app) => {
+        const status = (app.applicationStatus || "").toLowerCase();
+        // Count all applications except rejected/deleted
+        if (status === "rejected" || app.isDeleted === true) return false;
+
+        // Match submodule
+        const dbSubmodule = app.subModule || "services";
+        if (dbSubmodule.toLowerCase() !== targetSubmodule.toLowerCase()) return false;
+
+        // Match service
+        const appServices: string[] = Array.isArray(app.services)
+          ? app.services
+          : app.selectedServices
+          ? (Array.isArray(app.selectedServices) ? app.selectedServices : [app.selectedServices])
+          : [];
+        
+        const hasMatchingService = appServices.some(srv => matchService(srv, targetService));
+        if (!hasMatchingService) return false;
+
+        // Match period
+        return isDateInPeriod(app.createdAt || app.updatedAt, targetPeriod);
+      }).length;
+
+      // Count completed/created from driving school collection
+      const completedDriving = drivingSchoolList.filter((app) => {
+        const status = (app.status || "").toLowerCase();
+        // Count all except rejected/deleted
+        if (status === "rejected" || app.isDeleted === true) return false;
+
+        // Match submodule
+        if (targetSubmodule.toLowerCase() !== "driving_school") return false;
+
+        // Match service
+        const appService = app.courseType || "Driving School Course";
+        if (!matchService(appService, targetService)) return false;
+
+        // Match period
+        return isDateInPeriod(app.createdAt || app.updatedAt, targetPeriod);
+      }).length;
+
+      const totalCompleted = completedServices + completedApps + completedDriving;
 
       return {
         ...target,
-        completed: completedCount,
+        completed: totalCompleted,
       };
     });
 
     const metrics = enrichedTargets.map(calculateTargetMetrics);
-    metrics.sort((a, b) => a.category.localeCompare(b.category));
     callback(metrics);
   };
 
@@ -141,93 +212,63 @@ export function subscribeToTargets(callback: (targets: TargetMetrics[]) => void)
     update();
   });
 
+  const unsubApps = onSnapshot(query(collection(db, "registry_applications_v1")), (snap) => {
+    applicationsList = snap.docs.map((d) => d.data());
+    update();
+  });
+
+  const unsubDriving = onSnapshot(query(collection(db, "DrivingSchoolApplications")), (snap) => {
+    drivingSchoolList = snap.docs.map((d) => d.data());
+    update();
+  });
+
   return () => {
     unsubTargets();
     unsubServices();
+    unsubApps();
+    unsubDriving();
   };
-}
-
-/**
- * Get a single target by category (with real completed count from service records).
- */
-export async function getTargetByCategory(category: TargetCategory): Promise<TargetMetrics | null> {
-  const q = query(collection(db, TARGETS_COLLECTION));
-  const snapshot = await getDocs(q);
-
-  for (const doc of snapshot.docs) {
-    const data = doc.data() as Omit<Target, "id">;
-    if (data.category === category) {
-      // Enrich with real completed count
-      const target = { ...data, id: doc.id };
-      const enriched = await enrichTargetWithRealCount(target);
-      return calculateTargetMetrics(enriched);
-    }
-  }
-
-  return null;
 }
 
 /**
  * Create or initialize a target.
  */
 export async function createOrInitializeTarget(
-  category: TargetCategory,
+  submodule: string,
+  service: string,
+  period: string,
   targetValue: number,
   actor: string,
   extra?: Partial<Target>
 ): Promise<void> {
-  const existing = await getTargetByCategory(category);
+  const targetRef = doc(collection(db, TARGETS_COLLECTION));
+  const activity = createActivity(actor, "Created", "target", "0", `${targetValue}`);
 
-  if (existing) {
-    const targetRef = doc(db, TARGETS_COLLECTION, existing.id);
-    const activity = createActivity(
-      actor,
-      "Updated",
-      "target config",
-      `${existing.target}`,
-      `${targetValue}`
-    );
-
-    await updateDoc(targetRef, removeUndefined({
+  await setDoc(
+    targetRef,
+    removeUndefined({
+      category: service, // Map to category for backward compatibility
+      submodule,
+      service,
+      period,
       target: targetValue,
-      monthlyTarget: extra?.monthlyTarget ?? targetValue,
-      quarterlyTarget: extra?.quarterlyTarget,
-      yearlyTarget: extra?.yearlyTarget,
       startDate: extra?.startDate,
       endDate: extra?.endDate,
       color: extra?.color,
-      status: extra?.status,
+      status: extra?.status ?? "Active",
+      completed: 0,
+      createdBy: actor,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       lastUpdatedBy: actor,
       lastUpdatedAt: new Date().toISOString(),
-      activityLogs: arrayUnion(activity),
-    }));
-  } else {
-    const targetRef = doc(collection(db, TARGETS_COLLECTION));
-    const activity = createActivity(actor, "Created", "target", "0", `${targetValue}`);
-
-    await setDoc(
-      targetRef,
-      removeUndefined({
-        category,
-        target: targetValue,
-        monthlyTarget: extra?.monthlyTarget ?? targetValue,
-        quarterlyTarget: extra?.quarterlyTarget,
-        yearlyTarget: extra?.yearlyTarget,
-        startDate: extra?.startDate,
-        endDate: extra?.endDate,
-        color: extra?.color,
-        status: extra?.status ?? "Active",
-        completed: 0,
-        lastUpdatedBy: actor,
-        lastUpdatedAt: new Date().toISOString(),
-        activityLogs: [activity],
-      } as Target)
-    );
-  }
+      activityLogs: [activity],
+    } as Target)
+  );
 }
 
 /**
- * Update target value (admin only).
+ * Update target value.
  */
 export async function updateTargetValue(
   id: string,
@@ -247,64 +288,22 @@ export async function updateTargetValue(
 
   await updateDoc(targetRef, removeUndefined({
     target: newTarget,
-    monthlyTarget: extra?.monthlyTarget ?? newTarget,
-    quarterlyTarget: extra?.quarterlyTarget,
-    yearlyTarget: extra?.yearlyTarget,
     startDate: extra?.startDate,
     endDate: extra?.endDate,
     color: extra?.color,
     status: extra?.status,
     lastUpdatedBy: actor,
     lastUpdatedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     activityLogs: arrayUnion(activity),
   }));
 }
 
 /**
- * Update completed count.
+ * Delete a target.
  */
-export async function updateCompletedCount(
-  id: string,
-  newCompleted: number,
-  actor: string,
-): Promise<void> {
+export async function deleteTarget(id: string): Promise<void> {
   const targetRef = doc(db, TARGETS_COLLECTION, id);
-  const snapshot = await getDoc(targetRef);
-
-  if (!snapshot.exists()) {
-    throw new Error("Target not found");
-  }
-
-  const currentCompleted = snapshot.data().completed;
-  const activity = createActivity(
-    actor,
-    "Updated",
-    "completed",
-    `${currentCompleted}`,
-    `${newCompleted}`,
-  );
-
-  await updateDoc(targetRef, {
-    completed: newCompleted,
-    lastUpdatedBy: actor,
-    lastUpdatedAt: new Date().toISOString(),
-    activityLogs: arrayUnion(activity),
-  });
+  await deleteDoc(targetRef);
 }
 
-/**
- * Increment completed count by 1.
- */
-export async function incrementCompleted(id: string, actor: string): Promise<void> {
-  const targetRef = doc(db, TARGETS_COLLECTION, id);
-  const snapshot = await getDoc(targetRef);
-
-  if (!snapshot.exists()) {
-    throw new Error("Target not found");
-  }
-
-  const currentCompleted = snapshot.data().completed;
-  const newCompleted = currentCompleted + 1;
-
-  await updateCompletedCount(id, newCompleted, actor);
-}

@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
 import { DrivingSchoolDashboard } from "@/components/DrivingSchoolDashboard";
+import { subscribeToTargets, type TargetMetrics } from "@/lib/targets";
 
 export const Route = createFileRoute("/dashboard/")({
   component: Overview,
@@ -145,6 +146,96 @@ function computeDaysRemaining(expiryStr: string): number {
   const now = new Date();
   const diffTime = exp.getTime() - now.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+function DashboardTargetsSection({ activeSubModule }: { activeSubModule: SubModuleType }) {
+  const [targets, setTargets] = useState<TargetMetrics[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToTargets((data) => {
+      setTargets(data);
+    });
+    return () => unsub();
+  }, []);
+
+  const filtered = useMemo(() => {
+    return targets.filter((t) => (t.submodule || "services") === activeSubModule);
+  }, [targets, activeSubModule]);
+
+  if (filtered.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 capitalize">
+            {activeSubModule === "services" ? "Vahaan" : activeSubModule === "licence" ? "Licence" : activeSubModule === "form5" ? "Form 5" : activeSubModule === "driving_school" ? "Driving School" : activeSubModule} Targets
+          </h2>
+          <p className="text-[11px] text-slate-500">Real-time target performance for the selected sub-module.</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map((t) => {
+          const completedVal = t.completed;
+          const targetVal = t.target;
+          const pct = targetVal > 0 ? Math.round((completedVal / targetVal) * 100) : 0;
+          
+          let statusLabel = "Not Started";
+          let badgeColor = "bg-slate-100 text-slate-700";
+          if (targetVal > 0) {
+            if (completedVal === 0) {
+              statusLabel = "Not Started";
+              badgeColor = "bg-slate-100 text-slate-700";
+            } else if (pct > 100) {
+              statusLabel = "Exceeded";
+              badgeColor = "bg-indigo-100 text-indigo-700";
+            } else if (pct === 100) {
+              statusLabel = "Target Achieved";
+              badgeColor = "bg-emerald-100 text-emerald-700";
+            } else {
+              statusLabel = "Behind Target";
+              badgeColor = "bg-rose-100 text-rose-700";
+            }
+          }
+
+          const colors = ["#3b82f6", "#10b981", "#8b5cf6", "#ec4899", "#06b6d4", "#6366f1", "#38bdf8", "#14b8a6", "#f97316", "#ef4444"];
+          let hash = 0;
+          const serviceName = t.service || "";
+          for (let i = 0; i < serviceName.length; i++) {
+            hash = serviceName.charCodeAt(i) + ((hash << 5) - hash);
+          }
+          const index = Math.abs(hash) % colors.length;
+          const progressColor = t.color || colors[index];
+
+          return (
+            <div key={t.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex flex-col justify-between space-y-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 font-sans">{t.service}</h4>
+                  <p className="text-[10px] text-slate-400 capitalize font-medium">{t.period} Target</p>
+                </div>
+                <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0", badgeColor)}>
+                  {statusLabel}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between items-baseline text-xs font-semibold">
+                  <span className="font-mono text-slate-700">{completedVal} / {targetVal}</span>
+                  <span className="font-mono text-slate-500">{pct}%</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: progressColor }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function Overview() {
@@ -675,6 +766,9 @@ function Overview() {
           })}
         </div>
       )}
+
+      {/* Targets Overview Section */}
+      <DashboardTargetsSection activeSubModule={activeSubModule} />
     </div>
   );
 }
