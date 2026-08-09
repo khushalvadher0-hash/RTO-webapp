@@ -51,6 +51,7 @@ import {
   type DrivingSchoolApplication,
 } from "@/lib/drivingSchool";
 import { fetchAllUsers } from "@/lib/userService";
+import { subscribeToTemplates, type TaskTemplate } from "@/lib/tasks";
 import { createInvoice } from "@/lib/billing";
 import { getInsuranceGstPercentage } from "@/lib/capitalize-settings";
 import { toast } from "sonner";
@@ -2100,6 +2101,15 @@ function ApplicationFormModal({
   const [createTaskAuto, setCreateTaskAuto] = useState(editingApp?.createTaskAuto ?? true);
   const [assignedEmployee, setAssignedEmployee] = useState(editingApp?.assignedEmployeeName || "");
   const [activeEmployees, setActiveEmployees] = useState<{ id: string; name: string }[]>([]);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(editingApp?.templateId || "");
+
+  useEffect(() => {
+    const unsub = subscribeToTemplates((data) => {
+      setTaskTemplates(data);
+    });
+    return unsub;
+  }, []);
 
   // 1. Vahaan Auto Fill
   const vahaanAutoFill = useApplicationAutoFill({
@@ -3187,6 +3197,7 @@ function ApplicationFormModal({
           reminder,
           priority,
           createTaskAuto,
+          templateId: selectedTemplateId || undefined,
           documents: uploadedDocs,
           applicationType: finalAppType,
           trackExpiry: {
@@ -5336,7 +5347,7 @@ function ApplicationFormModal({
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">DUE DATE</label>
                       <input
@@ -5380,6 +5391,23 @@ function ApplicationFormModal({
                         {activeEmployees.map((emp) => (
                           <option key={emp.id} value={emp.name}>
                             {emp.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        TASK TEMPLATE
+                      </label>
+                      <select
+                        value={selectedTemplateId}
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        <option value="">Select Task Template</option>
+                        {taskTemplates.map((tpl) => (
+                          <option key={tpl.id} value={tpl.id}>
+                            {tpl.templateName}
                           </option>
                         ))}
                       </select>
@@ -5844,7 +5872,7 @@ function ApplicationFormModal({
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">DUE DATE</label>
                       <input
@@ -5888,6 +5916,23 @@ function ApplicationFormModal({
                         {activeEmployees.map((emp) => (
                           <option key={emp.id} value={emp.name}>
                             {emp.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        TASK TEMPLATE
+                      </label>
+                      <select
+                        value={selectedTemplateId}
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        <option value="">Select Task Template</option>
+                        {taskTemplates.map((tpl) => (
+                          <option key={tpl.id} value={tpl.id}>
+                            {tpl.templateName}
                           </option>
                         ))}
                       </select>
@@ -6410,7 +6455,7 @@ function ApplicationFormModal({
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">
                         ASSIGNED EMPLOYEE
@@ -6449,6 +6494,24 @@ function ApplicationFormModal({
                         <option value="Medium">Medium</option>
                         <option value="High">High</option>
                         <option value="Urgent">Urgent</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">
+                        TASK TEMPLATE
+                      </label>
+                      <select
+                        value={selectedTemplateId}
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      >
+                        <option value="">Select Task Template</option>
+                        {taskTemplates.map((tpl) => (
+                          <option key={tpl.id} value={tpl.id}>
+                            {tpl.templateName}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -7887,7 +7950,7 @@ function ApplicationFormModal({
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">REMINDER</label>
                   <input
@@ -7922,6 +7985,23 @@ function ApplicationFormModal({
                     {activeEmployees.map((emp) => (
                       <option key={emp.id} value={emp.name}>
                         {emp.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    TASK TEMPLATE
+                  </label>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(e) => setSelectedTemplateId(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                  >
+                    <option value="">Select Task Template</option>
+                    {taskTemplates.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.templateName}
                       </option>
                     ))}
                   </select>

@@ -369,6 +369,7 @@ export interface ApplicationRecord {
   accountingId?: string;
   taskId?: string;
   activityLogs?: any[];
+  templateId?: string;
 }
 
 export function computePermitExpiry(permitType: string, issueDate: string): string {
@@ -430,6 +431,27 @@ export async function saveApplicationAndVehicle(
   const session = getSession();
   const now = new Date().toISOString();
   const cleanVehicleNo = appData.vehicleNumber.trim().toUpperCase().replace(/[\s-]/g, "");
+
+  let templateSubtasks: any[] = [];
+  if (appData.templateId) {
+    try {
+      const tplSnap = await getDoc(doc(db, "task_templates", appData.templateId));
+      if (tplSnap.exists()) {
+        const tplData = tplSnap.data();
+        if (Array.isArray(tplData?.subtasks)) {
+          templateSubtasks = tplData.subtasks.map((title: string) => ({
+            id: crypto.randomUUID(),
+            title,
+            completed: false,
+            status: "Assigned",
+            createdAt: now,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Error loading template for task creation:", err);
+    }
+  }
 
   const vehicleRef = doc(db, VEHICLES_CENTRIC_COL, cleanVehicleNo);
   const vehiclePayload = removeUndefined({
@@ -568,6 +590,9 @@ export async function saveApplicationAndVehicle(
       advancePaid: advAmt,
       rtoExpense: 0,
       updatedAt: now,
+      templateId: appData.templateId || "",
+      subtasks: templateSubtasks,
+      progress: 0,
     });
 
     const newAccountingPayload = removeUndefined({
@@ -857,6 +882,8 @@ export async function saveApplicationAndVehicle(
         advancePaid: advAmt,
         updatedAt: now,
         activityLogs: updatedActivityLogs,
+        templateId: appData.templateId || existingTaskData.templateId || "",
+        ...( (appData.templateId && (existingTaskData.templateId !== appData.templateId || !existingTaskData.subtasks?.length)) ? { subtasks: templateSubtasks, progress: 0 } : {}),
       });
 
       if (!tTaskSnap.exists()) {
