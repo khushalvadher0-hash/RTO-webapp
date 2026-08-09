@@ -50,6 +50,7 @@ import { ApplicationFullDetailsModal } from "./ApplicationFullDetailsModal";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ApplicationTypeBadge, getApplicationTypeStyle } from "./ApplicationTypeBadge";
+import { formatPaymentStatus } from "@/lib/formatting";
 import {
   Dialog,
   DialogContent,
@@ -800,9 +801,9 @@ export function ServiceDashboard({
                                 pStatus === "Pending" && "bg-amber-50 text-amber-700 border border-amber-200",
                                 pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
                               )}
-                            >
-                              {pStatus}
-                            </span>
+                             >
+                               {formatPaymentStatus(pStatus)}
+                             </span>
                           </td>
                           <td className="p-3">
                             {(() => {

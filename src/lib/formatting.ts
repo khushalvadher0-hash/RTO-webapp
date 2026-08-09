@@ -29,3 +29,13 @@ export function formatTime(iso?: string): string {
     second: "2-digit",
   });
 }
+
+export function formatPaymentStatus(status?: string): string {
+  if (!status) return "—";
+  const s = status.trim().toLowerCase();
+  if (s === "paid") return "ટોટલ જમા";
+  if (s === "partially paid" || s === "partial") return "થોડા બાકી";
+  if (s === "pending" || s === "pending invoice" || s === "unpaid") return "બધા બાકી";
+  return status;
+}
+

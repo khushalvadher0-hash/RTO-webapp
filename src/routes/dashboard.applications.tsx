@@ -65,6 +65,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { formatPaymentStatus } from "@/lib/formatting";
 
 const toDateString = (ts: any) => {
   if (!ts) return "";
@@ -804,7 +805,7 @@ function ApplicationsPage() {
                                 : "bg-rose-50 text-rose-700 border-rose-200"
                             )}
                           >
-                            {pStatus}
+                            {formatPaymentStatus(pStatus)}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-slate-600">{ds.assignedEmployee || "Unassigned"}</td>
@@ -1113,7 +1114,7 @@ function ApplicationsPage() {
                               pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
                             )}
                           >
-                            {pStatus}
+                            {formatPaymentStatus(pStatus)}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 font-mono text-slate-700 font-semibold">{refCode}</td>

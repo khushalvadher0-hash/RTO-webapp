@@ -28,6 +28,7 @@ import {
 } from "@/lib/billing";
 import { deleteInvoiceSecured } from "@/lib/financeService";
 import { toast } from "sonner";
+import { formatPaymentStatus } from "@/lib/formatting";
 
 interface InvoiceViewerProps {
   invoice: Invoice;
@@ -207,7 +208,7 @@ export function InvoiceViewer({ invoice: initialInvoice, onClose }: InvoiceViewe
             <span
               className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${getStatusBadgeColor(invoice.status)}`}
             >
-              {invoice.status}
+              {formatPaymentStatus(invoice.status)}
             </span>
             {invoice.askBhaylubha && (
               <span className="flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">

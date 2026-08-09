@@ -68,6 +68,7 @@ import { DuplicateDetectionDialog } from "@/components/DuplicateDetectionDialog"
 import { useDuplicateDetection } from "@/hooks/useDuplicateDetection";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import { toast } from "sonner";
+import { formatPaymentStatus } from "@/lib/formatting";
 
 interface Props {
   bucket: Bucket;
@@ -809,9 +810,9 @@ export function RecordTable({ bucket, title, description }: Props) {
                                   "Partially Paid",
                                   "Unpaid",
                                 ].map((st) => (
-                                  <SelectItem key={st} value={st} className="text-xs">
-                                    {st}
-                                  </SelectItem>
+                                   <SelectItem key={st} value={st} className="text-xs">
+                                     {formatPaymentStatus(st)}
+                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>

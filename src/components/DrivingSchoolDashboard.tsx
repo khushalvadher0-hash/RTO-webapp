@@ -12,6 +12,7 @@ import {
   Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatPaymentStatus } from "@/lib/formatting";
 import {
   subscribeDrivingSchoolApplications,
   subscribeDrivingSchoolVehicles,
@@ -581,7 +582,7 @@ export function DrivingSchoolDashboard() {
                             : "bg-rose-50 text-rose-700 border-rose-200"
                         )}
                       >
-                        {student.paymentStatus}
+                        {formatPaymentStatus(student.paymentStatus)}
                       </span>
                     </td>
                   </tr>

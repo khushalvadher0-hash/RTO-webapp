@@ -71,6 +71,7 @@ import {
   type DrivingSchoolApplication,
 } from "@/lib/drivingSchool";
 import { subscribeAllDailyReports, type DrivingSchoolDailyReport } from "@/lib/drivingSchoolVehicles";
+import { formatPaymentStatus } from "@/lib/formatting";
 
 export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingDashboardPage,
@@ -1951,7 +1952,7 @@ function AccountingDashboardPage() {
       const expense = `Rs.${(r.rtoExpense ?? 0).toLocaleString("en-IN")}`;
       const profit = `Rs.${(r.profit ?? 0).toLocaleString("en-IN")}`;
       const employee = (r.assignedEmployee || "—").slice(0, 10);
-      const status = r.paymentStatus || "—";
+      const status = formatPaymentStatus(r.paymentStatus);
 
       let cIdx = 0;
       doc.text(clientVal, colLefts[cIdx++], y);
@@ -2377,7 +2378,7 @@ function AccountingDashboardPage() {
                                           ? "bg-blue-100 text-blue-850 border border-blue-200"
                                           : "bg-orange-100 text-orange-800"
                                 }`}>
-                                  {r.paymentStatus}
+                                  {formatPaymentStatus(r.paymentStatus)}
                                 </span>
                               </td>
                               <td className="p-3 text-center">
@@ -3351,7 +3352,7 @@ function AccountingDashboardPage() {
                                      rec.paymentStatus === "Paid" ? "bg-green-100 text-green-800" :
                                      rec.paymentStatus === "Partially Paid" ? "bg-amber-100 text-amber-800" : "bg-orange-100 text-orange-800"
                                    }`}>
-                                     {rec.paymentStatus}
+                                     {formatPaymentStatus(rec.paymentStatus)}
                                    </span>
                                    {inv && (
                                      <>

@@ -113,6 +113,7 @@ import { cn } from "@/lib/utils";
 import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
 import { toast } from "sonner";
 import { ApplicationTypeBadge } from "@/components/ApplicationTypeBadge";
+import { formatPaymentStatus } from "@/lib/formatting";
 
 export const Route = createFileRoute("/dashboard/tasks")({ component: TasksPage });
 
@@ -2367,7 +2368,7 @@ function TaskTable({
                             pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
                           )}
                         >
-                          {pStatus}
+                          {formatPaymentStatus(pStatus)}
                         </span>
                       </td>
                       <td className="p-3">
@@ -2478,7 +2479,7 @@ function TaskTable({
                             pStatus === "Partial" && "bg-blue-50 text-blue-700 border border-blue-200"
                           )}
                         >
-                          {pStatus}
+                          {formatPaymentStatus(pStatus)}
                         </span>
                       </td>
                       <td className="p-3">

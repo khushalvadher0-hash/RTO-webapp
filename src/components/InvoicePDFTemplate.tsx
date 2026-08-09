@@ -1,5 +1,5 @@
 import * as React from "react";
-import { formatCurrency, formatDate } from "@/lib/formatting";
+import { formatCurrency, formatDate, formatPaymentStatus } from "@/lib/formatting";
 import type { Invoice } from "@/lib/billing";
 import { getSession } from "@/lib/auth";
 
@@ -146,7 +146,7 @@ export const InvoicePDFTemplate = React.forwardRef<HTMLDivElement, InvoicePDFTem
                 ...statusStyle,
               }}
             >
-              {safeText(invoice.status)}
+              {safeText(formatPaymentStatus(invoice.status))}
             </span>
           </div>
         </div>

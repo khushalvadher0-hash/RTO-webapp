@@ -38,7 +38,7 @@ import { InvoiceViewer } from "@/components/InvoiceViewer";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import type { Invoice } from "@/lib/billing";
 import { toast } from "sonner";
-import { formatDate } from "@/lib/formatting";
+import { formatDate, formatPaymentStatus } from "@/lib/formatting";
 function normalizeActivityTimestamp(timestamp: unknown): string {
   if (!timestamp) return "";
   if (typeof timestamp === "string") return timestamp;
@@ -936,7 +936,7 @@ export function ClientProfile({
                                         ? "bg-amber-100 text-amber-800"
                                         : "bg-orange-100 text-orange-800"
                                   }`}>
-                                    {r.paymentStatus}
+                                    {formatPaymentStatus(r.paymentStatus)}
                                   </span>
                                 </td>
                               </tr>
