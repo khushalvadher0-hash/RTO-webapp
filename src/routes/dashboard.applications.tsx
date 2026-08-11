@@ -6990,26 +6990,20 @@ function ApplicationFormModal({
                     </div>
                     {activeSubModule === "insurance" && (
                       <div>
-                        <label className="font-semibold text-slate-700 block mb-1">APPLICATION TYPE</label>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          TASK TEMPLATE
+                        </label>
                         <select
-                          value={isCustomAppType ? "__CUSTOM__" : appTypeSelect}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === "__CUSTOM__") {
-                              setIsCustomAppType(true);
-                            } else {
-                              setIsCustomAppType(false);
-                              setAppTypeSelect(val);
-                            }
-                          }}
+                          value={selectedTemplateId}
+                          onChange={(e) => setSelectedTemplateId(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                         >
-                          {availableAppTypes.map((type) => (
-                            <option key={type} value={type}>
-                              {type}
+                          <option value="">Select Task Template</option>
+                          {taskTemplates.map((tpl) => (
+                            <option key={tpl.id} value={tpl.id}>
+                              {tpl.templateName}
                             </option>
                           ))}
-                          <option value="__CUSTOM__">+ Add Custom Type</option>
                         </select>
                       </div>
                     )}
