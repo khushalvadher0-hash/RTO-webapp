@@ -3490,7 +3490,7 @@ function ApplicationFormModal({
                           <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
                           <input
                             type="text"
-                            placeholder="Enter application number"
+                            placeholder=""
                             value={newLL.applicationNo}
                             onChange={(e) => setNewLL((prev) => ({ ...prev, applicationNo: e.target.value }))}
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-mono"
@@ -3511,14 +3511,14 @@ function ApplicationFormModal({
                       <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3">
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
                           <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span>
-                          <span>LEARNING LICENCE DETAILS</span>
+                           <span>LEARNING LICENCE DETAILS</span>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                           <div>
                             <label className="font-semibold text-slate-600 block mb-1">LL NUMBER</label>
                             <input
                               type="text"
-                              placeholder="GJ0120260001234"
+                              placeholder=""
                               value={newLL.step1.llNumber}
                               onChange={(e) => setNewLL((prev) => ({ ...prev, step1: { ...prev.step1, llNumber: e.target.value } }))}
                               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -5572,7 +5572,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">NAME *</label>
                     <input
                       type="text"
-                      placeholder="Applicant's name"
+                      placeholder=""
                       value={form5Details.name || ""}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -5588,7 +5588,7 @@ function ApplicationFormModal({
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="10-digit mobile number"
+                        placeholder=""
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         onBlur={form5AutoFill.handleBlur}
@@ -5623,7 +5623,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">APPLICATION NO.</label>
                     <input
                       type="text"
-                      placeholder="Enter application number"
+                      placeholder=""
                       value={form5Details.applicationNo || ""}
                       onChange={(e) => setForm5Details(prev => ({ ...prev, applicationNo: e.target.value }))}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -5633,7 +5633,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">AADHAAR NO.</label>
                     <input
                       type="text"
-                      placeholder="12-digit Aadhaar number"
+                      placeholder=""
                       value={form5Details.aadhaarNumber || ""}
                       onChange={(e) => setForm5Details(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -5643,7 +5643,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">LL NO.</label>
                     <input
                       type="text"
-                      placeholder="LL Number"
+                      placeholder=""
                       value={form5Details.llNumber || ""}
                       onChange={(e) => setForm5Details(prev => ({ ...prev, llNumber: e.target.value }))}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -5671,7 +5671,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">DL NO.</label>
                     <input
                       type="text"
-                      placeholder="DL Number"
+                      placeholder=""
                       value={form5Details.dlNumber || ""}
                       onChange={(e) => setForm5Details(prev => ({ ...prev, dlNumber: e.target.value }))}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -6537,7 +6537,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">NAME *</label>
                     <input
                       type="text"
-                      placeholder="Applicant's full name"
+                      placeholder=""
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
                       onBlur={insuranceAutoFill.handleBlur}
@@ -6560,7 +6560,7 @@ function ApplicationFormModal({
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="10 digit mobile number"
+                        placeholder=""
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         onBlur={insuranceAutoFill.handleBlur}
@@ -6582,7 +6582,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
                     <input
                       type="text"
-                      placeholder="House, street, city"
+                      placeholder=""
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -6592,7 +6592,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">C/O</label>
                     <input
                       type="text"
-                      placeholder="Father / Husband name"
+                      placeholder=""
                       value={fatherHusbandName}
                       onChange={(e) => setFatherHusbandName(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -6721,7 +6721,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">REFERENCE</label>
                     <input
                       type="text"
-                      placeholder="e.g. Mr. Sharma"
+                      placeholder=""
                       value={reference}
                       onChange={(e) => setReference(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -6762,7 +6762,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">VEHICLE REGISTRATION NUMBER</label>
                     <input
                       type="text"
-                      placeholder="e.g. MH-02-AB-1234"
+                      placeholder=""
                       value={insVehicleRegNumber}
                       onChange={(e) => setInsVehicleRegNumber(e.target.value.toUpperCase())}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase"
@@ -6773,7 +6773,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">VEHICLE MODEL DETAILS</label>
                     <input
                       type="text"
-                      placeholder="e.g. Honda City ZX (2023)"
+                      placeholder=""
                       value={insVehicleModelDetails}
                       onChange={(e) => setInsVehicleModelDetails(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -6784,7 +6784,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">POLICY NUMBER</label>
                     <input
                       type="text"
-                      placeholder="POL-XXXX"
+                      placeholder=""
                       value={insurancePolicyNo}
                       onChange={(e) => setInsurancePolicyNo(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -6815,7 +6815,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">PREMIUM EXCL-GST (INR) *</label>
                     <input
                       type="number"
-                      placeholder="1000"
+                      placeholder=""
                       value={premiumExclGst || ""}
                       onChange={(e) => {
                         const val = Number(e.target.value);
@@ -6834,7 +6834,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">GST @{gstPercentage}% (INR)</label>
                     <input
                       type="number"
-                      placeholder={String(Math.round(1000 * (gstPercentage / 100)))}
+                      placeholder=""
                       value={gstAmount || ""}
                       onChange={(e) => {
                         const gst = Number(e.target.value);
@@ -6851,7 +6851,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">TOTAL PREMIUM (INR)</label>
                     <input
                       type="number"
-                      placeholder="1180"
+                      placeholder=""
                       value={totalPremium || ""}
                       onChange={(e) => {
                         const tot = Number(e.target.value);
@@ -6866,7 +6866,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">INSURER COMMISSION (INR)</label>
                     <input
                       type="number"
-                      placeholder="500"
+                      placeholder=""
                       value={insurerCommission || ""}
                       onChange={(e) => {
                         const val = Number(e.target.value);
@@ -6881,7 +6881,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">CLIENT DISCOUNT (INR)</label>
                     <input
                       type="number"
-                      placeholder="200"
+                      placeholder=""
                       value={clientDiscount || ""}
                       onChange={(e) => {
                         const val = Number(e.target.value);
@@ -6896,7 +6896,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">NET COMMISSION (INR)</label>
                     <input
                       type="number"
-                      placeholder="300"
+                      placeholder=""
                       value={netCommission || ""}
                       onChange={(e) => setNetCommission(Number(e.target.value))}
                       className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-emerald-700"
