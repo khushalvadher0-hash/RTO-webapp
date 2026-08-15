@@ -3320,7 +3320,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">NAME *</label>
                     <input
                       type="text"
-                      placeholder="Full name"
+                      placeholder=""
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
                       onBlur={licenseAutoFill.handleBlur}
@@ -3343,7 +3343,7 @@ function ApplicationFormModal({
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="+91 9XXXXXXXXX"
+                        placeholder=""
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         onBlur={licenseAutoFill.handleBlur}
@@ -3366,7 +3366,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
                     <input
                       type="text"
-                      placeholder="House, street, city"
+                      placeholder=""
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -3377,7 +3377,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">C/O</label>
                     <input
                       type="text"
-                      placeholder="Father / Husband name"
+                      placeholder=""
                       value={fatherHusbandName}
                       onChange={(e) => setFatherHusbandName(e.target.value)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -3410,7 +3410,7 @@ function ApplicationFormModal({
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          placeholder="Enter new group name"
+                          placeholder=""
                           value={newGroupInput}
                           onChange={(e) => setNewGroupInput(e.target.value)}
                           className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-medium"
@@ -5979,7 +5979,7 @@ function ApplicationFormModal({
                     </label>
                     <input
                       type="text"
-                      placeholder="Full name"
+                      placeholder=""
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
                       onBlur={drivingSchoolAutoFill.handleBlur}
@@ -5992,7 +5992,7 @@ function ApplicationFormModal({
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="+91 XXXXXXXXXX"
+                        placeholder=""
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         onBlur={drivingSchoolAutoFill.handleBlur}
@@ -6034,7 +6034,7 @@ function ApplicationFormModal({
                     <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
                     <input
                       type="text"
-                      placeholder="House, street, city"
+                      placeholder=""
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
@@ -6118,7 +6118,7 @@ function ApplicationFormModal({
                         </label>
                         <input
                           type="text"
-                          placeholder="e.g. GJ01 20260001234"
+                          placeholder=""
                           value={dsDlNumber}
                           onChange={(e) => setDsDlNumber(e.target.value)}
                           className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20 text-xs"

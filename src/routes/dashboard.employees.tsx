@@ -677,7 +677,7 @@ function EmployeesPage() {
               <div className="space-y-1">
                 <Label>Full Name *</Label>
                 <Input
-                  placeholder="Rahul Patel"
+                  placeholder=""
                   value={addForm.fullName}
                   onChange={(e) => setAddForm({ ...addForm, fullName: e.target.value })}
                   required
@@ -686,7 +686,7 @@ function EmployeesPage() {
               <div className="space-y-1">
                 <Label>Username *</Label>
                 <Input
-                  placeholder="rahul.patel"
+                  placeholder=""
                   value={addForm.username}
                   onChange={(e) => setAddForm({ ...addForm, username: e.target.value })}
                   required
@@ -699,7 +699,7 @@ function EmployeesPage() {
                 <Label>Email *</Label>
                 <Input
                   type="email"
-                  placeholder="rahul@company.com"
+                  placeholder=""
                   value={addForm.email}
                   onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
                   required
@@ -708,7 +708,7 @@ function EmployeesPage() {
               <div className="space-y-1">
                 <Label>Mobile Number</Label>
                 <Input
-                  placeholder="9876543210"
+                  placeholder=""
                   value={addForm.mobile}
                   onChange={(e) => setAddForm({ ...addForm, mobile: e.target.value })}
                 />
@@ -719,7 +719,7 @@ function EmployeesPage() {
               <div className="space-y-1">
                 <Label>Department</Label>
                 <Input
-                  placeholder="CRM / Accounting"
+                  placeholder=""
                   value={addForm.department}
                   onChange={(e) => setAddForm({ ...addForm, department: e.target.value })}
                 />
@@ -727,7 +727,7 @@ function EmployeesPage() {
               <div className="space-y-1">
                 <Label>Designation</Label>
                 <Input
-                  placeholder="RTO Officer"
+                  placeholder=""
                   value={addForm.designation}
                   onChange={(e) => setAddForm({ ...addForm, designation: e.target.value })}
                 />
@@ -774,7 +774,7 @@ function EmployeesPage() {
                 <Label>Password *</Label>
                 <Input
                   type="password"
-                  placeholder="Min 6 characters"
+                  placeholder=""
                   value={addForm.password}
                   onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
                   required
@@ -784,7 +784,7 @@ function EmployeesPage() {
                 <Label>Confirm Password *</Label>
                 <Input
                   type="password"
-                  placeholder="Confirm password"
+                  placeholder=""
                   value={addForm.confirmPassword}
                   onChange={(e) => setAddForm({ ...addForm, confirmPassword: e.target.value })}
                   required
@@ -918,7 +918,7 @@ function EmployeesPage() {
                     <Label className="text-xs">New Password</Label>
                     <Input
                       type="password"
-                      placeholder="Leave blank to keep current"
+                      placeholder=""
                       value={editForm.password}
                       onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
                     />
@@ -927,7 +927,7 @@ function EmployeesPage() {
                     <Label className="text-xs">Confirm New Password</Label>
                     <Input
                       type="password"
-                      placeholder="Confirm new password"
+                      placeholder=""
                       value={editForm.confirmPassword}
                       onChange={(e) => setEditForm({ ...editForm, confirmPassword: e.target.value })}
                     />
