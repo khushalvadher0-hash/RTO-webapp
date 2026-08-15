@@ -7,6 +7,8 @@ import {
   setDoc,
   getDoc,
   deleteDoc,
+  getDocs,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { removeUndefined } from "./records";
@@ -193,7 +195,75 @@ export async function saveDrivingSchoolApplication(
 
 export async function deleteDrivingSchoolApplication(id: string): Promise<void> {
   if (!id) return;
-  await deleteDoc(doc(db, DRIVING_SCHOOL_COL, id));
+  try {
+    const appRef = doc(db, DRIVING_SCHOOL_COL, id);
+    const appSnap = await getDoc(appRef);
+    const generatedAppIdStr = appSnap.exists() ? appSnap.data()?.applicationId : "";
+
+    // 1. Delete the driving school application doc itself
+    await deleteDoc(appRef);
+
+    // 2. Delete linked accounting records from registry_accounting
+    await deleteDoc(doc(db, "registry_accounting", id)).catch(console.error);
+
+    // 3. Delete linked billing invoices from billing_invoices
+    const invoiceDocsToDelete = new Map();
+    if (id) {
+      const invQ1 = query(collection(db, "billing_invoices"), where("applicationDocId", "==", id));
+      const invS1 = await getDocs(invQ1);
+      invS1.docs.forEach((d) => invoiceDocsToDelete.set(d.id, d.ref));
+
+      const invQ2 = query(collection(db, "billing_invoices"), where("clientId", "==", id));
+      const invS2 = await getDocs(invQ2);
+      invS2.docs.forEach((d) => invoiceDocsToDelete.set(d.id, d.ref));
+    }
+    for (const invRef of invoiceDocsToDelete.values()) {
+      await deleteDoc(invRef).catch(console.error);
+    }
+
+    // 4. Delete linked tasks from registry_tasks
+    const taskDocsToDelete = new Map();
+    if (id) {
+      const tq1 = query(collection(db, "registry_tasks"), where("applicationDocId", "==", id));
+      const ts1 = await getDocs(tq1);
+      ts1.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+
+      const tq2 = query(collection(db, "registry_tasks"), where("parentApplicationId", "==", id));
+      const ts2 = await getDocs(tq2);
+      ts2.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+
+      const tq3 = query(collection(db, "registry_tasks"), where("clientId", "==", id));
+      const ts3 = await getDocs(tq3);
+      ts3.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+    }
+    if (generatedAppIdStr) {
+      const tq4 = query(collection(db, "registry_tasks"), where("applicationId", "==", generatedAppIdStr));
+      const ts4 = await getDocs(tq4);
+      ts4.docs.forEach((d) => taskDocsToDelete.set(d.id, d.ref));
+    }
+    for (const tRef of taskDocsToDelete.values()) {
+      await deleteDoc(tRef).catch(console.error);
+    }
+
+    // 5. Delete linked history/dashboard records from history
+    const historyDocsToDelete = new Map();
+    if (id) {
+      const hq1 = query(collection(db, "history"), where("applicationDocId", "==", id));
+      const hs1 = await getDocs(hq1);
+      hs1.docs.forEach((d) => historyDocsToDelete.set(d.id, d.ref));
+    }
+    if (generatedAppIdStr) {
+      const hq2 = query(collection(db, "history"), where("applicationId", "==", generatedAppIdStr));
+      const hs2 = await getDocs(hq2);
+      hs2.docs.forEach((d) => historyDocsToDelete.set(d.id, d.ref));
+    }
+    for (const hRef of historyDocsToDelete.values()) {
+      await deleteDoc(hRef).catch(console.error);
+    }
+  } catch (err) {
+    console.error("Error in deleteDrivingSchoolApplication:", err);
+    throw err;
+  }
 }
 
 // Export Utilities (CSV, Excel, PDF)

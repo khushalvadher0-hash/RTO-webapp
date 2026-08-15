@@ -1097,6 +1097,40 @@ export async function deleteApplication(id: string): Promise<void> {
     for (const sRef of serviceDocsToDelete.values()) {
       await deleteDoc(sRef);
     }
+
+    // 5. Delete linked accounting records from registry_accounting
+    await deleteDoc(doc(db, "registry_accounting", id)).catch(console.error);
+
+    // 6. Delete linked history/dashboard records from history
+    const historyDocsToDelete = new Map();
+    if (id) {
+      const hq1 = query(collection(db, "history"), where("applicationDocId", "==", id));
+      const hs1 = await getDocs(hq1);
+      hs1.docs.forEach((d) => historyDocsToDelete.set(d.id, d.ref));
+    }
+    if (generatedAppIdStr && generatedAppIdStr.trim() !== "" && generatedAppIdStr !== "undefined" && generatedAppIdStr !== "null") {
+      const hq2 = query(collection(db, "history"), where("applicationId", "==", generatedAppIdStr));
+      const hs2 = await getDocs(hq2);
+      hs2.docs.forEach((d) => historyDocsToDelete.set(d.id, d.ref));
+    }
+    for (const hRef of historyDocsToDelete.values()) {
+      await deleteDoc(hRef).catch(console.error);
+    }
+
+    // 7. Delete linked billing invoices from billing_invoices
+    const invoiceDocsToDelete = new Map();
+    if (id) {
+      const invQ1 = query(collection(db, "billing_invoices"), where("applicationDocId", "==", id));
+      const invS1 = await getDocs(invQ1);
+      invS1.docs.forEach((d) => invoiceDocsToDelete.set(d.id, d.ref));
+
+      const invQ2 = query(collection(db, "billing_invoices"), where("clientId", "==", id));
+      const invS2 = await getDocs(invQ2);
+      invS2.docs.forEach((d) => invoiceDocsToDelete.set(d.id, d.ref));
+    }
+    for (const invRef of invoiceDocsToDelete.values()) {
+      await deleteDoc(invRef).catch(console.error);
+    }
   } catch (err) {
     console.error("Error in deleteApplication:", err);
     throw err;

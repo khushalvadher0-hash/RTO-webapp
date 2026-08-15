@@ -17,6 +17,12 @@ const COLLECTIONS_TO_DELETE = [
   "registry_leads_v2", 
   "registry_vehicles_v2",
   "registry_services_v2",
+  "registry_applications_v1",
+  "registry_vehicles_master_v1",
+  "registry_accounting",
+  "DrivingSchoolApplications",
+  "DrivingSchoolDailyReports",
+  "DrivingSchoolVehicles",
 
   // Task management
   "tasks",
@@ -43,6 +49,7 @@ const COLLECTIONS_TO_DELETE = [
   "notifications",
   "analytics",
   "deletion_audit_logs",
+  "employee_audit_logs",
 
   // Management
   "targets",

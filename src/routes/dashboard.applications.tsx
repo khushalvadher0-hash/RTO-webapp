@@ -1864,18 +1864,18 @@ function ApplicationFormModal({
   const [registrationDate, setRegistrationDate] = useState(editingApp?.vehicleDetails?.registrationDate || "");
   const [chassisNumber, setChassisNumber] = useState(editingApp?.vehicleDetails?.chassisNumber || "");
   const [engineNumber, setEngineNumber] = useState(editingApp?.vehicleDetails?.engineNumber || "");
-  const [fuelType, setFuelType] = useState(editingApp?.vehicleDetails?.fuelType || "Petrol");
-  const [vehicleClass, setVehicleClass] = useState(editingApp?.vehicleDetails?.vehicleClass || "LMV");
+  const [fuelType, setFuelType] = useState(editingApp?.vehicleDetails?.fuelType || "");
+  const [vehicleClass, setVehicleClass] = useState(editingApp?.vehicleDetails?.vehicleClass || "");
   const [makerName, setMakerName] = useState(editingApp?.vehicleDetails?.makerName || "");
   const [modelName, setModelName] = useState(editingApp?.vehicleDetails?.modelName || "");
   const [colour, setColour] = useState(editingApp?.vehicleDetails?.colour || "");
   const [bodyType, setBodyType] = useState(editingApp?.vehicleDetails?.bodyType || "");
-  const [seatingCapacity, setSeatingCapacity] = useState<number>(editingApp?.vehicleDetails?.seatingCapacity || 5);
-  const [grossWeight, setGrossWeight] = useState<number>(editingApp?.vehicleDetails?.grossWeight || 4990);
-  const [unladenWeight, setUnladenWeight] = useState<number>(editingApp?.vehicleDetails?.unladenWeight || 1620);
-  const [payload, setPayload] = useState<number>(editingApp?.vehicleDetails?.payload || 3370);
+  const [seatingCapacity, setSeatingCapacity] = useState<number>(editingApp?.vehicleDetails?.seatingCapacity ?? ("" as any));
+  const [grossWeight, setGrossWeight] = useState<number>(editingApp?.vehicleDetails?.grossWeight ?? ("" as any));
+  const [unladenWeight, setUnladenWeight] = useState<number>(editingApp?.vehicleDetails?.unladenWeight ?? ("" as any));
+  const [payload, setPayload] = useState<number>(editingApp?.vehicleDetails?.payload ?? ("" as any));
   const [horsePower, setHorsePower] = useState(editingApp?.vehicleDetails?.horsePower || "");
-  const [cylinderCount, setCylinderCount] = useState<number>(editingApp?.vehicleDetails?.cylinderCount || 4);
+  const [cylinderCount, setCylinderCount] = useState<number>(editingApp?.vehicleDetails?.cylinderCount ?? ("" as any));
   const [pucExpiryDate, setPucExpiryDate] = useState(editingApp?.vehicleDetails?.pucExpiryDate || "");
 
   // Tax Section
@@ -2190,18 +2190,18 @@ function ApplicationFormModal({
       setRegistrationDate("");
       setChassisNumber("");
       setEngineNumber("");
-      setFuelType("Petrol");
-      setVehicleClass("LMV");
+      setFuelType("");
+      setVehicleClass("");
       setMakerName("");
       setModelName("");
       setColour("");
       setBodyType("");
-      setSeatingCapacity(5);
-      setGrossWeight(4990);
-      setUnladenWeight(1620);
-      setPayload(3370);
+      setSeatingCapacity("" as any);
+      setGrossWeight("" as any);
+      setUnladenWeight("" as any);
+      setPayload("" as any);
       setHorsePower("");
-      setCylinderCount(4);
+      setCylinderCount("" as any);
       setPucExpiryDate("");
       
       setIsLumpsumTax(false);
@@ -2268,7 +2268,7 @@ function ApplicationFormModal({
       setVehicleNumber("");
       setMakerName("");
       setModelName("");
-      setFuelType("Petrol");
+      setFuelType("");
       setChassisNumber("");
       setEngineNumber("");
       setRegistrationDate("");
@@ -2277,12 +2277,12 @@ function ApplicationFormModal({
       setGroupName("");
       setColour("");
       setBodyType("");
-      setSeatingCapacity(5);
-      setGrossWeight(4990);
-      setUnladenWeight(1620);
-      setPayload(3370);
+      setSeatingCapacity("" as any);
+      setGrossWeight("" as any);
+      setUnladenWeight("" as any);
+      setPayload("" as any);
       setHorsePower("");
-      setCylinderCount(4);
+      setCylinderCount("" as any);
     }
   });
 
@@ -2359,8 +2359,8 @@ function ApplicationFormModal({
       setGroupName("");
       setMakerName("");
       setModelName("");
-      setFuelType("Petrol");
-      setVehicleClass("LMV");
+      setFuelType("");
+      setVehicleClass("");
       setChassisNumber("");
       setEngineNumber("");
       setRegistrationDate("");
@@ -7036,7 +7036,7 @@ function ApplicationFormModal({
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="GJ-01-AB-1234"
+                        placeholder=""
                         value={vehicleNumber}
                         onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
                         onBlur={vahaanAutoFill.handleBlur}
@@ -7059,7 +7059,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">PHONE</label>
                 <input
                   type="text"
-                  placeholder="+91 9XXXXXXXXX"
+                  placeholder=""
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7070,7 +7070,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">OWNER NAME</label>
                 <input
                   type="text"
-                  placeholder="Full name"
+                  placeholder=""
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7083,7 +7083,7 @@ function ApplicationFormModal({
                 </label>
                 <input
                   type="text"
-                  placeholder="Guardian name"
+                  placeholder=""
                   value={fatherHusbandName}
                   onChange={(e) => setFatherHusbandName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7094,7 +7094,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">CO (C/O)</label>
                 <input
                   type="text"
-                  placeholder="Care of name"
+                  placeholder=""
                   value={coName}
                   onChange={(e) => setCoName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7106,7 +7106,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">GROUP NAME</label>
                 <input
                   type="text"
-                  placeholder="Group / Fleet name"
+                  placeholder=""
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7118,7 +7118,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">ADDRESS</label>
                 <input
                   type="text"
-                  placeholder="House, street, city"
+                  placeholder=""
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7139,7 +7139,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">CHASSIS NUMBER</label>
                 <input
                   type="text"
-                  placeholder="17-char VIN"
+                  placeholder=""
                   value={chassisNumber}
                   onChange={(e) => setChassisNumber(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -7150,7 +7150,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">ENGINE NUMBER</label>
                 <input
                   type="text"
-                  placeholder="Engine Code"
+                  placeholder=""
                   value={engineNumber}
                   onChange={(e) => setEngineNumber(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono"
@@ -7164,6 +7164,7 @@ function ApplicationFormModal({
                   onChange={(e) => setFuelType(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                 >
+                  <option value="">Select Fuel Type</option>
                   <option value="Petrol">Petrol</option>
                   <option value="Diesel">Diesel</option>
                   <option value="CNG">CNG</option>
@@ -7176,7 +7177,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">VEHICLE CLASS</label>
                 <input
                   type="text"
-                  placeholder="LMV / LCV / HGV"
+                  placeholder=""
                   value={vehicleClass}
                   onChange={(e) => setVehicleClass(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7188,7 +7189,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">MAKER NAME</label>
                 <input
                   type="text"
-                  placeholder="Tata / Maruti / Ashok Leyland"
+                  placeholder=""
                   value={makerName}
                   onChange={(e) => setMakerName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7200,7 +7201,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">MODEL NAME</label>
                 <input
                   type="text"
-                  placeholder="Model name"
+                  placeholder=""
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7212,7 +7213,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">COLOUR</label>
                 <input
                   type="text"
-                  placeholder="Colour"
+                  placeholder=""
                   value={colour}
                   onChange={(e) => setColour(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7224,7 +7225,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">BODY TYPE</label>
                 <input
                   type="text"
-                  placeholder="Saloon / Truck / Bus"
+                  placeholder=""
                   value={bodyType}
                   onChange={(e) => setBodyType(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
@@ -7276,7 +7277,7 @@ function ApplicationFormModal({
                 <label className="font-semibold text-slate-700 block mb-1">HORSE POWER</label>
                 <input
                   type="text"
-                  placeholder="1497 cc"
+                  placeholder=""
                   value={horsePower}
                   onChange={(e) => setHorsePower(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
