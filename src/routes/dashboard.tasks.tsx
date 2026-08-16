@@ -2545,8 +2545,10 @@ function TaskTable({
                     return t.dueDate || (t as any).expiryDate || "—";
                   };
 
+                  const appType = (t as any).applicationType || acc?.applicationType || "Home";
+
                   return (
-                    <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr key={t.id} style={getApplicationTypeStyle(appType)} className="hover:bg-slate-50/60 transition-colors">
                       <td className="p-3 text-center font-mono text-slate-400 font-semibold">{srNo}</td>
                       <td className="p-3 font-bold text-blue-900">{info.clientName || "—"}</td>
                       <td className="p-3 font-mono text-slate-600">{clientDob}</td>
@@ -3808,7 +3810,25 @@ function TaskDetailsSheet({
       const updates: any = {
         status: selectedStatus,
         done: selectedStatus === "Completed" || selectedStatus === "COMPLETED",
+        applicationId: sheetApplicationId.trim(),
+        applicationType: sheetApplicationType,
       };
+
+      const appDocId = (activeTask as any).applicationDocId || activeTask.recordId || activeTask.id.replace("task-app-", "");
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        await setDoc(appRef, {
+          applicationId: sheetApplicationId.trim(),
+          applicationType: sheetApplicationType,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+        
+        const accRef = doc(db, "registry_accounting", appDocId);
+        await setDoc(accRef, {
+          applicationId: sheetApplicationId.trim(),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
       
       if (expectedDate) {
         updates.dueDate = new Date(expectedDate).toISOString();

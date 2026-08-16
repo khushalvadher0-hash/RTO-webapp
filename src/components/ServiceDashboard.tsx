@@ -328,6 +328,7 @@ export function ServiceDashboard({
       const updateData = {
         status: editStatus,
         taskStatus: editStatus,
+        done: ["COMPLETED", "RTO", "PASS", "FAIL", "RETEST"].includes(editStatus.toUpperCase()),
         assignee: editAssignee,
         assignedEmployeeName: assigneeName,
         assignedStaff: editAssignee,
@@ -422,11 +423,11 @@ export function ServiceDashboard({
         const app = appsMap.get(targetAppId) || apps.find((a: any) => a.id === t.id || a.id === t.recordId || a.id === t.applicationDocId);
         const resolvedSubModule = app?.subModule || (app?.licenseDetails ? "licence" : t.subModule || "services");
 
+        const s = (t.status || t.taskStatus || "").toUpperCase();
         if (resolvedSubModule === "licence") {
-          const s = (t.status || t.taskStatus || "").toUpperCase();
-          return ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"].includes(s) || t.done === true;
+          return ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"].includes(s);
         }
-        return t.status === "Completed" || t.taskStatus === "Completed" || t.done === true;
+        return s === "COMPLETED";
       });
 
       // Deduplicate by ID and enrich with Application & Accounting record details

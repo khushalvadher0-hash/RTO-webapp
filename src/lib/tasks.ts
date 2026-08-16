@@ -945,6 +945,12 @@ export async function updateTask(
       if (patch.reminderMinutes !== undefined) {
         updates.reminderMinutes = patch.reminderMinutes;
       }
+      if ((patch as any).applicationId !== undefined) {
+        updates.applicationId = (patch as any).applicationId;
+      }
+      if ((patch as any).applicationType !== undefined) {
+        updates.applicationType = (patch as any).applicationType;
+      }
       
       const mainEntry = activityEntry(actor, note ?? "Task updated");
       const existingActivity = serviceData.activity || [];
