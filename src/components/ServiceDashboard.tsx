@@ -22,6 +22,7 @@ import {
   getRecordPaymentStatus,
   getRecordServiceDetails,
   hasLegacyAccounting,
+  STAFF_USERS,
 } from "@/lib/records";
 import { RecordTable } from "@/components/RecordTable";
 import { ClientDetailWorkspace } from "./ClientDetailWorkspace";
@@ -44,13 +45,14 @@ import {
   Plus,
   Eye,
   FileText,
+  Pencil,
 } from "lucide-react";
 import { generateServicePDF } from "@/lib/pdfServiceHelper";
 import { ApplicationFullDetailsModal } from "./ApplicationFullDetailsModal";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ApplicationTypeBadge, getApplicationTypeStyle } from "./ApplicationTypeBadge";
-import { formatPaymentStatus } from "@/lib/formatting";
+import { formatPaymentStatus, formatDateDDMMYYYY } from "@/lib/formatting";
 import {
   Dialog,
   DialogContent,
@@ -223,6 +225,17 @@ export function ServiceDashboard({
   const [selectedAppModal, setSelectedAppModal] = useState<any>(null);
   const [appModalOpen, setAppModalOpen] = useState(false);
 
+  // Service Edit popup states
+  const [editingService, setEditingService] = useState<any | null>(null);
+  const [editStatus, setEditStatus] = useState("");
+  const [editAssignee, setEditAssignee] = useState("");
+  const [editApptDate, setEditApptDate] = useState("");
+  const [editRtoReceiptAmount, setEditRtoReceiptAmount] = useState("");
+  const [editAppId, setEditAppId] = useState("");
+  const [editAppType, setEditAppType] = useState("");
+  const [editRemarks, setEditRemarks] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const availableGroups = useMemo(() => {
     const groupsSet = new Set<string>();
     appsList.forEach((app) => {
@@ -295,6 +308,72 @@ export function ServiceDashboard({
     } catch (error) {
       console.error("Error updating licence status and expense:", error);
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleSaveServiceEdit = async () => {
+    if (!editingService) return;
+    setSavingEdit(true);
+    try {
+      if (editApptDate && !/^\d{2}\/\d{2}\/\d{4}$/.test(editApptDate)) {
+        throw new Error("Appointment Date must be in DD/MM/YYYY format.");
+      }
+      const docRef = doc(db, editingService.sourceCollection || "registry_services_v2", editingService.id);
+      
+      const matchedStaff = STAFF_USERS.find(s => s.username === editAssignee);
+      const assigneeName = matchedStaff ? matchedStaff.name : editAssignee;
+
+      const rtoReceiptAmountVal = parseFloat(editRtoReceiptAmount) || 0;
+
+      const updateData = {
+        status: editStatus,
+        taskStatus: editStatus,
+        assignee: editAssignee,
+        assignedEmployeeName: assigneeName,
+        assignedStaff: editAssignee,
+        appointmentDate: editApptDate,
+        rtoReceiptAmount: rtoReceiptAmountVal,
+        rtoReceiptNo: String(rtoReceiptAmountVal),
+        rtoExpense: rtoReceiptAmountVal,
+        applicationId: editAppId,
+        applicationType: editAppType,
+        remarks: editRemarks,
+        notes: editRemarks,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await setDoc(docRef, updateData, { merge: true });
+
+      const appDocId = editingService.applicationDocId || editingService.recordId || editingService.clientId || editingService.id.replace("task-app-", "");
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        await setDoc(appRef, {
+          applicationId: editAppId,
+          applicationType: editAppType,
+          applicationStatus: editStatus === "Completed" ? "COMPLETED" : editStatus,
+          rtoReceiptAmount: rtoReceiptAmountVal,
+          rtoReceiptNo: String(rtoReceiptAmountVal),
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+        
+        const accRef = doc(db, "registry_accounting", appDocId);
+        await setDoc(accRef, {
+          applicationId: editAppId,
+          rtoReceipt: rtoReceiptAmountVal,
+          rtoReceiptAmount: rtoReceiptAmountVal,
+          rtoReceiptNo: String(rtoReceiptAmountVal),
+          employeeName: assigneeName,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
+
+      toast.success("Service record updated successfully!");
+      setEditingService(null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to update service record");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -755,27 +834,27 @@ export function ServiceDashboard({
                       );
 
                       const getExpiryForService = (srvName: string) => {
-                        if (!ld) return t.dueDate || t.expiryDate || "—";
+                        if (!ld) return formatDateDDMMYYYY(t.dueDate || t.expiryDate);
                         if (srvName.includes("Learning") || srvName.includes("New Learning")) {
-                          return ld.newLearningLicence?.step1?.expiryDate || ld.newLearningLicence?.appointmentDate || t.dueDate || "—";
+                          return formatDateDDMMYYYY(ld.newLearningLicence?.step1?.expiryDate || ld.newLearningLicence?.appointmentDate || t.dueDate);
                         }
                         if (srvName.includes("Endorsement")) {
-                          return ld.dlNewLlEndorsement?.step2?.expiryDate || ld.dlNewLlEndorsement?.step3?.validityDate || t.dueDate || "—";
+                          return formatDateDDMMYYYY(ld.dlNewLlEndorsement?.step2?.expiryDate || ld.dlNewLlEndorsement?.step3?.validityDate || t.dueDate);
                         }
                         if (srvName.includes("Renew")) {
-                          return ld.llRenewClass?.step1?.expiryDate || ld.llRenewClass?.step3?.validityDate || t.dueDate || "—";
+                          return formatDateDDMMYYYY(ld.llRenewClass?.step1?.expiryDate || ld.llRenewClass?.step3?.validityDate || t.dueDate);
                         }
-                        return t.dueDate || t.expiryDate || "—";
+                        return formatDateDDMMYYYY(t.dueDate || t.expiryDate);
                       };
 
                       return (
                         <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
                           <td className="p-3 text-blue-600 font-bold">{t.clientName || "—"}</td>
-                          <td className="p-3 font-mono text-slate-600">{clientDob}</td>
+                          <td className="p-3 font-mono text-slate-600">{formatDateDDMMYYYY(clientDob)}</td>
                           <td className="p-3 font-mono text-slate-500">{t.mobileNumber || t.phone || "—"}</td>
                           <td className="p-3 font-mono font-semibold text-slate-900">
-                            {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                            {formatDateDDMMYYYY(t.appointmentDate)}
                           </td>
                           <td className="p-3 font-semibold text-indigo-600 text-center">{daysDiffStr}</td>
                           <td className="p-3 font-semibold text-amber-600 text-center">{daysAfterApptStr}</td>
@@ -830,21 +909,38 @@ export function ServiceDashboard({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                const linkedApp = appsList.find(
-                                  (a: any) =>
-                                    a.id === (t.applicationDocId || t.recordId || t.clientId || t.id.replace("task-app-", "")) ||
-                                    a.applicationId === t.applicationId
-                                );
-                                const appDoc = { ...t, ...linkedApp };
-                                setSelectedAppModal(appDoc);
-                                setAppModalOpen(true);
-                              }}
-                              title="View Full Licence Application Details"
-                            >
-                              <Eye className="size-3.5 text-blue-600" />
-                            </Button>
-                          </div>
-                        </td>
+                                  const linkedApp = appsList.find(
+                                    (a: any) =>
+                                      a.id === (t.applicationDocId || t.recordId || t.clientId || t.id.replace("task-app-", "")) ||
+                                      a.applicationId === t.applicationId
+                                  );
+                                  const appDoc = { ...linkedApp, ...t };
+                                  setSelectedAppModal(appDoc);
+                                  setAppModalOpen(true);
+                                }}
+                                title="View Full Licence Application Details"
+                              >
+                                <Eye className="size-3.5 text-blue-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingService(t);
+                                  setEditStatus(t.status || t.taskStatus || "Completed");
+                                  setEditAssignee(t.assignee || "");
+                                  setEditApptDate(t.appointmentDate ? formatDateDDMMYYYY(t.appointmentDate) : "");
+                                  setEditRtoReceiptAmount(t.rtoReceiptAmount || t.rtoExpense || t.rtoReceiptNo || "");
+                                  setEditAppId(t.applicationId || "");
+                                  setEditAppType(t.applicationType || "Home");
+                                  setEditRemarks(t.remarks || t.notes || "");
+                                }}
+                                title="Edit Licence Service"
+                              >
+                                <Pencil className="size-3.5 text-indigo-600" />
+                              </Button>
+                            </div>
+                          </td>
                       </tr>
                     );
                   }
@@ -855,7 +951,7 @@ export function ServiceDashboard({
                     <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/40 border-b border-slate-100 transition-colors">
                       <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
                       <td className="p-3 font-mono font-semibold text-slate-900">
-                        {t.appointmentDate ? new Date(t.appointmentDate).toLocaleDateString("en-IN") : "—"}
+                        {formatDateDDMMYYYY(t.appointmentDate)}
                       </td>
                       <td className="p-3 font-semibold text-indigo-600 text-center">{daysDiffStr}</td>
                       <td className="p-3 font-semibold text-amber-600 text-center">{daysAfterApptStr}</td>
@@ -868,14 +964,14 @@ export function ServiceDashboard({
                           {t.status || t.taskStatus || "Completed"}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.pucExpiryDate || ""}</td>
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.taxExpiryDate || ""}</td>
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.fitnessExpiryDate || ""}</td>
-                      {activeSubModule !== "services" && <td className="p-3 font-mono text-xs text-slate-600">{t.insuranceExpiryDate || ""}</td>}
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.nationalPermitExpiryDate || ""}</td>
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.gujaratPermitExpiryDate || ""}</td>
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.npAuthExpiryDate || ""}</td>
-                      <td className="p-3 font-mono text-xs text-slate-600">{t.registrationRenewalExpiryDate || ""}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.pucExpiryDate)}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.taxExpiryDate)}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.fitnessExpiryDate)}</td>
+                      {activeSubModule !== "services" && <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.insuranceExpiryDate)}</td>}
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.nationalPermitExpiryDate)}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.gujaratPermitExpiryDate)}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.npAuthExpiryDate)}</td>
+                      <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.registrationRenewalExpiryDate)}</td>
                       <td className="p-3 font-bold text-slate-900 font-mono">
                         ₹{Number(t.amount || t.totalAmount || 0).toLocaleString("en-IN")}
                       </td>
@@ -892,19 +988,36 @@ export function ServiceDashboard({
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              const appDoc =
-                                appsList.find(
-                                  (a: any) =>
-                                    a.id === (t.applicationDocId || t.recordId || t.clientId) ||
-                                    a.applicationId === t.applicationId ||
-                                    (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
-                                ) || t;
+                              const linkedApp = appsList.find(
+                                (a: any) =>
+                                  a.id === (t.applicationDocId || t.recordId || t.clientId) ||
+                                  a.applicationId === t.applicationId ||
+                                  (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
+                              );
+                              const appDoc = { ...linkedApp, ...t };
                               setSelectedAppModal(appDoc);
                               setAppModalOpen(true);
                             }}
                             title="View Completed Vaahan Service Details"
                           >
                             <Eye className="size-3.5 text-blue-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingService(t);
+                              setEditStatus(t.status || t.taskStatus || "Completed");
+                              setEditAssignee(t.assignee || "");
+                              setEditApptDate(t.appointmentDate ? formatDateDDMMYYYY(t.appointmentDate) : "");
+                              setEditRtoReceiptAmount(t.rtoReceiptAmount || t.rtoExpense || t.rtoReceiptNo || "");
+                              setEditAppId(t.applicationId || "");
+                              setEditAppType(t.applicationType || "Home");
+                              setEditRemarks(t.remarks || t.notes || "");
+                            }}
+                            title="Edit Service"
+                          >
+                            <Pencil className="size-3.5 text-indigo-600" />
                           </Button>
                         </div>
                       </td>
@@ -937,6 +1050,128 @@ export function ServiceDashboard({
       defaultServiceType={serviceType}
       onSuccess={refreshData}
     />
+
+    {/* Edit Completed Service Modal */}
+    {editingService && (
+      <Dialog open={!!editingService} onOpenChange={(open) => { if (!open) setEditingService(null); }}>
+        <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900">EDIT COMPLETED SERVICE</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-3 text-xs max-h-[60vh] overflow-y-auto">
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Status</label>
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                className="w-full p-2 border rounded-lg bg-white"
+              >
+                {(activeSubModule === "licence"
+                  ? ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"]
+                  : ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
+                ).map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Assigned Employee</label>
+              <select
+                value={editAssignee}
+                onChange={(e) => setEditAssignee(e.target.value)}
+                className="w-full p-2 border rounded-lg bg-white"
+              >
+                <option value="">Unassigned</option>
+                {STAFF_USERS.map((s) => (
+                  <option key={s.username} value={s.username}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Appointment Date (DD/MM/YYYY)</label>
+              <Input
+                type="text"
+                placeholder="DD/MM/YYYY"
+                value={editApptDate}
+                onChange={(e) => {
+                  let val = e.target.value.replace(/\D/g, "");
+                  if (val.length > 8) val = val.slice(0, 8);
+                  if (val.length > 4) {
+                    val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                  } else if (val.length > 2) {
+                    val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                  }
+                  setEditApptDate(val);
+                }}
+                className="w-full p-2 border rounded-lg"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">RTO Receipt Amount</label>
+              <Input
+                type="number"
+                value={editRtoReceiptAmount}
+                onChange={(e) => setEditRtoReceiptAmount(e.target.value)}
+                placeholder="Enter amount..."
+                className="w-full p-2 border rounded-lg"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Application No.</label>
+              <Input
+                type="text"
+                value={editAppId}
+                onChange={(e) => setEditAppId(e.target.value)}
+                placeholder="APL-XXXX-XXXX"
+                className="w-full p-2 border rounded-lg"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Application Type</label>
+              <select
+                value={editAppType}
+                onChange={(e) => setEditAppType(e.target.value)}
+                className="w-full p-2 border rounded-lg bg-white"
+              >
+                <option value="Home">Home</option>
+                <option value="Faceless">Faceless</option>
+                <option value="Out Of Bhavnagar">Out Of Bhavnagar</option>
+                <option value="CNG">CNG</option>
+                <option value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Remarks / Notes</label>
+              <Input
+                type="text"
+                value={editRemarks}
+                onChange={(e) => setEditRemarks(e.target.value)}
+                placeholder="Enter remarks..."
+                className="w-full p-2 border rounded-lg"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditingService(null)} className="px-4 py-2 text-xs rounded-lg">
+              CANCEL
+            </Button>
+            <Button onClick={handleSaveServiceEdit} disabled={savingEdit} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
+              {savingEdit ? "SAVING..." : "SAVE CHANGES"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )}
 
     {/* RTO Expense Popup Modal */}
     <Dialog open={showRtoExpenseModal} onOpenChange={(open) => { if (!open) handleCancelRtoExpense(); }}>

@@ -113,7 +113,7 @@ import { cn } from "@/lib/utils";
 import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
 import { toast } from "sonner";
 import { ApplicationTypeBadge } from "@/components/ApplicationTypeBadge";
-import { formatPaymentStatus } from "@/lib/formatting";
+import { formatPaymentStatus, formatDateDDMMYYYY } from "@/lib/formatting";
 
 export const Route = createFileRoute("/dashboard/tasks")({ component: TasksPage });
 
@@ -672,7 +672,11 @@ function TasksPage() {
       }
     });
 
-    return Array.from(map.values());
+    return Array.from(map.values()).filter((t: any) => {
+      const s = t.status || "";
+      const isCompleted = s === "Completed" || s === "COMPLETED" || s === "PASS" || s === "FAIL" || s === "RETEST";
+      return !isCompleted;
+    });
   }, [tasks, v2Services, vehicles, clients, leads, applications]);
 
   const detailsTask = allTasks.find((t) => t.id === detailsId) ?? null;
@@ -929,62 +933,110 @@ function TasksPage() {
   const handleSaveVahaanComplete = async () => {
     if (!vahaanCompleteTask) return;
     if (!vahaanRtoReceiptNo.trim()) {
-      toast.error("RTO Receipt Number is required");
+      toast.error("RTO Receipt Amount is required");
       return;
     }
     if (!vahaanAppointmentDate) {
       toast.error("Appointment Date is required");
       return;
     }
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(vahaanAppointmentDate)) {
+      toast.error("Appointment Date must be in DD/MM/YYYY format");
+      return;
+    }
 
     try {
       const appDocId = (vahaanCompleteTask as any).applicationDocId || vahaanCompleteTask.recordId || vahaanCompleteTask.id.replace("task-app-", "");
-      
-      await updateTask(
-        vahaanCompleteTask.id,
-        {
-          status: "COMPLETED" as TaskStatus,
-          done: true,
-          appointmentDate: vahaanAppointmentDate,
-          rtoReceiptNo: vahaanRtoReceiptNo.trim(),
-        },
-        session?.username || "system",
-        `Status → COMPLETED`
-      );
-      await setTaskDone(vahaanCompleteTask.id, true, session?.username || "system");
+      const rtoReceiptAmountVal = parseFloat(vahaanRtoReceiptNo.trim()) || 0;
+
+      let appData: any = {};
+      if (appDocId) {
+        const appSnap = await getDoc(doc(db, "registry_applications_v1", appDocId));
+        if (appSnap.exists()) {
+          appData = appSnap.data();
+        }
+      }
+
+      let accData: any = {};
+      if (appDocId) {
+        const accSnap = await getDoc(doc(db, "registry_accounting", appDocId));
+        if (accSnap.exists()) {
+          accData = accSnap.data();
+        }
+      }
+
+      const subModule = vahaanCompleteTask.subModule || appData.subModule || (appData.licenseDetails ? "licence" : "services");
+
+      const serviceRef = doc(db, "registry_services_v2", vahaanCompleteTask.id);
+      const serviceRecord = removeUndefined({
+        id: vahaanCompleteTask.id,
+        serviceId: vahaanCompleteTask.id,
+        status: "Completed",
+        taskStatus: "Completed",
+        done: true,
+        appointmentDate: vahaanAppointmentDate,
+        rtoReceiptAmount: rtoReceiptAmountVal,
+        rtoReceiptNo: String(rtoReceiptAmountVal),
+        rtoExpense: rtoReceiptAmountVal,
+        updatedAt: new Date().toISOString(),
+        createdAt: vahaanCompleteTask.createdAt || appData.createdAt || new Date().toISOString(),
+        
+        clientId: appDocId || vahaanCompleteTask.clientId || vahaanCompleteTask.recordId || "",
+        clientName: vahaanCompleteTask.clientName || appData.ownerName || appData.clientName || "",
+        ownerName: appData.ownerName || vahaanCompleteTask.clientName || "",
+        phone: appData.mobileNumber || vahaanCompleteTask.phone || vahaanCompleteTask.mobileNumber || "",
+        mobileNumber: appData.mobileNumber || vahaanCompleteTask.mobileNumber || "",
+        
+        vehicleId: vahaanCompleteTask.vehicleId || appData.vehicleId || "",
+        vehicleNumber: vahaanCompleteTask.vehicleNumber || appData.vehicleNumber || "",
+        
+        subModule: subModule,
+        applicationId: vahaanCompleteTask.applicationId || appData.applicationId || "",
+        applicationType: vahaanCompleteTask.applicationType || appData.applicationType || "Home",
+        
+        serviceName: vahaanCompleteTask.serviceName || (appData.services && appData.services.join(", ")) || vahaanCompleteTask.title || "",
+        serviceType: vahaanCompleteTask.serviceType || vahaanCompleteTask.serviceName || "",
+        services: appData.services || [],
+        
+        assignee: vahaanCompleteTask.assignee || "",
+        assignedEmployeeId: vahaanCompleteTask.assignedEmployeeId || "",
+        assignedEmployeeUid: vahaanCompleteTask.assignedEmployeeUid || "",
+        assignedEmployeeName: vahaanCompleteTask.assignedEmployeeName || "",
+        assignedEmployeeRole: vahaanCompleteTask.assignedEmployeeRole || "",
+        assignedStaff: vahaanCompleteTask.assignee || "",
+        
+        activity: vahaanCompleteTask.activity || [],
+        activityLogs: vahaanCompleteTask.activityLogs || [],
+        amount: accData.totalPayment || appData.amount || 0,
+        totalPaid: accData.advancePayment || appData.totalPaid || 0,
+        pendingAmount: accData.remainingPayment || appData.pendingAmount || 0,
+        paymentStatus: accData.paymentStatus || appData.paymentStatus || "Pending",
+      });
+
+      await setDoc(serviceRef, serviceRecord, { merge: true });
 
       if (appDocId) {
         const accRef = doc(db, "registry_accounting", appDocId);
         await setDoc(accRef, {
-          rtoReceiptNo: vahaanRtoReceiptNo.trim(),
+          rtoReceiptNo: String(rtoReceiptAmountVal),
+          rtoReceipt: rtoReceiptAmountVal,
+          rtoReceiptAmount: rtoReceiptAmountVal,
           updatedAt: new Date().toISOString(),
         }, { merge: true }).catch(() => {});
-      }
-
-      if (!vahaanCompleteTask.id.startsWith("task-app-")) {
-        const serviceRef = doc(db, "registry_services_v2", vahaanCompleteTask.id);
-        await setDoc(
-          serviceRef,
-          {
-            id: vahaanCompleteTask.id,
-            status: "COMPLETED",
-            taskStatus: "COMPLETED",
-            appointmentDate: vahaanAppointmentDate,
-            rtoReceiptNo: vahaanRtoReceiptNo.trim(),
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        ).catch(() => {});
       }
 
       if (appDocId) {
         const appRef = doc(db, "registry_applications_v1", appDocId);
         await updateDoc(appRef, {
           applicationStatus: "COMPLETED",
-          rtoReceiptNo: vahaanRtoReceiptNo.trim(),
+          rtoReceiptNo: String(rtoReceiptAmountVal),
+          rtoReceiptAmount: rtoReceiptAmountVal,
           updatedAt: new Date().toISOString(),
         }).catch(() => {});
       }
+
+      const { deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "registry_tasks", vahaanCompleteTask.id));
 
       toast.success("Task completed!");
       setShowVahaanCompleteModal(false);
@@ -992,6 +1044,7 @@ function TasksPage() {
       setVahaanRtoReceiptNo("");
       setVahaanAppointmentDate("");
     } catch (err: any) {
+      console.error(err);
       toast.error("Failed to complete task");
     }
   };
@@ -1099,53 +1152,68 @@ function TasksPage() {
 
     setSavingComplete(true);
     try {
+      if (completeAppointmentDate && !/^\d{2}\/\d{2}\/\d{4}$/.test(completeAppointmentDate)) {
+        throw new Error("Appointment Date must be in DD/MM/YYYY format.");
+      }
+      if (completeNewDob && !/^\d{2}\/\d{2}\/\d{4}$/.test(completeNewDob)) {
+        throw new Error("New Date of Birth must be in DD/MM/YYYY format.");
+      }
       const expNum = parseFloat(completeRtoExpense) || 0;
-
-      // Sync to registry_accounting first for transaction / validation check
       const appDocId = (completeModalTask as any).applicationDocId || completeModalTask.recordId || completeModalTask.id.replace("task-app-", "");
+
+      let appData: any = {};
+      if (appDocId) {
+        const appSnap = await getDoc(doc(db, "registry_applications_v1", appDocId));
+        if (appSnap.exists()) {
+          appData = appSnap.data();
+        }
+      }
+
+      let accData: any = {};
+      let totalCharges = 0;
+      let advancePaid = 0;
+      let rtoExpense = 0;
       if (appDocId) {
         const accRef = doc(db, "registry_accounting", appDocId);
         const accSnap = await getDoc(accRef);
-        
-        let totalCharges = 0;
-        let advancePaid = 0;
-        let rtoExpense = 0;
-        let existingAccData: any = {};
-        
         if (accSnap.exists()) {
-          existingAccData = accSnap.data();
-          totalCharges = Number(existingAccData.totalCharges) || 0;
-          advancePaid = Number(existingAccData.advancePaid) || 0;
-          rtoExpense = Number(existingAccData.rtoExpense) || 0;
+          accData = accSnap.data();
+          totalCharges = Number(accData.totalCharges) || 0;
+          advancePaid = Number(accData.advancePaid) || 0;
+          rtoExpense = Number(accData.rtoExpense) || 0;
         } else {
           totalCharges = Number((completeModalTask as any).totalCharges) || 0;
           advancePaid = Number((completeModalTask as any).advancePaid) || 0;
         }
+      }
 
-        const rtoReceipt = expNum;
-        if (rtoReceipt < 0) {
-          throw new Error("RTO Receipt cannot be negative.");
-        }
-        if (rtoReceipt > totalCharges) {
-          throw new Error(`RTO Receipt (₹${rtoReceipt}) cannot exceed Outstanding + Advance (₹${totalCharges}).`);
-        }
+      const rtoReceipt = expNum;
+      if (rtoReceipt < 0) {
+        throw new Error("RTO Receipt Amount cannot be negative.");
+      }
+      if (rtoReceipt > totalCharges) {
+        throw new Error(`RTO Receipt Amount (₹${rtoReceipt}) cannot exceed Outstanding + Advance (₹${totalCharges}).`);
+      }
 
-        const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
-        const profit = outstanding - rtoExpense;
+      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const profit = outstanding - rtoExpense;
 
+      if (appDocId) {
+        const accRef = doc(db, "registry_accounting", appDocId);
         await setDoc(accRef, {
-          ...existingAccData,
+          ...accData,
           id: appDocId,
-          applicationId: existingAccData.applicationId || (completeModalTask as any).applicationId || appDocId,
+          applicationId: accData.applicationId || (completeModalTask as any).applicationId || appDocId,
           applicationDocId: appDocId,
           taskId: completeModalTask.id,
-          vehicleNumber: existingAccData.vehicleNumber || (completeModalTask as any).vehicleNumber || "",
-          ownerName: existingAccData.ownerName || (completeModalTask as any).ownerName || (completeModalTask as any).clientName || "",
-          employeeId: completeModalTask.assignedEmployeeId || completeModalTask.assignedEmployeeUid || existingAccData.employeeId || "",
-          employeeName: completeModalTask.assignedEmployeeName || completeModalTask.assignee || existingAccData.employeeName || "Unassigned",
+          vehicleNumber: accData.vehicleNumber || (completeModalTask as any).vehicleNumber || "",
+          ownerName: accData.ownerName || (completeModalTask as any).ownerName || (completeModalTask as any).clientName || "",
+          employeeId: completeModalTask.assignedEmployeeId || completeModalTask.assignedEmployeeUid || accData.employeeId || "",
+          employeeName: completeModalTask.assignedEmployeeName || completeModalTask.assignee || accData.employeeName || "Unassigned",
           totalCharges,
           advancePaid,
           rtoReceipt,
+          rtoReceiptAmount: rtoReceipt,
           outstanding,
           rtoExpense,
           profit,
@@ -1153,80 +1221,82 @@ function TasksPage() {
         }, { merge: true });
       }
 
-      await updateTask(
-        completeModalTask.id,
-        {
-          status: "Completed",
-          done: true,
-          appointmentDate: completeAppointmentDate,
-          rtoExpense: expNum,
-          remarks: completeRemarks.trim(),
-          applicationId: completeApplicationId.trim(),
-          applicationType: completeApplicationType,
-        },
-        session?.username || "system",
-        `Status → Completed`,
-      );
-      await setTaskDone(completeModalTask.id, true, session?.username || "system");
+      const subModule = completeModalTask.subModule || appData.subModule || (appData.licenseDetails ? "licence" : "services");
 
-      // Sync to registry_services_v2 collection if exists or create service record
-      try {
-        if (!completeModalTask.id.startsWith("task-app-")) {
-          const serviceRef = doc(db, "registry_services_v2", completeModalTask.id);
-          await setDoc(
-            serviceRef,
-            removeUndefined({
-              id: completeModalTask.id,
-              status: "Completed",
-              taskStatus: "Completed",
-              appointmentDate: completeAppointmentDate,
-              rtoExpense: expNum,
-              remarks: completeRemarks.trim(),
-              notes: completeRemarks.trim(),
-              applicationId: completeApplicationId.trim(),
-              applicationType: completeApplicationType,
-              updatedAt: new Date().toISOString(),
-            }),
-            { merge: true }
-          );
-        }
-      } catch (svcErr) {
-        console.warn("Service doc sync notice:", svcErr);
-      }
+      const serviceRef = doc(db, "registry_services_v2", completeModalTask.id);
+      const serviceRecord = removeUndefined({
+        id: completeModalTask.id,
+        serviceId: completeModalTask.id,
+        status: "Completed",
+        taskStatus: "Completed",
+        done: true,
+        appointmentDate: completeAppointmentDate,
+        rtoReceiptAmount: expNum,
+        rtoReceiptNo: String(expNum),
+        rtoExpense: expNum,
+        updatedAt: new Date().toISOString(),
+        createdAt: completeModalTask.createdAt || appData.createdAt || new Date().toISOString(),
+        remarks: completeRemarks.trim(),
+        notes: completeRemarks.trim(),
 
-      // Sync back to registry_applications_v1 application doc
-      try {
-        if (appDocId) {
-          const appRef = doc(db, "registry_applications_v1", appDocId);
-          const appSnap = await getDoc(appRef);
-          if (appSnap.exists()) {
-            await updateDoc(appRef, {
-              applicationId: completeApplicationId.trim(),
-              applicationType: completeApplicationType,
-              updatedAt: new Date().toISOString(),
-            });
+        clientId: appDocId || completeModalTask.clientId || completeModalTask.recordId || "",
+        clientName: completeModalTask.clientName || appData.ownerName || appData.clientName || "",
+        ownerName: appData.ownerName || completeModalTask.clientName || "",
+        phone: appData.mobileNumber || completeModalTask.phone || completeModalTask.mobileNumber || "",
+        mobileNumber: appData.mobileNumber || completeModalTask.mobileNumber || "",
+        
+        vehicleId: completeModalTask.vehicleId || appData.vehicleId || "",
+        vehicleNumber: completeModalTask.vehicleNumber || appData.vehicleNumber || "",
+        
+        subModule: subModule,
+        applicationId: completeApplicationId.trim() || appData.applicationId || "",
+        applicationType: completeApplicationType || appData.applicationType || "Home",
+        
+        serviceName: completeModalTask.serviceName || (appData.services && appData.services.join(", ")) || completeModalTask.title || "",
+        serviceType: completeModalTask.serviceType || completeModalTask.serviceName || "",
+        services: appData.services || [],
+        
+        assignee: completeModalTask.assignee || "",
+        assignedEmployeeId: completeModalTask.assignedEmployeeId || "",
+        assignedEmployeeUid: completeModalTask.assignedEmployeeUid || "",
+        assignedEmployeeName: completeModalTask.assignedEmployeeName || "",
+        assignedEmployeeRole: completeModalTask.assignedEmployeeRole || "",
+        assignedStaff: completeModalTask.assignee || "",
+        
+        activity: completeModalTask.activity || [],
+        activityLogs: completeModalTask.activityLogs || [],
+        amount: totalCharges,
+        totalPaid: advancePaid,
+        pendingAmount: outstanding,
+        paymentStatus: outstanding <= 0 ? "Paid" : advancePaid > 0 ? "Partial" : "Pending",
+      });
+
+      await setDoc(serviceRef, serviceRecord, { merge: true });
+
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        const appSnap = await getDoc(appRef);
+        if (appSnap.exists()) {
+          const appUpdates: any = {
+            applicationId: completeApplicationId.trim(),
+            applicationType: completeApplicationType,
+            applicationStatus: "COMPLETED",
+            rtoReceiptAmount: expNum,
+            rtoReceiptNo: String(expNum),
+            updatedAt: new Date().toISOString(),
+          };
+          if (completeNewDob) {
+            appUpdates["licenseDetails.dateOfBirth"] = completeNewDob;
           }
-        }
-      } catch (appErr) {
-        console.warn("Application doc sync notice:", appErr);
-      }
-
-      // If Change Date of Birth In DL service task, update DOB in application record
-      if (completeNewDob && appDocId) {
-        try {
-          const appRef = doc(db, "registry_applications_v1", appDocId);
-          const appSnap = await getDoc(appRef);
-          if (appSnap.exists()) {
-            await updateDoc(appRef, {
-              "licenseDetails.dateOfBirth": completeNewDob,
-              updatedAt: new Date().toISOString(),
-            });
+          await updateDoc(appRef, appUpdates);
+          if (completeNewDob) {
             toast.success(`Applicant Date of Birth updated to ${completeNewDob}!`);
           }
-        } catch (dobErr) {
-          console.warn("Applicant DOB sync error:", dobErr);
         }
       }
+
+      const { deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "registry_tasks", completeModalTask.id));
 
       toast.success("Task completed and transferred to Services!");
       setCompleteModalTask(null);
@@ -1234,7 +1304,6 @@ function TasksPage() {
       setCompleteRtoExpense("");
       setCompleteRemarks("");
       setCompleteNewDob("");
-      setCompleteRemarks("");
     } catch (err: any) {
       toast.error(err.message || "Failed to complete task");
     } finally {
@@ -1869,12 +1938,26 @@ function TasksPage() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
-                <Label>RTO Receipt Number *</Label>
-                <Input value={vahaanRtoReceiptNo} onChange={(e) => setVahaanRtoReceiptNo(e.target.value)} />
+                <Label>RTO Receipt Amount *</Label>
+                <Input type="number" placeholder="₹ 5,000" value={vahaanRtoReceiptNo} onChange={(e) => setVahaanRtoReceiptNo(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>Appointment Date *</Label>
-                <Input type="date" value={vahaanAppointmentDate} onChange={(e) => setVahaanAppointmentDate(e.target.value)} />
+                <Label>Appointment Date (DD/MM/YYYY) *</Label>
+                <Input
+                  type="text"
+                  placeholder="DD/MM/YYYY"
+                  value={vahaanAppointmentDate}
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
+                    if (val.length > 8) val = val.slice(0, 8);
+                    if (val.length > 4) {
+                      val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                    } else if (val.length > 2) {
+                      val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                    }
+                    setVahaanAppointmentDate(val);
+                  }}
+                />
               </div>
             </div>
             <DialogFooter>
@@ -1951,25 +2034,35 @@ function TasksPage() {
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
-                  APPOINTMENT DATE
+                  APPOINTMENT DATE (DD/MM/YYYY)
                 </Label>
                 <Input
-                  type="date"
+                  type="text"
+                  placeholder="DD/MM/YYYY"
                   value={completeAppointmentDate}
-                  onChange={(e) => setCompleteAppointmentDate(e.target.value)}
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
+                    if (val.length > 8) val = val.slice(0, 8);
+                    if (val.length > 4) {
+                      val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                    } else if (val.length > 2) {
+                      val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                    }
+                    setCompleteAppointmentDate(val);
+                  }}
                   className="bg-slate-50 font-medium text-slate-900"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
-                  RTO RECEIPT
+                  RTO RECEIPT AMOUNT
                 </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₹</span>
                   <Input
                     type="number"
-                    placeholder="Enter RTO Receipt"
+                    placeholder="Enter RTO Receipt Amount"
                     value={completeRtoExpense}
                     onChange={(e) => setCompleteRtoExpense(e.target.value)}
                     className="pl-8 bg-slate-50 font-medium text-slate-900"
@@ -1983,9 +2076,19 @@ function TasksPage() {
                     NEW DATE OF BIRTH (REQUIRED FOR THIS SERVICE) *
                   </Label>
                   <Input
-                    type="date"
+                    type="text"
+                    placeholder="DD/MM/YYYY"
                     value={completeNewDob}
-                    onChange={(e) => setCompleteNewDob(e.target.value)}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/\D/g, "");
+                      if (val.length > 8) val = val.slice(0, 8);
+                      if (val.length > 4) {
+                        val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                      } else if (val.length > 2) {
+                        val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                      }
+                      setCompleteNewDob(val);
+                    }}
                     className="bg-white font-medium text-slate-900 border-amber-300"
                   />
                   <p className="text-[10px] text-amber-700">
@@ -2263,9 +2366,7 @@ function TaskTable({
               {paginatedTasks.map((t, idx) => {
                 const info = getTaskInfo(t);
                 const srNo = (currentPage - 1) * pageSize + idx + 1;
-                const creationDate = t.createdDate || t.createdAt
-                  ? new Date(t.createdDate || t.createdAt).toLocaleDateString("en-IN")
-                  : "—";
+                const creationDate = formatDateDDMMYYYY(t.createdDate || t.createdAt);
 
                 if (activeSubModule === "form5") {
                   const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;
@@ -2553,7 +2654,7 @@ function TaskTable({
                 const v = appRaw.vehicleDetails || appRaw.vehicleMaster || appRaw || {};
                 
                 const appCreatedDate = linkedApp?.createdAt || tRaw.createdDate || tRaw.createdAt;
-                const taskCreatedDateStr = appCreatedDate ? new Date(appCreatedDate).toLocaleDateString("en-IN") : "—";
+                const taskCreatedDateStr = formatDateDDMMYYYY(appCreatedDate);
                 
                 const vehicleNumber = tRaw.vehicleNumber || tRaw.vehicleId || linkedApp?.vehicleNumber || "—";
                 const ownerName = tRaw.clientName || tRaw.ownerName || linkedApp?.ownerName || "—";
@@ -2563,12 +2664,12 @@ function TaskTable({
                 
                 const assignedEmployee = tRaw.assignedEmployeeName || tRaw.assignee || linkedApp?.assignedEmployeeName || "Unassigned";
                 
-                const pucExp = appRaw.pucExpiryDate || v.pucExpiryDate || v.pucDetails?.expiryDate || "—";
-                const taxExp = appRaw.taxExpiryDate || v.taxExpiryDate || v.taxDetails?.expiryDate || "—";
-                const fitExp = appRaw.fitnessExpiryDate || v.fitnessExpiryDate || v.fitnessDetails?.expiryDate || "—";
-                const insExp = appRaw.insuranceExpiryDate || v.insuranceExpiryDate || v.insuranceDetails?.expiryDate || "—";
-                const natPermitExp = appRaw.nationalPermitExpiryDate || v.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate || "—";
-                const gujPermitExp = appRaw.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate || "—";
+                const pucExp = formatDateDDMMYYYY(appRaw.pucExpiryDate || v.pucExpiryDate || v.pucDetails?.expiryDate);
+                const taxExp = formatDateDDMMYYYY(appRaw.taxExpiryDate || v.taxExpiryDate || v.taxDetails?.expiryDate);
+                const fitExp = formatDateDDMMYYYY(appRaw.fitnessExpiryDate || v.fitnessExpiryDate || v.fitnessDetails?.expiryDate);
+                const insExp = formatDateDDMMYYYY(appRaw.insuranceExpiryDate || v.insuranceExpiryDate || v.insuranceDetails?.expiryDate);
+                const natPermitExp = formatDateDDMMYYYY(appRaw.nationalPermitExpiryDate || v.nationalPermitExpiryDate || v.permitDetails?.nationalPermitExpiryDate);
+                const gujPermitExp = formatDateDDMMYYYY(appRaw.gujaratPermitExpiryDate || v.gujaratPermitExpiryDate || v.permitDetails?.gujaratPermitExpiryDate);
                 
                 const acc = accountingMap?.get(linkedApp?.id || "") || accountingMap?.get(tRaw.applicationId || "") || accountingMap?.get(tRaw.id);
                 const totalPay = acc?.totalPayment ?? linkedApp?.amount ?? tRaw.amount ?? 0;
@@ -2847,12 +2948,12 @@ function TaskCards({
                   {t.appointmentDate && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Appt Date:</span>
-                      <span className="font-mono text-primary font-semibold">{new Date(t.appointmentDate).toLocaleDateString("en-IN")}</span>
+                      <span className="font-mono text-primary font-semibold">{formatDateDDMMYYYY(t.appointmentDate)}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Due Date:</span>
-                    <span className="font-mono">{t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN") : "—"}</span>
+                    <span className="font-mono">{formatDateDDMMYYYY(t.dueDate)}</span>
                   </div>
                 </div>
 
@@ -4345,7 +4446,7 @@ function TaskDetailsSheet({
                           {staffLabel(c.author) || c.author}
                         </span>
                         <span>
-                          {new Date(c.at).toLocaleDateString("en-IN")} •{" "}
+                          {formatDateDDMMYYYY(c.at)} •{" "}
                           {new Date(c.at).toLocaleTimeString("en-IN", {
                             hour: "2-digit",
                             minute: "2-digit",
@@ -4770,7 +4871,7 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
                           <span>
                             Due:{" "}
                             <strong className="text-amber-700">
-                              {new Date(st.dueDate).toLocaleDateString("en-IN")}
+                              {formatDateDDMMYYYY(st.dueDate)}
                             </strong>
                           </span>
                         )}
@@ -4809,7 +4910,7 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
                                 <div className="text-[8px] text-gray-400 mt-0.5 flex justify-between font-bold">
                                   <span>{staffLabel(rem.author) || rem.author}</span>
                                   <span>
-                                    {new Date(rem.at).toLocaleDateString("en-IN")} •{" "}
+                                    {formatDateDDMMYYYY(rem.at)} •{" "}
                                     {new Date(rem.at).toLocaleTimeString("en-IN", {
                                       hour: "2-digit",
                                       minute: "2-digit",

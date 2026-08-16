@@ -51,10 +51,10 @@ const getAppTypeColor = (type?: string) => {
   }
 };
 
+import { formatDateDDMMYYYY } from "@/lib/formatting";
+
 const formatDate = (dateStr?: string) => {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString("en-IN");
+  return formatDateDDMMYYYY(dateStr);
 };
 
 export function ApplicationFullDetailsModal({

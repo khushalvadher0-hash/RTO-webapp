@@ -13,12 +13,7 @@ export function formatCurrency(amount?: number): string {
 }
 
 export function formatDate(iso?: string): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatDateDDMMYYYY(iso);
 }
 
 export function formatTime(iso?: string): string {
@@ -38,4 +33,27 @@ export function formatPaymentStatus(status?: string): string {
   if (s === "pending" || s === "pending invoice" || s === "unpaid") return "બધા બાકી";
   return status;
 }
+
+export function formatDateDDMMYYYY(val?: string | Date | null): string {
+  if (!val) return "—";
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) {
+      if (typeof val === "string") {
+        const cleaned = val.trim();
+        if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(cleaned)) {
+          return cleaned.replace(/\-/g, "/");
+        }
+      }
+      return String(val);
+    }
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return String(val);
+  }
+}
+
 

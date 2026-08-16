@@ -61,6 +61,7 @@ import { SERVICE_TYPES, serviceLabel, STAFF_USERS } from "@/lib/records";
 import { generatePDF } from "@/lib/pdfGenerator";
 import { subscribeAllUsers, type UserRecord } from "@/lib/userService";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/formatting";
 import { WhatsAppMessagePanel } from "@/components/WhatsAppMessagePanel";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { storage, auth, db } from "@/lib/firebase";
@@ -1069,7 +1070,7 @@ export function ClientDetailWorkspace({
                           </span>
                           {t.dueDate && (
                             <span className="text-[10px] text-muted-foreground mt-0.5">
-                              Due: {new Date(t.dueDate).toLocaleDateString("en-IN")}
+                              Due: {formatDateDDMMYYYY(t.dueDate)}
                             </span>
                           )}
                         </div>
@@ -1120,7 +1121,7 @@ export function ClientDetailWorkspace({
                               </p>
                               <p>
                                 Uploaded by {docObj.uploadedBy} on{" "}
-                                {new Date(docObj.uploadedAt).toLocaleDateString("en-IN")}
+                                {formatDateDDMMYYYY(docObj.uploadedAt)}
                               </p>
                             </div>
                           ) : (
@@ -1234,7 +1235,7 @@ export function ClientDetailWorkspace({
                               {s.dueDate && (
                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                                   <Calendar className="size-3" />
-                                  Due: {new Date(s.dueDate).toLocaleDateString("en-IN")}
+                                  Due: {formatDateDDMMYYYY(s.dueDate)}
                                 </span>
                               )}
                               {s.applicationId && (
@@ -1414,7 +1415,7 @@ export function ClientDetailWorkspace({
                                   Reg Date
                                 </span>
                                 <span>
-                                  {new Date(v.registrationDate).toLocaleDateString("en-IN")}
+                                  {formatDateDDMMYYYY(v.registrationDate)}
                                 </span>
                               </div>
                             )}
@@ -1441,13 +1442,13 @@ export function ClientDetailWorkspace({
                                       </Badge>
                                       {(s as any).appointmentDate && (
                                         <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
-                                          Appt: {new Date((s as any).appointmentDate).toLocaleDateString("en-IN")}
+                                          Appt: {formatDateDDMMYYYY((s as any).appointmentDate)}
                                         </Badge>
                                       )}
                                       {s.dueDate && (
                                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                                           <Calendar className="size-3" />
-                                          Due: {new Date(s.dueDate).toLocaleDateString("en-IN")}
+                                          Due: {formatDateDDMMYYYY(s.dueDate)}
                                         </span>
                                       )}
                                       {s.applicationId && (

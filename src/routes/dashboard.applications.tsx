@@ -8086,17 +8086,27 @@ function ApplicationFormModal({
 
 const displayDate = (ts: any) => {
   if (!ts) return "—";
+  let d: Date;
   if (typeof ts === "string") {
-    const d = new Date(ts);
-    return isNaN(d.getTime()) ? ts : d.toLocaleDateString("en-IN");
+    if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(ts.trim())) {
+      return ts.trim().replace(/\-/g, "/");
+    }
+    d = new Date(ts);
+  } else if (ts.toDate && typeof ts.toDate === "function") {
+    d = ts.toDate();
+  } else if (ts.seconds) {
+    d = new Date(ts.seconds * 1000);
+  } else if (ts instanceof Date) {
+    d = ts;
+  } else {
+    return "—";
   }
-  if (ts.toDate && typeof ts.toDate === "function") {
-    return ts.toDate().toLocaleDateString("en-IN");
-  }
-  if (ts.seconds) {
-    return new Date(ts.seconds * 1000).toLocaleDateString("en-IN");
-  }
-  return "—";
+
+  if (isNaN(d.getTime())) return String(ts);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 function ApplicationDetailsModal({
