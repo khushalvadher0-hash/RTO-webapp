@@ -8490,110 +8490,6 @@ REGISTRY PRO`;
             </div>
           )}
 
-          {/* Vehicle Insurance breakdown */}
-          {v.insuranceDetails && (
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-blue-600" /> Vehicle Insurance Details
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-                <div>
-                  <span className="text-slate-400">Sub-Category:</span>
-                  <p className="font-semibold">{v.insuranceDetails.policySubCategory || "Motor / Vehicle"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Vehicle Type:</span>
-                  <p className="font-semibold">{v.insuranceDetails.vehicleType || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Company:</span>
-                  <p className="font-semibold">{v.insuranceDetails.company || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Agent:</span>
-                  <p className="font-semibold">{v.insuranceDetails.agent || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Agency:</span>
-                  <p className="font-semibold">{v.insuranceDetails.insuranceAgency || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Reference:</span>
-                  <p className="font-semibold">{v.insuranceDetails.reference || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Policy Type:</span>
-                  <p className="font-semibold">{v.insuranceDetails.policyType || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Fuel Type:</span>
-                  <p className="font-semibold">{v.insuranceDetails.fuelType || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Premium Excl-GST:</span>
-                  <p className="font-mono font-semibold">₹{v.insuranceDetails.premiumExclGst || 0}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">GST @18%:</span>
-                  <p className="font-mono font-semibold text-blue-700">₹{v.insuranceDetails.gstAmount || 0}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Total Premium:</span>
-                  <p className="font-mono font-bold text-slate-900">₹{v.insuranceDetails.totalPremium || v.insuranceDetails.amount || 0}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Net Commission:</span>
-                  <p className="font-mono font-bold text-emerald-700">₹{v.insuranceDetails.netCommission || 0}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* All Expiries Section */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-blue-600" /> All Vehicle Expiry Dates
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                <span className="text-[10px] text-slate-400 block font-semibold">INSURANCE EXPIRY</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {v.insuranceDetails?.expiryDate || "—"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                <span className="text-[10px] text-slate-400 block font-semibold">FITNESS EXPIRY</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {v.fitnessDetails?.expiryDate || "—"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                <span className="text-[10px] text-slate-400 block font-semibold">PERMIT EXPIRY</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {v.permitDetails?.expiryDate || "—"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                <span className="text-[10px] text-slate-400 block font-semibold">TAX EXPIRY</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {v.taxDetails?.isLumpsum ? "Lumpsum Tax" : v.taxDetails?.expiryDate || "—"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                <span className="text-[10px] text-slate-400 block font-semibold">PUC EXPIRY</span>
-                <span className="font-mono font-bold text-slate-800">{v.pucExpiryDate || "—"}</span>
-              </div>
-              <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                <span className="text-[10px] text-slate-400 block font-semibold">
-                  REGISTRATION VALIDITY
-                </span>
-                <span className="font-mono font-bold text-slate-800">
-                  {v.registrationDetails?.registrationValidity || "—"}
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Full Vehicle Technical Details Grid */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
@@ -8644,6 +8540,70 @@ REGISTRY PRO`;
               </div>
             </div>
           </div>
+
+          {/* All Expiries Section */}
+          {(() => {
+            const sub = (app.subModule || "").toLowerCase();
+            if (sub === "insurance") {
+              return (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" /> All Vehicle Expiry Dates
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <span className="text-[10px] text-slate-400 block font-semibold">INSURANCE EXPIRY</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {v.insuranceDetails?.expiryDate || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            if (sub === "vahaan" || sub === "services") {
+              return (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" /> All Vehicle Expiry Dates
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <span className="text-[10px] text-slate-400 block font-semibold">FITNESS EXPIRY</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {v.fitnessDetails?.expiryDate || "—"}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <span className="text-[10px] text-slate-400 block font-semibold">PERMIT EXPIRY</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {v.permitDetails?.expiryDate || "—"}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <span className="text-[10px] text-slate-400 block font-semibold">TAX EXPIRY</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {v.taxDetails?.isLumpsum ? "Lumpsum Tax" : v.taxDetails?.expiryDate || "—"}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <span className="text-[10px] text-slate-400 block font-semibold">PUC EXPIRY</span>
+                      <span className="font-mono font-bold text-slate-800">{v.pucExpiryDate || "—"}</span>
+                    </div>
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <span className="text-[10px] text-slate-400 block font-semibold">
+                        REGISTRATION VALIDITY
+                      </span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {v.registrationDetails?.registrationValidity || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Internal Notes */}
           {app.remarks && (
