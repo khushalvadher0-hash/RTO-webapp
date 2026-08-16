@@ -220,6 +220,45 @@ export function ClientDetailWorkspace({
     return unsub;
   }, []);
 
+  const getActiveSubModule = (serviceType: string): string => {
+    const s = (serviceType || "").toLowerCase();
+    if (s.includes("vahaan")) return "vahaan";
+    if (s.includes("licence") || s.includes("license")) return "licence";
+    if (s.includes("driving")) return "driving_school";
+    if (s.includes("insurance")) return "insurance";
+    if (s.includes("form 5") || s.includes("form5")) return "form5";
+    return "vahaan";
+  };
+
+  const getTemplateSubModule = (tpl: any): string => {
+    let sub = (tpl.subModule || "").toLowerCase();
+    if (sub === "services") sub = "vahaan";
+    if (sub) return sub;
+    const name = tpl.templateName.toLowerCase();
+    if (name.includes("insurance")) return "insurance";
+    if (name.includes("licence") || name.includes("license")) return "licence";
+    if (name.includes("form 5") || name.includes("form5")) return "form5";
+    if (name.includes("school") || name.includes("driving")) return "driving_school";
+    return "vahaan";
+  };
+
+  const filteredTemplates = useMemo(() => {
+    const activeSub = getActiveSubModule(serviceForm.serviceType || "");
+    return taskTemplates.filter((t: any) => {
+      const tplSub = getTemplateSubModule(t);
+      return tplSub.toLowerCase() === activeSub.toLowerCase();
+    });
+  }, [taskTemplates, serviceForm.serviceType]);
+
+  useEffect(() => {
+    if (serviceForm.templateId) {
+      const templateExists = filteredTemplates.some(t => t.id === serviceForm.templateId);
+      if (!templateExists) {
+        setServiceForm(prev => ({ ...prev, templateId: "" }));
+      }
+    }
+  }, [filteredTemplates, serviceForm.templateId]);
+
   const [previewDoc, setPreviewDoc] = useState<{ url: string; type: string; name: string } | null>(
     null,
   );
@@ -2096,7 +2135,7 @@ export function ClientDetailWorkspace({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none">None (Default Manual Task)</SelectItem>
-                  {taskTemplates.map((tpl) => (
+                  {filteredTemplates.map((tpl) => (
                     <SelectItem key={tpl.id} value={tpl.id}>
                       {tpl.templateName}
                     </SelectItem>

@@ -51,10 +51,21 @@ const SERVICE_OPTIONS = [
   "Custom Service",
 ];
 
+type SubModuleType = "vahaan" | "insurance" | "licence" | "form5" | "driving_school";
+
+const SUB_MODULES: { value: SubModuleType; label: string }[] = [
+  { value: "vahaan", label: "Vahaan" },
+  { value: "insurance", label: "Insurance" },
+  { value: "licence", label: "Licence" },
+  { value: "form5", label: "Form 5" },
+  { value: "driving_school", label: "Driving School" },
+];
+
 function TaskTemplatesPage() {
   const [session] = useState(() => getSession());
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleType>("vahaan");
 
   // Form / Dialog states
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -62,6 +73,7 @@ function TaskTemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [templateName, setTemplateName] = useState("");
   const [description, setDescription] = useState("");
+  const [templateSubModule, setTemplateSubModule] = useState<string>("vahaan");
   const [subtasks, setSubtasks] = useState<string[]>([]);
   const [newSubtask, setNewSubtask] = useState("");
   const [editingSubtaskIndex, setEditingSubtaskIndex] = useState<number | null>(null);
@@ -79,12 +91,30 @@ function TaskTemplatesPage() {
     return unsub;
   }, []);
 
+  const getTemplateSubModule = (tpl: TaskTemplate): string => {
+    if (tpl.subModule) return tpl.subModule;
+    const name = tpl.templateName.toLowerCase();
+    if (name.includes("insurance")) return "insurance";
+    if (name.includes("licence") || name.includes("license")) return "licence";
+    if (name.includes("form 5") || name.includes("form5")) return "form5";
+    if (name.includes("school") || name.includes("driving")) return "driving_school";
+    return "vahaan";
+  };
+
+  const filteredTemplates = useMemo(() => {
+    return templates.filter((tpl) => {
+      const sub = tpl.subModule || getTemplateSubModule(tpl);
+      return sub.toLowerCase() === activeSubModule.toLowerCase();
+    });
+  }, [templates, activeSubModule]);
+
   const handleOpenCreate = () => {
     if (!isAdmin) return toast.error("Only admins can manage templates.");
     setEditingTemplate(null);
     setViewOnly(false);
     setTemplateName("");
     setDescription("");
+    setTemplateSubModule(activeSubModule);
     setSubtasks([]);
     setNewSubtask("");
     setDialogOpen(true);
@@ -96,6 +126,7 @@ function TaskTemplatesPage() {
     setViewOnly(false);
     setTemplateName(tpl.templateName);
     setDescription(tpl.description || "");
+    setTemplateSubModule(getTemplateSubModule(tpl));
     setSubtasks(tpl.subtasks || []);
     setNewSubtask("");
     setDialogOpen(true);
@@ -106,6 +137,7 @@ function TaskTemplatesPage() {
     setViewOnly(true);
     setTemplateName(tpl.templateName);
     setDescription(tpl.description || "");
+    setTemplateSubModule(getTemplateSubModule(tpl));
     setSubtasks(tpl.subtasks || []);
     setNewSubtask("");
     setDialogOpen(true);
@@ -115,7 +147,7 @@ function TaskTemplatesPage() {
     if (!isAdmin) return toast.error("Only admins can duplicate templates.");
     try {
       const name = `Copy of ${tpl.templateName}`;
-      await createTemplate(name, tpl.description || "", tpl.subtasks || [], actor);
+      await createTemplate(name, tpl.description || "", tpl.subtasks || [], actor, getTemplateSubModule(tpl));
       toast.success("Template duplicated successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to duplicate template");
@@ -166,13 +198,14 @@ function TaskTemplatesPage() {
           {
             templateName: templateName.trim(),
             description: description.trim(),
+            subModule: templateSubModule,
             subtasks,
           },
           actor,
         );
         toast.success("Template updated successfully!");
       } else {
-        await createTemplate(templateName.trim(), description.trim(), subtasks, actor);
+        await createTemplate(templateName.trim(), description.trim(), subtasks, actor, templateSubModule);
         toast.success("Template created successfully!");
       }
       setDialogOpen(false);
@@ -299,15 +332,36 @@ function TaskTemplatesPage() {
         </div>
       )}
 
+      {/* Sub-module Filter Tabs */}
+      <div className="flex border-b border-slate-200 gap-6 text-xs select-none mb-4">
+        {SUB_MODULES.map((tab) => {
+          const isActive = activeSubModule === tab.value;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => setActiveSubModule(tab.value)}
+              className={`pb-2 font-bold transition-all relative ${
+                isActive ? "text-primary font-extrabold" : "text-muted-foreground hover:text-slate-700"
+              }`}
+            >
+              {tab.label}
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Table view */}
       <Card className="shadow-sm border border-slate-100">
         <CardContent className="p-0">
           {loading ? (
             <div className="text-center py-20 text-muted-foreground">Loading templates...</div>
-          ) : templates.length === 0 ? (
+          ) : filteredTemplates.length === 0 ? (
             <div className="text-center py-20 border border-dashed rounded-2xl bg-muted/5">
               <FileText className="size-10 text-muted-foreground/30 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No task templates configured yet.</p>
+              <p className="text-sm text-muted-foreground">No task templates configured for this sub-module yet.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -316,6 +370,7 @@ function TaskTemplatesPage() {
                   <tr className="border-b bg-slate-50 uppercase text-[9px] font-bold text-muted-foreground">
                     <th className="p-3.5">Template Name</th>
                     <th className="p-3.5">Description</th>
+                    <th className="p-3.5">Sub-Module</th>
                     <th className="p-3.5 text-center">Subtasks Count</th>
                     <th className="p-3.5">Created By</th>
                     <th className="p-3.5">Created Date</th>
@@ -324,20 +379,28 @@ function TaskTemplatesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y text-gray-700">
-                  {templates.map((tpl) => (
-                    <tr key={tpl.id} className="hover:bg-slate-50 transition">
-                      <td className="p-3.5 font-bold text-gray-900 flex items-center gap-1.5">
-                        {tpl.templateName}
-                        {tpl.isDefault && (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-100 text-blue-800">
-                            Default
+                  {filteredTemplates.map((tpl) => {
+                    const subMod = tpl.subModule || getTemplateSubModule(tpl);
+                    const subModLabel = SUB_MODULES.find(m => m.value === subMod)?.label || subMod;
+                    return (
+                      <tr key={tpl.id} className="hover:bg-slate-50 transition">
+                        <td className="p-3.5 font-bold text-gray-900 flex items-center gap-1.5">
+                          {tpl.templateName}
+                          {tpl.isDefault && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-100 text-blue-800">
+                              Default
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5 font-medium text-slate-500 max-w-xs truncate">{tpl.description || "—"}</td>
+                        <td className="p-3.5">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                            {subModLabel}
                           </span>
-                        )}
-                      </td>
-                      <td className="p-3.5 font-medium text-slate-500 max-w-xs truncate">{tpl.description || "—"}</td>
-                      <td className="p-3.5 text-center font-mono font-bold text-gray-800">{tpl.subtasks?.length || 0}</td>
-                      <td className="p-3.5 font-medium text-slate-600">{tpl.createdBy}</td>
-                      <td className="p-3.5 font-mono text-slate-500">{formatDate(tpl.createdAt)}</td>
+                        </td>
+                        <td className="p-3.5 text-center font-mono font-bold text-gray-800">{tpl.subtasks?.length || 0}</td>
+                        <td className="p-3.5 font-medium text-slate-600">{tpl.createdBy}</td>
+                        <td className="p-3.5 font-mono text-slate-500">{formatDate(tpl.createdAt)}</td>
                       <td className="p-3.5 font-mono text-slate-500">{tpl.updatedAt ? formatDate(tpl.updatedAt) : "—"}</td>
                       <td className="p-3.5 text-center">
                         <div className="flex gap-1.5 justify-center">
@@ -366,7 +429,7 @@ function TaskTemplatesPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -420,6 +483,25 @@ function TaskTemplatesPage() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="tplSubModule" className="text-xs font-bold uppercase text-gray-500">
+                  Sub Module *
+                </Label>
+                <select
+                  id="tplSubModule"
+                  disabled={viewOnly}
+                  value={templateSubModule}
+                  onChange={(e) => setTemplateSubModule(e.target.value)}
+                  className="w-full p-2 border rounded-lg bg-white text-xs"
+                >
+                  {SUB_MODULES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Subtasks Configurator */}

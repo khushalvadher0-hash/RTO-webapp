@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -60,7 +60,7 @@ export function AddClientWizardDialog({
   const [saving, setSaving] = useState(false);
 
   // Dropdown options from Firebase
-  const [taskTemplates, setTaskTemplates] = useState<{ id: string; templateName: string }[]>([]);
+  const [taskTemplates, setTaskTemplates] = useState<{ id: string; templateName: string; subModule?: string }[]>([]);
   const [staffList, setStaffList] = useState<{ uid: string; name: string; email: string }[]>([]);
 
   // Step 1: Client Form State
@@ -141,6 +141,7 @@ export function AddClientWizardDialog({
         const list = snap.docs.map((d) => ({
           id: d.id,
           templateName: d.data().templateName || "Untitled Template",
+          subModule: d.data().subModule || "",
         }));
         setTaskTemplates(list);
       },
@@ -169,6 +170,45 @@ export function AddClientWizardDialog({
       unsubStaff();
     };
   }, [open]);
+
+  const getActiveSubModule = (serviceType: string): string => {
+    const s = (serviceType || "").toLowerCase();
+    if (s.includes("vahaan")) return "vahaan";
+    if (s.includes("licence") || s.includes("license")) return "licence";
+    if (s.includes("driving")) return "driving_school";
+    if (s.includes("insurance")) return "insurance";
+    if (s.includes("form 5") || s.includes("form5")) return "form5";
+    return "vahaan";
+  };
+
+  const getTemplateSubModule = (tpl: any): string => {
+    let sub = (tpl.subModule || "").toLowerCase();
+    if (sub === "services") sub = "vahaan";
+    if (sub) return sub;
+    const name = tpl.templateName.toLowerCase();
+    if (name.includes("insurance")) return "insurance";
+    if (name.includes("licence") || name.includes("license")) return "licence";
+    if (name.includes("form 5") || name.includes("form5")) return "form5";
+    if (name.includes("school") || name.includes("driving")) return "driving_school";
+    return "vahaan";
+  };
+
+  const filteredTemplates = useMemo(() => {
+    const activeSub = getActiveSubModule(serviceForm.serviceType || "");
+    return taskTemplates.filter((t: any) => {
+      const tplSub = getTemplateSubModule(t);
+      return tplSub.toLowerCase() === activeSub.toLowerCase();
+    });
+  }, [taskTemplates, serviceForm.serviceType]);
+
+  useEffect(() => {
+    if (serviceForm.templateId) {
+      const templateExists = filteredTemplates.some(t => t.id === serviceForm.templateId);
+      if (!templateExists) {
+        setServiceForm(prev => ({ ...prev, templateId: "" }));
+      }
+    }
+  }, [filteredTemplates, serviceForm.templateId]);
 
   // Validation handlers
   const handleStep1Next = () => {
@@ -548,7 +588,7 @@ export function AddClientWizardDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none">None (Default Manual Task)</SelectItem>
-                    {taskTemplates.map((t) => (
+                    {filteredTemplates.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.templateName}
                       </SelectItem>

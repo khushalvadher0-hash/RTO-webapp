@@ -2104,12 +2104,37 @@ function ApplicationFormModal({
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(editingApp?.templateId || "");
 
+  const getTemplateSubModule = (tpl: any): string => {
+    let sub = (tpl.subModule || "").toLowerCase();
+    if (sub === "services") sub = "vahaan";
+    if (sub) return sub;
+    const name = tpl.templateName.toLowerCase();
+    if (name.includes("insurance")) return "insurance";
+    if (name.includes("licence") || name.includes("license")) return "licence";
+    if (name.includes("form 5") || name.includes("form5")) return "form5";
+    if (name.includes("school") || name.includes("driving")) return "driving_school";
+    return "vahaan";
+  };
+
   useEffect(() => {
     const unsub = subscribeToTemplates((data) => {
       setTaskTemplates(data);
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (selectedTemplateId) {
+      const activeTpl = taskTemplates.find(t => t.id === selectedTemplateId);
+      if (activeTpl) {
+        const tplSub = getTemplateSubModule(activeTpl);
+        const parentSub = activeSubModule === "services" ? "vahaan" : activeSubModule;
+        if (tplSub.toLowerCase() !== parentSub.toLowerCase()) {
+          setSelectedTemplateId("");
+        }
+      }
+    }
+  }, [activeSubModule, taskTemplates, selectedTemplateId]);
 
   // 1. Vahaan Auto Fill
   const vahaanAutoFill = useApplicationAutoFill({
@@ -5405,7 +5430,7 @@ function ApplicationFormModal({
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                       >
                         <option value="">Select Task Template</option>
-                        {taskTemplates.map((tpl) => (
+                        {taskTemplates.filter(t => getTemplateSubModule(t) === "licence").map((tpl) => (
                           <option key={tpl.id} value={tpl.id}>
                             {tpl.templateName}
                           </option>
@@ -5930,7 +5955,7 @@ function ApplicationFormModal({
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                       >
                         <option value="">Select Task Template</option>
-                        {taskTemplates.map((tpl) => (
+                        {taskTemplates.filter(t => getTemplateSubModule(t) === "form5").map((tpl) => (
                           <option key={tpl.id} value={tpl.id}>
                             {tpl.templateName}
                           </option>
@@ -6507,7 +6532,7 @@ function ApplicationFormModal({
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                       >
                         <option value="">Select Task Template</option>
-                        {taskTemplates.map((tpl) => (
+                        {taskTemplates.filter(t => getTemplateSubModule(t) === "driving_school").map((tpl) => (
                           <option key={tpl.id} value={tpl.id}>
                             {tpl.templateName}
                           </option>
@@ -6999,7 +7024,7 @@ function ApplicationFormModal({
                           className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                         >
                           <option value="">Select Task Template</option>
-                          {taskTemplates.map((tpl) => (
+                          {taskTemplates.filter(t => getTemplateSubModule(t) === "insurance").map((tpl) => (
                             <option key={tpl.id} value={tpl.id}>
                               {tpl.templateName}
                             </option>
@@ -7994,7 +8019,7 @@ function ApplicationFormModal({
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                   >
                     <option value="">Select Task Template</option>
-                    {taskTemplates.map((tpl) => (
+                    {taskTemplates.filter(t => getTemplateSubModule(t) === "vahaan").map((tpl) => (
                       <option key={tpl.id} value={tpl.id}>
                         {tpl.templateName}
                       </option>

@@ -1455,6 +1455,7 @@ export interface TaskTemplate {
   templateName: string;
   serviceType?: string;
   description?: string;
+  subModule?: string;
   subtasks: string[];
   isDefault: boolean;
   createdBy: string;
@@ -1469,6 +1470,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "Insurance",
     serviceType: "Insurance",
+    subModule: "insurance",
     subtasks: [
       "Call Client",
       "Collect RC",
@@ -1481,6 +1483,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "Fitness",
     serviceType: "Fitness",
+    subModule: "vahaan",
     subtasks: [
       "Call Client",
       "Collect RC",
@@ -1493,6 +1496,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "Tax",
     serviceType: "Tax",
+    subModule: "vahaan",
     subtasks: [
       "Call Client",
       "Verify Tax Amount",
@@ -1504,6 +1508,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "PUC",
     serviceType: "PUC",
+    subModule: "vahaan",
     subtasks: [
       "Call Client",
       "Vehicle Inspection",
@@ -1514,6 +1519,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "National Permit(Gujrat Permit)",
     serviceType: "National Permit(Gujrat Permit)" as any,
+    subModule: "vahaan",
     subtasks: [
       "Collect Documents",
       "Verify Permit Status",
@@ -1526,6 +1532,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "Gujarat Permit",
     serviceType: "Gujarat Permit",
+    subModule: "vahaan",
     subtasks: [
       "Collect Documents",
       "Verify Permit",
@@ -1538,6 +1545,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "License Renewal",
     serviceType: "License Renewal",
+    subModule: "licence",
     subtasks: [
       "Call Client",
       "Collect License",
@@ -1550,6 +1558,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "RC Transfer",
     serviceType: "RC Transfer",
+    subModule: "vahaan",
     subtasks: [
       "Collect RC",
       "Collect Documents",
@@ -1562,6 +1571,7 @@ export const DEFAULT_TEMPLATES_SPEC = [
   {
     templateName: "HP Termination",
     serviceType: "HP Termination",
+    subModule: "vahaan",
     subtasks: [
       "Collect NOC",
       "Collect Documents",
@@ -1590,6 +1600,7 @@ export async function provisionDefaultTemplates(): Promise<void> {
         await addDoc(colRef, {
           templateName: spec.templateName,
           serviceType: spec.serviceType,
+          subModule: spec.subModule || "vahaan",
           subtasks: spec.subtasks,
           isDefault: true,
           createdBy: "system",
@@ -1639,11 +1650,13 @@ export async function createTemplate(
   description: string,
   subtasks: string[],
   createdBy: string,
+  subModule?: string,
 ): Promise<TaskTemplate> {
   const payload = {
     templateName,
     description,
     subtasks,
+    subModule: subModule || "",
     isDefault: false,
     createdBy,
     createdAt: new Date().toISOString(),
