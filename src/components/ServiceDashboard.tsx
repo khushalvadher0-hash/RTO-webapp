@@ -503,7 +503,7 @@ export function ServiceDashboard({
         if (resolvedSubModule === "licence") {
           return ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"].includes(s);
         }
-        return s === "COMPLETED";
+        return ["COMPLETED", "IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "ONHOLD"].includes(s);
       });
 
       // Deduplicate by ID and enrich with Application & Accounting record details

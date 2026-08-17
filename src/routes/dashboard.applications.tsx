@@ -137,14 +137,14 @@ export const DEFAULT_APP_TYPES = [
 ];
 
 export function getAppTypeBadgeColor(appType?: string) {
-  if (!appType) return "bg-[#F8F9FA] text-slate-800 border-slate-200";
+  if (!appType) return "bg-transparent text-slate-800 border-slate-500";
   const clean = appType.trim().toLowerCase();
-  if (clean === "home") return "bg-[#F8F9FA] text-slate-800 border-slate-200";
-  if (clean === "faceless") return "bg-[#EAF4FF] text-blue-900 border-blue-200";
-  if (clean === "out of bhavnagar") return "bg-[#FFEAEA] text-rose-900 border-rose-200";
-  if (clean === "cng") return "bg-[#ECFFF0] text-emerald-900 border-emerald-200";
-  if (clean === "out of bhavnagar to bhavnagar") return "bg-[#FFF4E6] text-amber-900 border-amber-200";
-  return "bg-slate-100 text-slate-800 border-slate-200";
+  if (clean === "home") return "bg-transparent text-slate-700 border-slate-500";
+  if (clean === "faceless") return "bg-transparent text-blue-700 border-blue-600";
+  if (clean === "out of bhavnagar") return "bg-transparent text-rose-700 border-rose-600";
+  if (clean === "cng") return "bg-transparent text-emerald-700 border-emerald-600";
+  if (clean === "out of bhavnagar to bhavnagar") return "bg-transparent text-amber-700 border-amber-600";
+  return "bg-transparent text-slate-700 border-slate-500";
 }
 
 const SERVICE_GROUPS = [

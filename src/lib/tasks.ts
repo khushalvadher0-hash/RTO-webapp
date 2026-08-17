@@ -263,18 +263,12 @@ export async function updateSubtasks(
 
   const task = taskDoc.data() as Task;
   const progress = calculateProgress(subtasks);
-  const isCompleted = progress === 100 && subtasks.length > 0;
 
   const now = new Date().toISOString();
   
   // Create default activity entry
   let entry = activityEntry(actor, "Updated subtasks");
   let actLog = createActivity(actor, "Updated subtasks");
-  
-  if (isCompleted && task.status !== "Completed") {
-    entry = activityEntry(actor, "Task automatically completed because all subtasks are finished");
-    actLog = createActivity(actor, "Task automatically completed because all subtasks are finished", "status", task.status || "Assigned", "Completed");
-  }
 
   const cleanLog = removeUndefined(actLog);
   const updates = removeUndefined({
@@ -282,15 +276,6 @@ export async function updateSubtasks(
     progress,
     lastUpdatedBy: actor,
     lastUpdatedAt: now,
-    ...(isCompleted ? { 
-      status: "Completed", 
-      done: true,
-      completedAt: now,
-      completedOn: now,
-      completedBy: actor
-    } : { 
-      done: false 
-    }),
     activity: arrayUnion(entry),
     activityLogs: arrayUnion(cleanLog),
   });
@@ -360,14 +345,8 @@ export async function toggleSubtask(
     activityLogs: arrayUnion(actLog),
   };
 
-  // Auto-complete task when all subtasks done
-  if (isCompleted && !task.done) {
-    console.log("✅ All subtasks completed - marking task as complete");
-    updates.status = "Completed";
-    updates.done = true;
-  }
   // Mark as In Progress if any subtask becomes incomplete
-  else if (!isCompleted && task.done) {
+  if (!isCompleted && task.done) {
     console.log("🔄 Subtask reopened - marking task as in progress");
     updates.status = "In Progress";
     updates.done = false;

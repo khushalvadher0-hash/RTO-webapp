@@ -148,11 +148,11 @@ const statusBadgeClass = (s: string) => {
 const getApplicationTypeStyle = (appType?: string) => {
   if (!appType) return {};
   const t = appType.trim().toLowerCase();
-  if (t === "home") return { backgroundColor: "#F8F9FA" };
-  if (t === "faceless") return { backgroundColor: "#EAF4FF" };
-  if (t === "out of bhavnagar") return { backgroundColor: "#FFEAEA" };
-  if (t === "cng") return { backgroundColor: "#ECFFF0" };
-  if (t === "out of bhavnagar to bhavnagar") return { backgroundColor: "#FFF4E6" };
+  if (t === "home") return { borderColor: "#475569", color: "#475569", backgroundColor: "transparent" };
+  if (t === "faceless") return { borderColor: "#1d4ed8", color: "#1d4ed8", backgroundColor: "transparent" };
+  if (t === "out of bhavnagar") return { borderColor: "#b91c1c", color: "#b91c1c", backgroundColor: "transparent" };
+  if (t === "cng") return { borderColor: "#047857", color: "#047857", backgroundColor: "transparent" };
+  if (t === "out of bhavnagar to bhavnagar") return { borderColor: "#c2410c", color: "#c2410c", backgroundColor: "transparent" };
   return {};
 };
 
