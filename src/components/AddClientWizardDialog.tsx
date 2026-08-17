@@ -610,13 +610,12 @@ export function AddClientWizardDialog({
                       <SelectValue placeholder="Select Application Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Home">Home</SelectItem>
+                      <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
                       <SelectItem value="Faceless">Faceless</SelectItem>
                       <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
                       <SelectItem value="Out Of Bhavnagar To Bhavnagar">
                         Out Of Bhavnagar To Bhavnagar
                       </SelectItem>
-                      <SelectItem value="CNG">CNG</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -45,6 +45,7 @@ interface ExpiryItem {
   expiryDate: string;
   daysRemaining: number;
   isCritical: boolean;
+  appointmentDate?: string;
 }
 
 function exportCardToExcel(title: string, items: ExpiryItem[]) {
@@ -146,6 +147,22 @@ function computeDaysRemaining(expiryStr: string): number {
   const now = new Date();
   const diffTime = exp.getTime() - now.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+function formatApptDate(dateStr?: string): string {
+  if (!dateStr) return "";
+  const cleaned = dateStr.trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(cleaned)) return cleaned;
+  try {
+    const d = new Date(cleaned);
+    if (isNaN(d.getTime())) return cleaned;
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch {
+    return cleaned;
+  }
 }
 
 function DashboardTargetsSection({ activeSubModule }: { activeSubModule: SubModuleType }) {
@@ -382,14 +399,18 @@ function Overview() {
           const llExp = lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step2?.expiryDate || lic.llRenewClass?.step1?.expiryDate || lic.dlRenewRetest?.step2?.expiryDate;
           if (llExp) {
             const days = computeDaysRemaining(llExp);
-            llList.push({ ...baseInfo, expiryDate: llExp, daysRemaining: days, isCritical: days <= 15 });
+            const rawAppt = lic.newLearningLicence?.appointmentDate || lic.llRenewClass?.appointmentDate || app.appointmentDate || "";
+            const apptDate = rawAppt ? formatApptDate(rawAppt) : undefined;
+            llList.push({ ...baseInfo, expiryDate: llExp, daysRemaining: days, isCritical: days <= 15, appointmentDate: apptDate });
           }
 
           // Check DL Expiries
           const dlExp = lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step1?.validityDate || lic.llRenewClass?.step2?.validityDate || lic.dlRenewRetest?.step1?.validityDate;
           if (dlExp) {
             const days = computeDaysRemaining(dlExp);
-            dlList.push({ ...baseInfo, expiryDate: dlExp, daysRemaining: days, isCritical: days <= 15 });
+            const rawAppt = app.appointmentDate || "";
+            const apptDate = rawAppt ? formatApptDate(rawAppt) : undefined;
+            dlList.push({ ...baseInfo, expiryDate: dlExp, daysRemaining: days, isCritical: days <= 15, appointmentDate: apptDate });
           }
 
           // Check NT, TR, Hazardous validity expiries
@@ -731,20 +752,27 @@ function Overview() {
 
                         <div className="text-right">
                           <div className="font-mono text-[10px] text-slate-400">{item.expiryDate}</div>
-                          <span
-                            className={cn(
-                              "inline-block text-[10px] font-bold px-2 py-0.5 rounded-md mt-0.5",
-                              item.daysRemaining <= 0
-                                ? "bg-rose-100 text-rose-700"
-                                : item.daysRemaining <= 15
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-slate-100 text-slate-600"
-                            )}
-                          >
-                            {item.daysRemaining <= 0
-                              ? `${Math.abs(item.daysRemaining)}d overdue`
-                              : `${item.daysRemaining}d left`}
-                          </span>
+                          {item.appointmentDate && (
+                            <div className="text-[10px] text-blue-600 font-bold mt-0.5 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 inline-block">
+                              Appt: {item.appointmentDate}
+                            </div>
+                          )}
+                          <div className="mt-0.5">
+                            <span
+                              className={cn(
+                                "inline-block text-[10px] font-bold px-2 py-0.5 rounded-md",
+                                item.daysRemaining <= 0
+                                  ? "bg-rose-100 text-rose-700"
+                                  : item.daysRemaining <= 15
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-slate-100 text-slate-600"
+                              )}
+                            >
+                              {item.daysRemaining <= 0
+                                ? `${Math.abs(item.daysRemaining)}d overdue`
+                                : `${item.daysRemaining}d left`}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     ))

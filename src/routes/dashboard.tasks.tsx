@@ -115,6 +115,41 @@ import { toast } from "sonner";
 import { ApplicationTypeBadge } from "@/components/ApplicationTypeBadge";
 import { formatPaymentStatus, formatDateDDMMYYYY } from "@/lib/formatting";
 
+const getLicenseMaxSteps = (lic: any) => {
+  if (!lic) return 1;
+  if (lic.newLearningLicence?.enabled) return 2;
+  if (lic.dlNewLlEndorsement?.enabled) return 3;
+  if (lic.llRenewClass?.enabled) return 3;
+  if (lic.dlRenewRetest?.enabled) return 3;
+  return 1;
+};
+
+const filterSubtasksByStep = (subtasks: any[], step: number) => {
+  if (!subtasks) return [];
+  const hasStepLabel = subtasks.some(s => s.title.toLowerCase().includes("step ") || s.title.toLowerCase().includes("ll") || s.title.toLowerCase().includes("dl"));
+  if (!hasStepLabel) return subtasks;
+
+  return subtasks.filter(s => {
+    const title = s.title.toLowerCase();
+    if (step === 1) {
+      if (title.includes("step 2") || title.includes("step 2:") || title.includes("step 2 ") || title.includes("step2")) return false;
+      if (title.includes("step 3") || title.includes("step 3:") || title.includes("step 3 ") || title.includes("step3")) return false;
+      if (title.includes("dl") && !title.includes("ll") && !title.includes("learning")) return false;
+      return true;
+    } else if (step === 2) {
+      if (title.includes("step 1") || title.includes("step 1:") || title.includes("step 1 ") || title.includes("step1")) return false;
+      if (title.includes("step 3") || title.includes("step 3:") || title.includes("step 3 ") || title.includes("step3")) return false;
+      if (title.includes("ll") && !title.includes("dl")) return false;
+      return true;
+    } else if (step === 3) {
+      if (title.includes("step 1") || title.includes("step 1:") || title.includes("step 1 ") || title.includes("step1")) return false;
+      if (title.includes("step 2") || title.includes("step 2:") || title.includes("step 2 ") || title.includes("step2")) return false;
+      return true;
+    }
+    return true;
+  });
+};
+
 export const Route = createFileRoute("/dashboard/tasks")({ component: TasksPage });
 
 type SortMode = "latest" | "oldest" | "priority" | "due";
@@ -1465,10 +1500,9 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All App Types</SelectItem>
-                  <SelectItem value="Home">Home</SelectItem>
+                  <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
                   <SelectItem value="Faceless">Faceless</SelectItem>
                   <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                  <SelectItem value="CNG">CNG</SelectItem>
                   <SelectItem value="Out Of Bhavnagar To Bhavnagar">
                     Out Of Bhavnagar To Bhavnagar
                   </SelectItem>
@@ -1671,10 +1705,9 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All App Types</SelectItem>
-                  <SelectItem value="Home">Home</SelectItem>
+                  <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
                   <SelectItem value="Faceless">Faceless</SelectItem>
                   <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                  <SelectItem value="CNG">CNG</SelectItem>
                   <SelectItem value="Out Of Bhavnagar To Bhavnagar">
                     Out Of Bhavnagar To Bhavnagar
                   </SelectItem>
@@ -2107,10 +2140,9 @@ function TasksPage() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Home">Home</SelectItem>
+                      <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
                       <SelectItem value="Faceless">Faceless</SelectItem>
                       <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                      <SelectItem value="CNG">CNG</SelectItem>
                       <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
                     </SelectContent>
                   </Select>
@@ -3649,6 +3681,7 @@ function TaskDetailsSheet({
   isAdmin,
   onEdit,
   activeSubModule = "services",
+  onTriggerCompleteModal,
 }: {
   open: boolean;
   onClose: () => void;
@@ -3662,6 +3695,7 @@ function TaskDetailsSheet({
   isAdmin: boolean;
   onEdit: (t: Task) => void;
   activeSubModule?: SubModuleType;
+  onTriggerCompleteModal?: (t: Task) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"details" | "comments" | "attachments" | "activity">("details");
   const [remarkInput, setRemarkInput] = useState("");
@@ -3826,6 +3860,39 @@ function TaskDetailsSheet({
 
   const handleMarkCompleted = async () => {
     try {
+      const isLicenceTask = (activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence");
+      const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
+      const maxSteps = isLicenceTask ? getLicenseMaxSteps(lic) : 1;
+      const currentStep = (activeTask as any).currentStep || 1;
+
+      if (isLicenceTask && currentStep < maxSteps) {
+        const nextStep = currentStep + 1;
+        const newApptDateStr = prompt(
+          `Step ${currentStep} completed! Enter new appointment date for Step ${nextStep} (DD/MM/YYYY):`,
+          new Date().toLocaleDateString("en-GB")
+        );
+        
+        if (newApptDateStr === null) {
+          return; // User cancelled
+        }
+
+        const updates: any = {
+          currentStep: nextStep,
+          appointmentDate: newApptDateStr,
+          status: "In Progress" as TaskStatus,
+          done: false,
+        };
+
+        if (remarkInput.trim()) {
+          await addComment(activeTask.id, actor, remarkInput.trim());
+          setRemarkInput("");
+        }
+
+        await updateTask(activeTask.id, updates, actor, `Step ${currentStep} completed. Started Step ${nextStep}.`);
+        toast.success(`Step ${currentStep} completed! Started Step ${nextStep}.`);
+        return;
+      }
+
       const now = new Date().toISOString();
       const statusVal = activeSubModule === "services" ? "COMPLETED" : "Completed";
       const updates = {
@@ -3853,6 +3920,21 @@ function TaskDetailsSheet({
       toast.success("Task marked as completed!");
     } catch (err: any) {
       toast.error(err.message || "Failed to mark completed");
+    }
+  };
+
+  const handleTriggerCompleteFlow = () => {
+    const isLicenceTask = (activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence");
+    const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
+    const maxSteps = isLicenceTask ? getLicenseMaxSteps(lic) : 1;
+    const currentStep = (activeTask as any).currentStep || 1;
+
+    if (isLicenceTask && currentStep < maxSteps) {
+      handleMarkCompleted();
+    } else {
+      if (onTriggerCompleteModal) {
+        onTriggerCompleteModal(activeTask);
+      }
     }
   };
 
@@ -4033,31 +4115,6 @@ function TaskDetailsSheet({
           {/* 1. Task Progress Section */}
           <CollapsibleSection title="Task Progress" defaultOpen={true}>
             <div className="space-y-4">
-              {/* Status Selection Buttons */}
-              <div>
-                <Label className="text-xs uppercase font-bold text-gray-400 block mb-2">Status Stages</Label>
-                <div className="flex flex-wrap gap-2">
-                  {TASK_STATUS_OPTIONS.map((statusOption) => {
-                    const isSelected = selectedStatus === statusOption;
-                    return (
-                      <button
-                        key={statusOption}
-                        type="button"
-                        onClick={() => setSelectedStatus(statusOption)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-bold border transition",
-                          isSelected
-                            ? "bg-primary text-white border-primary shadow-sm"
-                            : "bg-white text-gray-600 border-gray-200 hover:bg-slate-50"
-                        )}
-                      >
-                        {statusOption}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Application Details */}
               <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border rounded-xl">
                 <div className="space-y-1">
@@ -4077,10 +4134,9 @@ function TaskDetailsSheet({
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Home">Home</SelectItem>
+                      <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
                       <SelectItem value="Faceless">Faceless</SelectItem>
                       <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                      <SelectItem value="CNG">CNG</SelectItem>
                       <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
                     </SelectContent>
                   </Select>
@@ -4131,6 +4187,7 @@ function TaskDetailsSheet({
               <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs">
                 {(() => {
                   const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
+                  const currentStep = (activeTask as any).currentStep || 1;
                   
                   // Render 2 steps for New Learning Licence or 3 steps for DL New LL Endorsement / Renewals
                   return (
@@ -4154,10 +4211,19 @@ function TaskDetailsSheet({
                       )}
 
                       {/* Step 1 */}
-                      <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
+                      <div className={cn(
+                        "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
+                        currentStep === 1 
+                          ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
+                          : "bg-slate-100/40 border-slate-200 opacity-60"
+                      )}>
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
-                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span>
+                          <span className={cn(
+                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                            currentStep === 1 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                          )}>1</span>
                           <span>STEP 1: LEARNING / DL DETAILS</span>
+                          {currentStep === 1 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                           <div><span className="font-semibold text-slate-500 block">LL / DL NO:</span> {lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || "GJ0120260001234"}</div>
@@ -4167,10 +4233,19 @@ function TaskDetailsSheet({
                       </div>
 
                       {/* Step 2 */}
-                      <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
+                      <div className={cn(
+                        "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
+                        currentStep === 2 
+                          ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
+                          : "bg-slate-100/40 border-slate-200 opacity-60"
+                      )}>
                         <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
-                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">2</span>
+                          <span className={cn(
+                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                            currentStep === 2 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                          )}>2</span>
                           <span>STEP 2: DRIVING LICENCE DETAILS</span>
+                          {currentStep === 2 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                           <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
@@ -4190,10 +4265,19 @@ function TaskDetailsSheet({
 
                       {/* Step 3 (For 3-step License Services) */}
                       {(lic.dlNewLlEndorsement?.enabled || lic.llRenewClass?.enabled || lic.dlRenewRetest?.enabled) && (
-                        <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm space-y-1">
+                        <div className={cn(
+                          "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
+                          currentStep === 3 
+                            ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
+                            : "bg-slate-100/40 border-slate-200 opacity-60"
+                        )}>
                           <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
-                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">3</span>
+                            <span className={cn(
+                              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                              currentStep === 3 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                            )}>3</span>
                             <span>STEP 3: FINAL DL DETAILS & ENDORSEMENT</span>
+                            {currentStep === 3 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                             <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || "—"}</div>
@@ -4215,7 +4299,10 @@ function TaskDetailsSheet({
               <div className="space-y-4">
                 {/* Progress bar character blocks tracker */}
                 {(() => {
-                  const items = activeTask.subtasks ?? [];
+                  const currentStep = (activeTask as any).currentStep || 1;
+                  const isLicenceTask = activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence";
+                  const rawItems = activeTask.subtasks ?? [];
+                  const items = isLicenceTask ? filterSubtasksByStep(rawItems, currentStep) : rawItems;
                   const completedCount = items.filter((s) => s.completed).length;
                   const remainingCount = items.length - completedCount;
                   const pct = items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
@@ -4247,7 +4334,7 @@ function TaskDetailsSheet({
                   );
                 })()}
 
-                <SubtasksSection task={activeTask} actor={actor} isAdmin={isAdmin} />
+                <SubtasksSection task={activeTask} actor={actor} isAdmin={isAdmin} onCompleteTrigger={handleTriggerCompleteFlow} />
               </div>
             </CollapsibleSection>
           )}
@@ -4266,7 +4353,6 @@ function TaskDetailsSheet({
                 <Label className="text-xs uppercase font-bold text-gray-400">Details</Label>
                 <dl className="grid grid-cols-2 gap-3 text-sm mt-1 bg-white p-3 rounded-lg border">
                   <Meta label="Application Number" value={linkedApp?.applicationId || activeTask.applicationId || "—"} />
-                  <Meta label="Reference" value={activeTask.reference || (linkedApp ? `${linkedApp.applicationId} - ${linkedApp.vehicleNumber}` : activeTask.title) || "—"} />
                   <Meta label="Vehicle Number" value={linkedApp?.vehicleNumber || linkedVehicle?.vehicleNumber || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).vehicleNum || "—"} />
                   <Meta label="Client Name" value={linkedApp?.ownerName || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientName || "—"} />
                   <Meta label="Mobile Number" value={linkedApp?.mobileNumber || (getTaskInfoHelper(activeTask, clients, leads, vehicles)).clientPhone || "—"} />
@@ -4606,7 +4692,7 @@ function ReassignmentSection({ task, actor }: { task: Task; actor: string }) {
   );
 }
 
-function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; isAdmin: boolean }) {
+function SubtasksSection({ task, actor, isAdmin, onCompleteTrigger }: { task: Task; actor: string; isAdmin: boolean; onCompleteTrigger?: () => void }) {
   const [employees, setEmployees] = useState<any[]>([]);
 
   useEffect(() => {
@@ -4623,7 +4709,15 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
     return Math.round((comp / subs.length) * 100);
   };
 
-  const items = useMemo(() => task.subtasks ?? [], [task.subtasks]);
+  const currentStep = (task as any).currentStep || 1;
+  const isLicenceTask = task.applicationType === "Licence" || (task as any).subModule === "licence";
+  const items = useMemo(() => {
+    const allItems = task.subtasks ?? [];
+    if (isLicenceTask) {
+      return filterSubtasksByStep(allItems, currentStep);
+    }
+    return allItems;
+  }, [task.subtasks, isLicenceTask, currentStep]);
   const completed = items.filter((s) => s.completed).length;
   const pct = calculateProgress(items);
 
@@ -4670,6 +4764,10 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
     });
     await updateSubtasks(task.id, updated, actor);
     toast.success(`Subtask status updated to ${nextStatus}!`);
+    const allCompleted = updated.every(s => s.completed);
+    if (allCompleted && onCompleteTrigger) {
+      onCompleteTrigger();
+    }
   };
 
   // Add Subtask
@@ -4715,6 +4813,10 @@ function SubtasksSection({ task, actor, isAdmin }: { task: Task; actor: string; 
     });
     await updateSubtasks(task.id, updated, actor);
     toast.success(sub.completed ? "Subtask reopened" : "Subtask completed!");
+    const allCompleted = updated.every(s => s.completed);
+    if (allCompleted && onCompleteTrigger) {
+      onCompleteTrigger();
+    }
   };
 
   // Edit Subtask Dialog Save

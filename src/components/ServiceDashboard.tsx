@@ -259,22 +259,178 @@ export function ServiceDashboard({
   // RTO Expense popup states
   const [showRtoExpenseModal, setShowRtoExpenseModal] = useState(false);
   const [rtoExpenseValue, setRtoExpenseValue] = useState<number>(0);
-  const [pendingStatusChange, setPendingStatusChange] = useState<{ task: any; newStatus: string } | null>(null);
+  const [rtoApptDate, setRtoApptDate] = useState("");
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ task: any; newStatus: string; isVahaan?: boolean } | null>(null);
+
+  // Licence PASS popup states
+  const [showLicencePassModal, setShowLicencePassModal] = useState(false);
+  const [licNo, setLicNo] = useState("");
+  const [licIssueDate, setLicIssueDate] = useState("");
+  const [licExpiryDate, setLicExpiryDate] = useState("");
 
   const handleLicenceStatusChange = (task: any, newStatus: string) => {
     if (newStatus === "FAIL" || newStatus === "RETEST") {
-      setPendingStatusChange({ task, newStatus });
+      setPendingStatusChange({ task, newStatus, isVahaan: false });
       setRtoExpenseValue(task.rtoExpense || 0);
+      setRtoApptDate(task.appointmentDate || "");
       setShowRtoExpenseModal(true);
+    } else if (newStatus === "PASS") {
+      setPendingStatusChange({ task, newStatus, isVahaan: false });
+      
+      const currentStep = task.currentStep || 1;
+      const lic = task.licenseDetails || {};
+      let existNo = "";
+      let existIssue = "";
+      let existExpiry = "";
+
+      if (lic.newLearningLicence?.enabled) {
+        if (currentStep === 1) {
+          existNo = lic.newLearningLicence.step1?.llNumber || "";
+          existIssue = lic.newLearningLicence.step1?.issueDate || "";
+          existExpiry = lic.newLearningLicence.step1?.expiryDate || "";
+        } else {
+          existNo = lic.newLearningLicence.step2?.dlNumber || "";
+          existIssue = lic.newLearningLicence.step2?.issueDate || "";
+          existExpiry = lic.newLearningLicence.step2?.validityDate || "";
+        }
+      } else if (lic.dlNewLlEndorsement?.enabled) {
+        if (currentStep === 1) {
+          existNo = lic.dlNewLlEndorsement.step1?.dlNumber || "";
+          existIssue = lic.dlNewLlEndorsement.step1?.issueDate || "";
+          existExpiry = lic.dlNewLlEndorsement.step1?.validityDate || "";
+        } else if (currentStep === 2) {
+          existNo = lic.dlNewLlEndorsement.step2?.llNumber || "";
+          existIssue = lic.dlNewLlEndorsement.step2?.issueDate || "";
+          existExpiry = lic.dlNewLlEndorsement.step2?.expiryDate || "";
+        } else {
+          existNo = lic.dlNewLlEndorsement.step3?.dlNumber || "";
+          existIssue = lic.dlNewLlEndorsement.step3?.issueDate || "";
+          existExpiry = lic.dlNewLlEndorsement.step3?.validityDate || "";
+        }
+      } else if (lic.llRenewClass?.enabled) {
+        if (currentStep === 1) {
+          existNo = lic.llRenewClass.step1?.llNumber || "";
+          existIssue = lic.llRenewClass.step1?.issueDate || "";
+          existExpiry = lic.llRenewClass.step1?.expiryDate || "";
+        } else if (currentStep === 2) {
+          existNo = lic.llRenewClass.step2?.dlNumber || "";
+          existIssue = lic.llRenewClass.step2?.issueDate || "";
+          existExpiry = lic.llRenewClass.step2?.validityDate || "";
+        } else {
+          existNo = lic.llRenewClass.step3?.dlNumber || "";
+          existIssue = lic.llRenewClass.step3?.issueDate || "";
+          existExpiry = lic.llRenewClass.step3?.validityDate || "";
+        }
+      } else if (lic.dlRenewRetest?.enabled) {
+        if (currentStep === 1) {
+          existNo = lic.dlRenewRetest.step1?.dlNumber || "";
+          existIssue = lic.dlRenewRetest.step1?.issueDate || "";
+          existExpiry = lic.dlRenewRetest.step1?.validityDate || "";
+        } else if (currentStep === 2) {
+          existNo = lic.dlRenewRetest.step2?.llNumber || "";
+          existIssue = lic.dlRenewRetest.step2?.issueDate || "";
+          existExpiry = lic.dlRenewRetest.step2?.expiryDate || "";
+        } else {
+          existNo = lic.dlRenewRetest.step3?.dlNumber || "";
+          existIssue = lic.dlRenewRetest.step3?.issueDate || "";
+          existExpiry = lic.dlRenewRetest.step3?.validityDate || "";
+        }
+      }
+
+      setLicNo(existNo);
+      setLicIssueDate(existIssue);
+      setLicExpiryDate(existExpiry);
+      setShowLicencePassModal(true);
     } else {
-      updateLicenceStatusAndExpense(task, newStatus, task.rtoExpense || 0);
+      updateLicenceStatusAndExpense(task, newStatus, task.rtoExpense || 0, task.appointmentDate || "");
     }
+  };
+
+  const handleSaveLicencePass = async () => {
+    if (!pendingStatusChange) return;
+    const { task, newStatus } = pendingStatusChange;
+    const currentStep = task.currentStep || 1;
+    const lic = { ...(task.licenseDetails || {}) };
+
+    if (lic.newLearningLicence?.enabled) {
+      if (currentStep === 1) {
+        lic.newLearningLicence.step1 = { ...(lic.newLearningLicence.step1 || {}), llNumber: licNo, issueDate: licIssueDate, expiryDate: licExpiryDate };
+      } else {
+        lic.newLearningLicence.step2 = { ...(lic.newLearningLicence.step2 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      }
+    } else if (lic.dlNewLlEndorsement?.enabled) {
+      if (currentStep === 1) {
+        lic.dlNewLlEndorsement.step1 = { ...(lic.dlNewLlEndorsement.step1 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      } else if (currentStep === 2) {
+        lic.dlNewLlEndorsement.step2 = { ...(lic.dlNewLlEndorsement.step2 || {}), llNumber: licNo, issueDate: licIssueDate, expiryDate: licExpiryDate };
+      } else {
+        lic.dlNewLlEndorsement.step3 = { ...(lic.dlNewLlEndorsement.step3 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      }
+    } else if (lic.llRenewClass?.enabled) {
+      if (currentStep === 1) {
+        lic.llRenewClass.step1 = { ...(lic.llRenewClass.step1 || {}), llNumber: licNo, issueDate: licIssueDate, expiryDate: licExpiryDate };
+      } else if (currentStep === 2) {
+        lic.llRenewClass.step2 = { ...(lic.llRenewClass.step2 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      } else {
+        lic.llRenewClass.step3 = { ...(lic.llRenewClass.step3 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      }
+    } else if (lic.dlRenewRetest?.enabled) {
+      if (currentStep === 1) {
+        lic.dlRenewRetest.step1 = { ...(lic.dlRenewRetest.step1 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      } else if (currentStep === 2) {
+        lic.dlRenewRetest.step2 = { ...(lic.dlRenewRetest.step2 || {}), llNumber: licNo, issueDate: licIssueDate, expiryDate: licExpiryDate };
+      } else {
+        lic.dlRenewRetest.step3 = { ...(lic.dlRenewRetest.step3 || {}), dlNumber: licNo, issueDate: licIssueDate, validityDate: licExpiryDate };
+      }
+    }
+
+    try {
+      const coll = task.sourceCollection || "registry_tasks";
+      const docRef = doc(db, coll, task.id);
+      const updateData: any = {
+        licenseDetails: lic,
+        updatedAt: new Date().toISOString()
+      };
+      if (coll === "registry_tasks") {
+        updateData.status = newStatus;
+      } else {
+        updateData.taskStatus = newStatus;
+      }
+      await setDoc(docRef, updateData, { merge: true });
+
+      const appId = task.applicationDocId || task.applicationId || task.recordId;
+      if (appId) {
+        const appRef = doc(db, "registry_applications_v1", appId);
+        await setDoc(appRef, {
+          licenseDetails: lic,
+          status: newStatus,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
+
+      toast.success("Licence details updated and status set to PASS!");
+      setShowLicencePassModal(false);
+      setPendingStatusChange(null);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update Licence details");
+    }
+  };
+
+  const handleCancelLicencePass = () => {
+    setShowLicencePassModal(false);
+    setPendingStatusChange(null);
+    toast.info("Status change cancelled");
   };
 
   const handleSaveRtoExpense = () => {
     if (pendingStatusChange) {
-      const { task, newStatus } = pendingStatusChange;
-      updateLicenceStatusAndExpense(task, newStatus, rtoExpenseValue);
+      const { task, newStatus, isVahaan } = pendingStatusChange;
+      if (isVahaan) {
+        updateVahaanStatusInDb(task, newStatus, "", "", rtoExpenseValue);
+      } else {
+        updateLicenceStatusAndExpense(task, newStatus, rtoExpenseValue, rtoApptDate);
+      }
       setShowRtoExpenseModal(false);
       setPendingStatusChange(null);
     }
@@ -286,13 +442,14 @@ export function ServiceDashboard({
     toast.info("Status change cancelled");
   };
 
-  const updateLicenceStatusAndExpense = async (task: any, status: string, expense: number) => {
+  const updateLicenceStatusAndExpense = async (task: any, status: string, expense: number, apptDate: string) => {
     try {
       const coll = task.sourceCollection || "registry_tasks";
       const docRef = doc(db, coll, task.id);
       
       const updateData: any = {
         rtoExpense: Number(expense) || 0,
+        appointmentDate: apptDate,
         updatedAt: new Date().toISOString()
       };
 
@@ -310,6 +467,7 @@ export function ServiceDashboard({
         const appRef = doc(db, "registry_applications_v1", appId);
         await setDoc(appRef, {
           rtoExpense: Number(expense) || 0,
+          appointmentDate: apptDate,
           status: status,
           updatedAt: new Date().toISOString()
         }, { merge: true }).catch(() => {});
@@ -326,12 +484,17 @@ export function ServiceDashboard({
       setVahaanHoldReason(task.holdReason || "");
       setVahaanHoldDate(task.holdDate || new Date().toISOString().split("T")[0]);
       setShowVahaanHoldModal(true);
+    } else if (newStatus.toUpperCase() === "INWARD") {
+      setPendingStatusChange({ task, newStatus, isVahaan: true });
+      setRtoExpenseValue(task.rtoExpense || 0);
+      setRtoApptDate(task.appointmentDate || "");
+      setShowRtoExpenseModal(true);
     } else {
       updateVahaanStatusInDb(task, newStatus);
     }
   };
 
-  const updateVahaanStatusInDb = async (task: any, status: string, holdReason = "", holdDate = "") => {
+  const updateVahaanStatusInDb = async (task: any, status: string, holdReason = "", holdDate = "", rtoExpense?: number) => {
     try {
       const coll = task.sourceCollection || "registry_services_v2";
       const docRef = doc(db, coll, task.id);
@@ -347,16 +510,24 @@ export function ServiceDashboard({
         updateData.holdDate = holdDate;
       }
 
+      if (rtoExpense !== undefined) {
+        updateData.rtoExpense = Number(rtoExpense) || 0;
+      }
+
       await setDoc(docRef, updateData, { merge: true });
       toast.success("Vahaan status updated successfully!");
 
       const appDocId = task.applicationDocId || task.recordId || task.clientId || task.id.replace("task-app-", "");
       if (appDocId) {
         const appRef = doc(db, "registry_applications_v1", appDocId);
-        await setDoc(appRef, {
+        const appPayload: any = {
           applicationStatus: status === "Completed" ? "COMPLETED" : status,
           updatedAt: new Date().toISOString()
-        }, { merge: true }).catch(() => {});
+        };
+        if (rtoExpense !== undefined) {
+          appPayload.rtoExpense = Number(rtoExpense) || 0;
+        }
+        await setDoc(appRef, appPayload, { merge: true }).catch(() => {});
       }
     } catch (error) {
       console.error("Error updating Vahaan status:", error);
@@ -1002,7 +1173,7 @@ export function ServiceDashboard({
                                 <select
                                   value={statusVal}
                                   onChange={(e) => handleLicenceStatusChange(t, e.target.value)}
-                                  className="px-2 py-1 rounded text-[10px] font-bold border bg-white cursor-pointer border-slate-200"
+                                  className="px-2 py-1 rounded text-xs font-bold border bg-white cursor-pointer border-slate-200"
                                 >
                                   <option value="RTO">RTO</option>
                                   <option value="PASS">PASS</option>
@@ -1081,7 +1252,7 @@ export function ServiceDashboard({
                               value={statusVal}
                               onChange={(e) => handleVahaanStatusChange(t, e.target.value)}
                               className={cn(
-                                "px-2 py-1 rounded text-[10px] font-bold border bg-white cursor-pointer",
+                                "px-2 py-1 rounded text-xs font-bold border bg-white cursor-pointer",
                                 (() => {
                                   const s = statusVal.toUpperCase();
                                   switch (s) {
@@ -1395,15 +1566,38 @@ export function ServiceDashboard({
     <Dialog open={showRtoExpenseModal} onOpenChange={(open) => { if (!open) handleCancelRtoExpense(); }}>
       <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
         <DialogHeader>
-          <DialogTitle className="text-base font-bold text-slate-900">RTO EXPENSE DETAILS</DialogTitle>
+          <DialogTitle className="text-base font-bold text-slate-900">
+            {pendingStatusChange?.isVahaan ? "RTO EXPENSE DETAILS" : "RTO EXPENSE & APPOINTMENT DETAILS"}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4 text-xs">
+          {!pendingStatusChange?.isVahaan && (
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-700 block">New Appointment Date (DD/MM/YYYY)</label>
+              <Input
+                type="text"
+                value={rtoApptDate}
+                onChange={(e) => {
+                  let val = e.target.value.replace(/\D/g, "");
+                  if (val.length > 8) val = val.slice(0, 8);
+                  if (val.length > 4) {
+                    val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                  } else if (val.length > 2) {
+                    val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                  }
+                  setRtoApptDate(val);
+                }}
+                placeholder="DD/MM/YYYY"
+                className="w-full p-2 border rounded-lg"
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <label className="font-bold text-slate-700 block">RTO Expense (Optional)</label>
             <Input
               type="number"
               value={rtoExpenseValue === 0 ? "" : rtoExpenseValue}
-              onChange={(e) => setRtoExpenseValue(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => setRtoExpenseValue(e.target.value === "" ? 0 : Number(e.target.value))}
               placeholder="Enter RTO expense amount..."
               className="w-full p-2 border rounded-lg"
             />
@@ -1414,6 +1608,75 @@ export function ServiceDashboard({
             CANCEL
           </Button>
           <Button onClick={handleSaveRtoExpense} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
+            SAVE
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Licence PASS details Modal */}
+    <Dialog open={showLicencePassModal} onOpenChange={(open) => { if (!open) handleCancelLicencePass(); }}>
+      <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-slate-900">
+            ENTER LICENCE DETAILS FOR PASS STATUS
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4 text-xs">
+          <div className="space-y-1.5">
+            <label className="font-bold text-slate-700 block">LL / DL Number</label>
+            <Input
+              type="text"
+              value={licNo}
+              onChange={(e) => setLicNo(e.target.value)}
+              placeholder="Enter licence number..."
+              className="w-full p-2 border rounded-lg"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="font-bold text-slate-700 block">Issue Date (DD/MM/YYYY)</label>
+            <Input
+              type="text"
+              value={licIssueDate}
+              onChange={(e) => {
+                let val = e.target.value.replace(/\D/g, "");
+                if (val.length > 8) val = val.slice(0, 8);
+                if (val.length > 4) {
+                  val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                } else if (val.length > 2) {
+                  val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                }
+                setLicIssueDate(val);
+              }}
+              placeholder="DD/MM/YYYY"
+              className="w-full p-2 border rounded-lg"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="font-bold text-slate-700 block">Expiry / Validity Date (DD/MM/YYYY)</label>
+            <Input
+              type="text"
+              value={licExpiryDate}
+              onChange={(e) => {
+                let val = e.target.value.replace(/\D/g, "");
+                if (val.length > 8) val = val.slice(0, 8);
+                if (val.length > 4) {
+                  val = `${val.slice(0, 2)}/${val.slice(2, 4)}/${val.slice(4)}`;
+                } else if (val.length > 2) {
+                  val = `${val.slice(0, 2)}/${val.slice(2)}`;
+                }
+                setLicExpiryDate(val);
+              }}
+              placeholder="DD/MM/YYYY"
+              className="w-full p-2 border rounded-lg"
+            />
+          </div>
+        </div>
+        <DialogFooter className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={handleCancelLicencePass} className="px-4 py-2 text-xs rounded-lg">
+            CANCEL
+          </Button>
+          <Button onClick={handleSaveLicencePass} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
             SAVE
           </Button>
         </DialogFooter>

@@ -2146,17 +2146,16 @@ export function ClientDetailWorkspace({
             <div className="space-y-1">
               <Label className="text-xs font-bold uppercase">Application Type</Label>
               <Select
-                value={serviceForm.applicationType || "Home"}
+                value={serviceForm.applicationType || "Non - Faceless"}
                 onValueChange={(v: any) => setServiceForm({ ...serviceForm, applicationType: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Home">Home</SelectItem>
+                  <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
                   <SelectItem value="Faceless">Faceless</SelectItem>
                   <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                  <SelectItem value="CNG">CNG</SelectItem>
                   <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
                 </SelectContent>
               </Select>

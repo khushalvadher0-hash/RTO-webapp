@@ -129,20 +129,18 @@ const compressImageBase64 = (base64Str: string, callback: (compressed: string) =
 };
 
 export const DEFAULT_APP_TYPES = [
-  "Home",
+  "Non - Faceless",
   "Faceless",
   "Out Of Bhavnagar",
-  "CNG",
   "Out Of Bhavnagar To Bhavnagar",
 ];
 
 export function getAppTypeBadgeColor(appType?: string) {
   if (!appType) return "bg-transparent text-slate-800 border-slate-500";
   const clean = appType.trim().toLowerCase();
-  if (clean === "home") return "bg-transparent text-slate-700 border-slate-500";
+  if (clean === "home" || clean === "non - faceless" || clean === "non-faceless") return "bg-transparent text-slate-700 border-slate-500";
   if (clean === "faceless") return "bg-transparent text-blue-700 border-blue-600";
   if (clean === "out of bhavnagar") return "bg-transparent text-rose-700 border-rose-600";
-  if (clean === "cng") return "bg-transparent text-emerald-700 border-emerald-600";
   if (clean === "out of bhavnagar to bhavnagar") return "bg-transparent text-amber-700 border-amber-600";
   return "bg-transparent text-slate-700 border-slate-500";
 }
@@ -3700,7 +3698,7 @@ function ApplicationFormModal({
                           <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">2</span>
                           <span>DRIVING LICENCE DETAILS</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div>
                             <label className="font-semibold text-slate-600 block mb-1">DL NUMBER</label>
                             <input
@@ -3718,15 +3716,6 @@ function ApplicationFormModal({
                               value={newLL.step2.issueDate}
                               onChange={(e) => setNewLL((prev) => ({ ...prev, step2: { ...prev.step2, issueDate: e.target.value } }))}
                               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl"
-                            />
-                          </div>
-                          <div>
-                            <label className="font-semibold text-slate-600 block mb-1">VALIDITY DATE</label>
-                            <input
-                              type="date"
-                              value={newLL.step2.validityDate}
-                              onChange={(e) => setNewLL((prev) => ({ ...prev, step2: { ...prev.step2, validityDate: e.target.value } }))}
-                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
                             />
                           </div>
                           <div>

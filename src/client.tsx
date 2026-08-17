@@ -14,6 +14,20 @@ import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "@/router";
 import "@/styles.css";
 
+// Global date formatting override to enforce DD/MM/YYYY format across the whole site
+if (typeof Date !== "undefined") {
+  const originalToLocaleDateString = Date.prototype.toLocaleDateString;
+  Date.prototype.toLocaleDateString = function(locale?: string | string[], options?: Intl.DateTimeFormatOptions) {
+    if (options) {
+      return originalToLocaleDateString.call(this, locale, options);
+    }
+    const day = String(this.getDate()).padStart(2, "0");
+    const month = String(this.getMonth() + 1).padStart(2, "0");
+    const year = this.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+}
+
 // Get the router instance
 const router = getRouter();
 
