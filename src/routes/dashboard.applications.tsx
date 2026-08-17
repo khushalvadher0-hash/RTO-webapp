@@ -156,8 +156,7 @@ const SERVICE_GROUPS = [
       "Change Address",
       "Registration Renewal",
       "RC Particular",
-      "Vehicle Correction",
-      "Vahan Correction",
+      "Vahaan RC Sudharo Vadhro",
       "Backlog",
     ],
   },
@@ -166,7 +165,7 @@ const SERVICE_GROUPS = [
     items: [
       "Hypothecation Addition",
       "Hypothecation Terminate",
-      "Hypothecation Continuation",
+      "Hypothecation Continue",
       "No Objection Certificate",
     ],
   },

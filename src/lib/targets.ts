@@ -108,6 +108,12 @@ function matchService(dbService: string | undefined, targetService: string): boo
   if (targetNorm === "dl renew" || targetNorm === "license renew") {
     return dbNorm === "license renew" || dbNorm === "dl renew" || dbNorm === "license renewal";
   }
+  if (targetNorm === "hypothecation continue" || targetNorm === "hypothecation continuation") {
+    return dbNorm === "hypothecation continuation" || dbNorm === "hypothecation continue";
+  }
+  if (targetNorm === "vahaan rc sudharo vadhro" || targetNorm === "vahan correction") {
+    return dbNorm === "vahan correction" || dbNorm === "vahaan rc sudharo vadhro";
+  }
 
   return false;
 }
