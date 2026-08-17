@@ -2051,7 +2051,7 @@ function ApplicationFormModal({
       "Hazardous Training Card",
       "International Licence",
       "Change Date Of Birth In DL",
-      "DL New"
+      "DL Renew"
     ].includes(srv);
   };
 
@@ -4852,7 +4852,7 @@ function ApplicationFormModal({
                     "Hazardous Training Card",
                     "International Licence",
                     "Change Date Of Birth In DL",
-                    "DL New",
+                    "DL Renew",
                   ].map((srv) => {
                     const isChecked = generalLicServices.selected.includes(srv);
                     return (
@@ -8490,56 +8490,142 @@ REGISTRY PRO`;
             </div>
           )}
 
-          {/* Full Vehicle Technical Details Grid */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2">
-              <Car className="w-4 h-4 text-blue-600" /> Full Vehicle Specifications
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-              <div>
-                <span className="text-slate-400">Father/Husband:</span>
-                <p className="font-semibold">{v.fatherHusbandName || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">CO (C/O):</span>
-                <p className="font-semibold">{v.coName || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Group Name:</span>
-                <p className="font-semibold">{v.groupName || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Chassis No:</span>
-                <p className="font-mono font-semibold">{v.chassisNumber || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Engine No:</span>
-                <p className="font-mono font-semibold">{v.engineNumber || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Fuel Type:</span>
-                <p className="font-semibold">{v.fuelType || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Maker Name:</span>
-                <p className="font-semibold">{v.makerName || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Model Name:</span>
-                <p className="font-semibold">{v.modelName || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Vehicle Class:</span>
-                <p className="font-semibold">{v.vehicleClass || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Gross / Unladen:</span>
-                <p className="font-semibold">
-                  {v.grossWeight || 0} kg / {v.unladenWeight || 0} kg
-                </p>
+          {/* Licence Details Card */}
+          {app.subModule === "licence" && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" /> Licence Details
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <span className="text-slate-400">Date Of Birth:</span>
+                  <p className="font-semibold">{app.licenseDetails?.dateOfBirth || app.dateOfBirth || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Driving School Holder:</span>
+                  <p className="font-semibold">{app.licenseDetails?.isDrivingSchoolHolder ? "YES" : "NO"}</p>
+                </div>
+                {app.licenseDetails?.generalLicenceServices?.dlNumber && (
+                  <div>
+                    <span className="text-slate-400">DL Number:</span>
+                    <p className="font-semibold font-mono">{app.licenseDetails.generalLicenceServices.dlNumber}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.classOfVehicle && app.licenseDetails.generalLicenceServices.classOfVehicle.length > 0 && (
+                  <div>
+                    <span className="text-slate-400">Class Of Vehicle:</span>
+                    <p className="font-semibold">{app.licenseDetails.generalLicenceServices.classOfVehicle.join(", ")}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.issueDate && (
+                  <div>
+                    <span className="text-slate-400">Issue Date:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.issueDate)}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.validityDate && (
+                  <div>
+                    <span className="text-slate-400">Validity Date:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.validityDate)}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.vehicleTypes && (
+                  <div>
+                    <span className="text-slate-400">Vehicle Types:</span>
+                    <p className="font-semibold">
+                      {Object.entries(app.licenseDetails.generalLicenceServices.vehicleTypes)
+                        .filter(([_, enabled]) => enabled)
+                        .map(([type]) => type.toUpperCase())
+                        .join(", ") || "—"}
+                    </p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.ntValidity && (
+                  <div>
+                    <span className="text-slate-400">NT Validity:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.ntValidity)}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.trValidity && (
+                  <div>
+                    <span className="text-slate-400">TR Validity:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.trValidity)}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.hazardousValidity && (
+                  <div>
+                    <span className="text-slate-400">Hazardous Validity:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.hazardousValidity)}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.hazardousTrainingValidity && (
+                  <div>
+                    <span className="text-slate-400">Hazardous Training Validity:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.hazardousTrainingValidity)}</p>
+                  </div>
+                )}
+                {app.licenseDetails?.generalLicenceServices?.internationalLicenceValidity && (
+                  <div>
+                    <span className="text-slate-400">International Licence Validity:</span>
+                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.internationalLicenceValidity)}</p>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Full Vehicle Technical Details Grid */}
+          {app.subModule !== "licence" && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <Car className="w-4 h-4 text-blue-600" /> Full Vehicle Specifications
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <span className="text-slate-400">Father/Husband:</span>
+                  <p className="font-semibold">{v.fatherHusbandName || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">CO (C/O):</span>
+                  <p className="font-semibold">{v.coName || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Group Name:</span>
+                  <p className="font-semibold">{v.groupName || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Chassis No:</span>
+                  <p className="font-mono font-semibold">{v.chassisNumber || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Engine No:</span>
+                  <p className="font-mono font-semibold">{v.engineNumber || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Fuel Type:</span>
+                  <p className="font-semibold">{v.fuelType || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Maker Name:</span>
+                  <p className="font-semibold">{v.makerName || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Model Name:</span>
+                  <p className="font-semibold">{v.modelName || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Vehicle Class:</span>
+                  <p className="font-semibold">{v.vehicleClass || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Gross / Unladen:</span>
+                  <p className="font-semibold">
+                    {v.grossWeight || 0} kg / {v.unladenWeight || 0} kg
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* All Expiries Section */}
           {(() => {
