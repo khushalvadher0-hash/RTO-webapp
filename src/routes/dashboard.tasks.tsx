@@ -532,7 +532,10 @@ function TasksPage() {
         assignee: s.assignedTo || s.employeeId || s.assignee || "",
         assignedEmployeeId: s.employeeId || s.assignedTo || s.assignedStaff || s.assignee || "",
         assignedEmployeeName: s.assignedEmployeeName || s.assignedStaff || s.assignee || "",
-        status: (s.taskStatus || s.status || "Assigned") as TaskStatus,
+        status: (() => {
+          const raw = s.taskStatus || s.status || "Read";
+          return (raw === "Assigned" ? "Read" : raw) as TaskStatus;
+        })(),
         priority: (s.priority || "Medium") as TaskPriority,
         done: s.taskStatus === "Completed",
         createdAt: s.createdAt || s.startDate || new Date().toISOString(),
@@ -587,7 +590,7 @@ function TasksPage() {
         assignedEmployeeId: assignedEmp,
         assignedEmployeeName: assignedEmp,
         assignedEmployeeUid: assignedEmp,
-        status: (app.applicationStatus === "Approved" ? "Completed" : app.applicationStatus === "On Hold" ? "On Hold" : "Assigned") as TaskStatus,
+        status: (app.applicationStatus === "Approved" ? "Completed" : app.applicationStatus === "On Hold" ? "On Hold" : "Read") as TaskStatus,
         priority: (app.priority || "Medium") as TaskPriority,
         done: app.applicationStatus === "Approved",
         createdAt: app.createdAt || new Date().toISOString(),
@@ -1066,15 +1069,16 @@ function TasksPage() {
   const [savingComplete, setSavingComplete] = useState(false);
 
   const handleQuickChangeStatus = async (task: Task, s: TaskStatus) => {
+    const sUpper = s.toUpperCase();
     if (activeSubModule === "services") {
-      if (s === "ON HOLD") {
+      if (sUpper === "ON HOLD" || sUpper === "ONHOLD") {
         setVahaanHoldTask(task);
         setVahaanHoldReason(task.holdReason || "");
         setVahaanHoldDate((task as any).holdDate || new Date().toISOString().split("T")[0]);
         setShowVahaanHoldModal(true);
         return;
       }
-      if (s === "COMPLETED") {
+      if (sUpper === "COMPLETED") {
         setVahaanCompleteTask(task);
         setVahaanRtoReceiptNo((task as any).rtoReceiptNo || "");
         setVahaanAppointmentDate(task.appointmentDate || new Date().toISOString().split("T")[0]);
@@ -1082,13 +1086,13 @@ function TasksPage() {
         return;
       }
     }
-    if (s === "On Hold") {
+    if (sUpper === "ON HOLD" || sUpper === "ONHOLD") {
       setHoldTask(task);
       setHoldReason(task.holdReason || "");
       setHoldRemarks(task.holdRemarks || task.remarks || "");
       return;
     }
-    if (s === "Completed") {
+    if (sUpper === "COMPLETED") {
       setCompleteModalTask(task);
       setCompleteAppointmentDate(task.appointmentDate || new Date().toISOString().split("T")[0]);
       setCompleteRtoExpense(task.rtoExpense ? String(task.rtoExpense) : "");
@@ -1525,13 +1529,7 @@ function TasksPage() {
 
           {/* Status counts */}
           <div className="rounded-xl border bg-card p-3">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
-              <div className="flex items-center gap-2">
-                <Badge className="bg-orange-100 text-orange-700 border-orange-200">
-                  {stats.statusCounts["Assigned"]}
-                </Badge>
-                <span className="text-muted-foreground">Assigned</span>
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
               <div className="flex items-center gap-2">
                 <Badge className="bg-cyan-100 text-cyan-700 border-cyan-200">
                   {stats.statusCounts["Read"]}
@@ -1737,13 +1735,7 @@ function TasksPage() {
 
           {/* Status counts */}
           <div className="rounded-xl border bg-card p-3">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
-              <div className="flex items-center gap-2">
-                <Badge className="bg-blue-50 text-blue-700 border-blue-200/80 rounded-full font-bold">
-                  {stats.statusCounts["Assigned"]}
-                </Badge>
-                <span className="text-slate-600 font-medium">Assigned</span>
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
               <div className="flex items-center gap-2">
                 <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200/80 rounded-full font-bold">
                   {stats.statusCounts["Read"]}
@@ -2481,12 +2473,7 @@ function TaskTable({
                             statusBadgeClass(t.status)
                           )}
                         >
-                          {(activeSubModule === "services"
-                            ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                            : activeSubModule === "licence"
-                            ? ["RTO", "PASS", "FAIL", "RETEST"]
-                            : TASK_STATUS_OPTIONS
-                          ).map((s) => (
+                          {TASK_STATUS_OPTIONS.map((s) => (
                             <option key={s} value={s}>
                               {s}
                             </option>
@@ -2711,12 +2698,7 @@ function TaskTable({
                           statusBadgeClass(t.status),
                         )}
                       >
-                        {(activeSubModule === "services"
-                          ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                          : activeSubModule === "licence"
-                          ? ["RTO", "PASS", "FAIL", "RETEST"]
-                          : TASK_STATUS_OPTIONS
-                        ).map((s) => (
+                        {TASK_STATUS_OPTIONS.map((s) => (
                           <option key={s} value={s}>
                             {s}
                           </option>
@@ -2895,12 +2877,7 @@ function TaskCards({
                       statusBadgeClass(t.status),
                     )}
                   >
-                    {(activeSubModule === "services"
-                      ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                      : activeSubModule === "licence"
-                      ? ["RTO", "PASS", "FAIL", "RETEST"]
-                      : TASK_STATUS_OPTIONS
-                    ).map((s) => (
+                    {TASK_STATUS_OPTIONS.map((s) => (
                       <option key={s} value={s}>
                         {s}
                       </option>
@@ -3062,7 +3039,7 @@ function TaskFormDialog({
   const [assignedEmployeeId, setAssignedEmployeeId] = useState("");
   const [assignedEmployeeName, setAssignedEmployeeName] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("Medium");
-  const [status, setStatus] = useState<TaskStatus>("Assigned");
+  const [status, setStatus] = useState<TaskStatus>("Read");
   const [associationType, setAssociationType] = useState<AssociationType>("client");
   const [recordId, setRecordId] = useState<string>("");
   const [vehicleId, setVehicleId] = useState<string>("");
@@ -3141,7 +3118,7 @@ function TaskFormDialog({
       setAssignedEmployeeId(defaultEmp?.employeeId || defaultEmp?.id || "");
       setAssignedEmployeeName(defaultEmp?.fullName || defaultEmp?.name || defaultEmp?.username || "");
       setPriority("Medium");
-      setStatus("Assigned");
+      setStatus("Read");
       setAssociationType("client");
       setRecordId("");
       setVehicleId("");
@@ -3591,12 +3568,7 @@ function TaskFormDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(activeSubModule === "services"
-                    ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                    : activeSubModule === "licence"
-                    ? ["RTO", "PASS", "FAIL", "RETEST"]
-                    : TASK_STATUS_OPTIONS
-                  ).map((s) => (
+                  {TASK_STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -3734,7 +3706,7 @@ function TaskDetailsSheet({
     setLinkedApp(null);
     setRemarkInput("");
     
-    setSelectedStatus(initialTask.status || "Assigned");
+    setSelectedStatus(initialTask.status || "Read");
     setSheetApplicationId(initialTask.applicationId || "");
     setSheetApplicationType(initialTask.applicationType || "Home");
     if (initialTask.dueDate) {
@@ -3752,7 +3724,7 @@ function TaskDetailsSheet({
       }
 
       setLiveTask(currentTask);
-      setSelectedStatus(currentTask.status || "Assigned");
+      setSelectedStatus(currentTask.status || "Read");
       setSheetApplicationId(currentTask.applicationId || "");
       setSheetApplicationType(currentTask.applicationType || "Home");
       if (currentTask.dueDate) {
@@ -4037,12 +4009,7 @@ function TaskDetailsSheet({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(activeSubModule === "services"
-                    ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                    : activeSubModule === "licence"
-                    ? ["RTO", "PASS", "FAIL", "RETEST"]
-                    : TASK_STATUS_OPTIONS
-                  ).map((s) => (
+                  {TASK_STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -4070,12 +4037,7 @@ function TaskDetailsSheet({
               <div>
                 <Label className="text-xs uppercase font-bold text-gray-400 block mb-2">Status Stages</Label>
                 <div className="flex flex-wrap gap-2">
-                  {(activeSubModule === "services"
-                    ? ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                    : activeSubModule === "licence"
-                    ? ["RTO", "PASS", "FAIL", "RETEST"]
-                    : TASK_STATUS_OPTIONS
-                  ).map((statusOption) => {
+                  {TASK_STATUS_OPTIONS.map((statusOption) => {
                     const isSelected = selectedStatus === statusOption;
                     return (
                       <button
@@ -4084,7 +4046,7 @@ function TaskDetailsSheet({
                         onClick={() => setSelectedStatus(statusOption)}
                         className={cn(
                           "px-3 py-1.5 rounded-lg text-xs font-bold border transition",
-                          isSelected 
+                          isSelected
                             ? "bg-primary text-white border-primary shadow-sm"
                             : "bg-white text-gray-600 border-gray-200 hover:bg-slate-50"
                         )}

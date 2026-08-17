@@ -7,6 +7,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { Badge } from "@/components/ui/badge";
 import { WhatsAppDialogContent } from "@/components/WhatsAppDialogContent";
 import { toast } from "sonner";
@@ -165,6 +167,43 @@ REGISTRY PRO`;
     setWhatsappPreviewOpen(false);
   };
 
+  const [markingCompleted, setMarkingCompleted] = useState(false);
+
+  const handleMarkAsCompleted = async () => {
+    setMarkingCompleted(true);
+    try {
+      const taskId = app.id;
+      const coll = app.sourceCollection || "registry_services_v2";
+      const docRef = doc(db, coll, taskId);
+      
+      await setDoc(docRef, {
+        status: "Completed",
+        taskStatus: "Completed",
+        done: true,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      const appDocId = app.applicationDocId || app.recordId || app.clientId || app.id.replace("task-app-", "");
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        await setDoc(appRef, {
+          applicationStatus: "COMPLETED",
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
+
+      toast.success("Application marked as completed!");
+      onOpenChange(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to mark as completed");
+    } finally {
+      setMarkingCompleted(false);
+    }
+  };
+
+  const isCompleted = app.status?.toUpperCase() === "COMPLETED" || app.taskStatus?.toUpperCase() === "COMPLETED";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-6 bg-slate-50/50">
@@ -195,6 +234,16 @@ REGISTRY PRO`;
               </DialogDescription>
             </div>
             <div className="flex items-center gap-2">
+              {!isCompleted && (
+                <Button
+                  onClick={handleMarkAsCompleted}
+                  disabled={markingCompleted}
+                  className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 px-3 rounded-lg border-0 shadow-sm"
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  <span>{markingCompleted ? "COMPLETING..." : "MARK COMPLETED"}</span>
+                </Button>
+              )}
               <Button
                 onClick={handleOpenWhatsappPreview}
                 className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 px-3 rounded-lg border-0 shadow-sm"

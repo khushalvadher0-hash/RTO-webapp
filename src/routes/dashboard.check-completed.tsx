@@ -157,7 +157,7 @@ function CheckCompletedPage() {
           ) : (
             <div className="grid gap-3">
               {results.map((r, i) => {
-                const status = r.data.status || r.data.taskStatus || "Assigned";
+                const status = r.data.status || r.data.taskStatus || "Read";
                 const isCompleted = status === "Completed" || r.data.done === true;
 
                 return (

@@ -234,7 +234,15 @@ export function ServiceDashboard({
   const [editAppId, setEditAppId] = useState("");
   const [editAppType, setEditAppType] = useState("");
   const [editRemarks, setEditRemarks] = useState("");
+  const [editHoldReason, setEditHoldReason] = useState("");
+  const [editHoldDate, setEditHoldDate] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Vahaan hold states
+  const [showVahaanHoldModal, setShowVahaanHoldModal] = useState(false);
+  const [vahaanHoldTask, setVahaanHoldTask] = useState<any | null>(null);
+  const [vahaanHoldReason, setVahaanHoldReason] = useState("");
+  const [vahaanHoldDate, setVahaanHoldDate] = useState("");
 
   const availableGroups = useMemo(() => {
     const groupsSet = new Set<string>();
@@ -311,6 +319,68 @@ export function ServiceDashboard({
     }
   };
 
+  const handleVahaanStatusChange = (task: any, newStatus: string) => {
+    if (newStatus.toUpperCase() === "ONHOLD" || newStatus.toUpperCase() === "ON HOLD") {
+      setVahaanHoldTask(task);
+      setVahaanHoldReason(task.holdReason || "");
+      setVahaanHoldDate(task.holdDate || new Date().toISOString().split("T")[0]);
+      setShowVahaanHoldModal(true);
+    } else {
+      updateVahaanStatusInDb(task, newStatus);
+    }
+  };
+
+  const updateVahaanStatusInDb = async (task: any, status: string, holdReason = "", holdDate = "") => {
+    try {
+      const coll = task.sourceCollection || "registry_services_v2";
+      const docRef = doc(db, coll, task.id);
+      
+      const updateData: any = {
+        status: status,
+        taskStatus: status,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (status.toUpperCase() === "ON HOLD" || status.toUpperCase() === "ONHOLD") {
+        updateData.holdReason = holdReason;
+        updateData.holdDate = holdDate;
+      }
+
+      await setDoc(docRef, updateData, { merge: true });
+      toast.success("Vahaan status updated successfully!");
+
+      const appDocId = task.applicationDocId || task.recordId || task.clientId || task.id.replace("task-app-", "");
+      if (appDocId) {
+        const appRef = doc(db, "registry_applications_v1", appDocId);
+        await setDoc(appRef, {
+          applicationStatus: status === "Completed" ? "COMPLETED" : status,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
+    } catch (error) {
+      console.error("Error updating Vahaan status:", error);
+      toast.error("Failed to update status");
+    }
+  };
+
+  const handleSaveVahaanHold = () => {
+    if (vahaanHoldTask) {
+      if (!vahaanHoldReason.trim()) {
+        toast.error("Hold reason is required");
+        return;
+      }
+      if (!vahaanHoldDate) {
+        toast.error("Hold date is required");
+        return;
+      }
+      updateVahaanStatusInDb(vahaanHoldTask, "Onhold", vahaanHoldReason, vahaanHoldDate);
+      setShowVahaanHoldModal(false);
+      setVahaanHoldTask(null);
+      setVahaanHoldReason("");
+      setVahaanHoldDate("");
+    }
+  };
+
   const handleSaveServiceEdit = async () => {
     if (!editingService) return;
     setSavingEdit(true);
@@ -325,7 +395,7 @@ export function ServiceDashboard({
 
       const rtoReceiptAmountVal = parseFloat(editRtoReceiptAmount) || 0;
 
-      const updateData = {
+      const updateData: any = {
         status: editStatus,
         taskStatus: editStatus,
         done: ["COMPLETED", "RTO", "PASS", "FAIL", "RETEST"].includes(editStatus.toUpperCase()),
@@ -342,6 +412,11 @@ export function ServiceDashboard({
         notes: editRemarks,
         updatedAt: new Date().toISOString(),
       };
+
+      if (editStatus.toUpperCase() === "ON HOLD" || editStatus.toUpperCase() === "ONHOLD") {
+        updateData.holdReason = editHoldReason;
+        updateData.holdDate = editHoldDate;
+      }
 
       await setDoc(docRef, updateData, { merge: true });
 
@@ -887,7 +962,7 @@ export function ServiceDashboard({
                           </td>
                           <td className="p-3">
                             {(() => {
-                              const sVal = t.status || t.taskStatus || "Completed";
+                              const sVal = (t.status || t.taskStatus || "Completed").toUpperCase();
                               const statusVal = ["RTO", "PASS", "FAIL", "RETEST"].includes(sVal) ? sVal : "RTO";
                               return (
                                 <select
@@ -935,6 +1010,8 @@ export function ServiceDashboard({
                                   setEditAppId(t.applicationId || "");
                                   setEditAppType(t.applicationType || "Home");
                                   setEditRemarks(t.remarks || t.notes || "");
+                                  setEditHoldReason(t.holdReason || "");
+                                  setEditHoldDate(t.holdDate || "");
                                 }}
                                 title="Edit Licence Service"
                               >
@@ -961,9 +1038,47 @@ export function ServiceDashboard({
                       <td className="p-3 text-center font-bold text-slate-800">{srvCount}</td>
                       <td className="p-3 text-slate-700">{t.assignedEmployeeName || t.assignee || "Unassigned"}</td>
                       <td className="p-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          {t.status || t.taskStatus || "Completed"}
-                        </span>
+                        {(() => {
+                          const sVal = t.status || t.taskStatus || "Completed";
+                          const normalized = sVal.toUpperCase() === "ON HOLD" ? "Onhold" : sVal;
+                          const statusVal = ["In RTO", "Inward", "Verify", "Approved", "Onhold"].includes(normalized) ? normalized : "In RTO";
+                          return (
+                            <select
+                              value={statusVal}
+                              onChange={(e) => handleVahaanStatusChange(t, e.target.value)}
+                              className={cn(
+                                "px-2 py-1 rounded text-[10px] font-bold border bg-white cursor-pointer",
+                                (() => {
+                                  const s = statusVal.toUpperCase();
+                                  switch (s) {
+                                    case "COMPLETED":
+                                      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+                                    case "IN RTO":
+                                    case "RTO":
+                                      return "bg-blue-50 text-blue-700 border-blue-200";
+                                    case "INWARD":
+                                      return "bg-purple-50 text-purple-700 border-purple-200";
+                                    case "VERIFY":
+                                      return "bg-indigo-50 text-indigo-700 border-indigo-200";
+                                    case "APPROVED":
+                                      return "bg-teal-50 text-teal-700 border-teal-200";
+                                    case "ON HOLD":
+                                    case "ONHOLD":
+                                      return "bg-amber-50 text-amber-700 border-amber-200";
+                                    default:
+                                      return "bg-slate-50 text-slate-700 border-slate-200";
+                                  }
+                                })()
+                              )}
+                            >
+                              <option value="In RTO">In RTO</option>
+                              <option value="Inward">Inward</option>
+                              <option value="Verify">Verify</option>
+                              <option value="Approved">Approved</option>
+                              <option value="Onhold">Onhold</option>
+                            </select>
+                          );
+                        })()}
                       </td>
                       <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.pucExpiryDate)}</td>
                       <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.taxExpiryDate)}</td>
@@ -1015,6 +1130,8 @@ export function ServiceDashboard({
                               setEditAppId(t.applicationId || "");
                               setEditAppType(t.applicationType || "Home");
                               setEditRemarks(t.remarks || t.notes || "");
+                              setEditHoldReason(t.holdReason || "");
+                              setEditHoldDate(t.holdDate || "");
                             }}
                             title="Edit Service"
                           >
@@ -1067,16 +1184,44 @@ export function ServiceDashboard({
                 onChange={(e) => setEditStatus(e.target.value)}
                 className="w-full p-2 border rounded-lg bg-white"
               >
-                {(activeSubModule === "licence"
-                  ? ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"]
-                  : ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"]
-                ).map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
+                {activeSubModule === "licence"
+                  ? ["RTO", "PASS", "FAIL", "RETEST", "COMPLETED"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))
+                  : activeSubModule === "services"
+                  ? ["In RTO", "Inward", "Verify", "Approved", "Onhold", "Completed"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))
+                  : ["IN RTO", "INWARD", "VERIFY", "APPROVED", "ON HOLD", "COMPLETED"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))
+                }
               </select>
             </div>
+
+            {(editStatus.toUpperCase() === "ON HOLD" || editStatus.toUpperCase() === "ONHOLD") && (
+              <>
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">Hold Reason</label>
+                  <Input
+                    type="text"
+                    value={editHoldReason}
+                    onChange={(e) => setEditHoldReason(e.target.value)}
+                    placeholder="Enter hold reason..."
+                    className="w-full p-2 border rounded-lg"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">Hold Date</label>
+                  <Input
+                    type="date"
+                    value={editHoldDate}
+                    onChange={(e) => setEditHoldDate(e.target.value)}
+                    className="w-full p-2 border rounded-lg"
+                  />
+                </div>
+              </>
+            )}
             
             <div className="space-y-1">
               <label className="font-bold text-slate-700 block">Assigned Employee</label>
@@ -1173,6 +1318,44 @@ export function ServiceDashboard({
         </DialogContent>
       </Dialog>
     )}
+
+    {/* Vahaan Hold modal */}
+    <Dialog open={showVahaanHoldModal} onOpenChange={(open) => { if (!open) setShowVahaanHoldModal(false); }}>
+      <DialogContent className="max-w-md p-6 bg-white rounded-xl shadow-xl border border-slate-200">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-slate-900">VAHAAN HOLD DETAILS</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4 text-xs">
+          <div className="space-y-1.5">
+            <label className="font-bold text-slate-700 block">Reason</label>
+            <Input
+              type="text"
+              value={vahaanHoldReason}
+              onChange={(e) => setVahaanHoldReason(e.target.value)}
+              placeholder="Enter reason..."
+              className="w-full p-2 border rounded-lg"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="font-bold text-slate-700 block">Date</label>
+            <Input
+              type="date"
+              value={vahaanHoldDate}
+              onChange={(e) => setVahaanHoldDate(e.target.value)}
+              className="w-full p-2 border rounded-lg"
+            />
+          </div>
+        </div>
+        <DialogFooter className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => setShowVahaanHoldModal(false)} className="px-4 py-2 text-xs rounded-lg">
+            CANCEL
+          </Button>
+          <Button onClick={handleSaveVahaanHold} className="px-5 py-2 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">
+            SAVE
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     {/* RTO Expense Popup Modal */}
     <Dialog open={showRtoExpenseModal} onOpenChange={(open) => { if (!open) handleCancelRtoExpense(); }}>

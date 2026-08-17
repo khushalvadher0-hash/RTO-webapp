@@ -443,7 +443,7 @@ export async function saveApplicationAndVehicle(
             id: crypto.randomUUID(),
             title,
             completed: false,
-            status: "Assigned",
+            status: "Read",
             createdAt: now,
           }));
         }
@@ -574,7 +574,7 @@ export async function saveApplicationAndVehicle(
       createdAt: now,
       createdBy: session?.name || "System",
       manual: false,
-      status: appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned",
+      status: appData.applicationStatus === "On Hold" ? "On Hold" : "Read",
       done: false,
       associationType: "application",
       bucket: "applications",
@@ -892,8 +892,8 @@ export async function saveApplicationAndVehicle(
         (taskPayload as any).createdAt = now;
         (taskPayload as any).createdDate = now;
         (taskPayload as any).manual = false;
-        (taskPayload as any).status = appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned";
-        (taskPayload as any).taskStatus = appData.applicationStatus === "On Hold" ? "On Hold" : "Assigned";
+        (taskPayload as any).status = appData.applicationStatus === "On Hold" ? "On Hold" : "Read";
+        (taskPayload as any).taskStatus = appData.applicationStatus === "On Hold" ? "On Hold" : "Read";
         (taskPayload as any).done = false;
         (taskPayload as any).associationType = "application";
         (taskPayload as any).bucket = "applications";

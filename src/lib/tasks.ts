@@ -746,7 +746,7 @@ export async function createManualTask(input: CreateTaskInput): Promise<Task> {
     serviceName: input.serviceName,
     description: input.description ?? "",
     assignee: assigneeInfo.assignee,
-    status: input.status ?? "Assigned",
+    status: input.status ?? "Read",
     priority: input.priority,
     done: false,
     createdAt: now,
@@ -1126,7 +1126,7 @@ export async function setTaskDone(taskId: string, done: boolean, actor = "system
     const serviceSnap = await getDoc(serviceRef);
     if (serviceSnap.exists()) {
       await updateDoc(serviceRef, {
-        taskStatus: done ? "Completed" : "Assigned",
+        taskStatus: done ? "Completed" : "Read",
         updatedAt: new Date().toISOString(),
       });
       invalidateCache();
@@ -1142,15 +1142,15 @@ export async function setTaskDone(taskId: string, done: boolean, actor = "system
     actor,
     done ? "Marked complete" : "Reopened",
     "status",
-    done ? "Assigned" : "Completed",
-    done ? "Completed" : "Assigned",
+    done ? "Read" : "Completed",
+    done ? "Completed" : "Read",
   );
   const cleanLog = removeUndefined(actLog);
 
   const now = new Date().toISOString();
   const updates = removeUndefined({
     done,
-    status: done ? "Completed" : "Assigned",
+    status: done ? "Completed" : "Read",
     lastUpdatedBy: actor,
     lastUpdatedAt: now,
     activity: arrayUnion(entry),
@@ -1167,8 +1167,8 @@ export async function setTaskDone(taskId: string, done: boolean, actor = "system
       actor,
       done ? "Task Completed" : "Task Reopened",
       "task",
-      done ? "Assigned" : "Completed",
-      done ? "Completed" : "Assigned",
+      done ? "Read" : "Completed",
+      done ? "Completed" : "Read",
     );
   }
 }
@@ -1347,7 +1347,7 @@ export async function syncTaskFromRecord(
         ? "In Progress"
         : record.status === "On Hold"
           ? "On Hold"
-          : "Assigned";
+          : "Read";
 
   if (!snap.empty) {
     // Update existing linked task
@@ -1443,11 +1443,10 @@ export function loadTasks(): Task[] {
 
 export const PRIORITY_OPTIONS: TaskPriority[] = ["Low", "Medium", "High", "Urgent"];
 export const TASK_STATUS_OPTIONS: TaskStatus[] = [
-  "Assigned",
   "Read",
   "In Progress",
-  "Completed",
   "On Hold",
+  "Completed",
 ];
 
 export interface TaskTemplate {
@@ -1917,7 +1916,7 @@ export async function duplicateTask(taskId: string, actor: string): Promise<Task
     description: task.description || task.remarks || "",
     assignee: task.assignee || task.assignedEmployeeUid || "",
     priority: task.priority || "Medium",
-    status: "Assigned",
+    status: "Read",
     dueDate: task.dueDate || undefined,
     reminderMinutes: task.reminderMinutes || undefined,
     associationType: task.associationType || "none",
