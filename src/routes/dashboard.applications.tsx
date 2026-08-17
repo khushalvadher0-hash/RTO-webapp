@@ -8492,10 +8492,12 @@ REGISTRY PRO`;
 
           {/* Licence Details Card */}
           {app.subModule === "licence" && (
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4 text-xs">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2 border-b border-slate-200 pb-2">
                 <FileText className="w-4 h-4 text-blue-600" /> Licence Details
               </h3>
+              
+              {/* General Applicant Fields */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
                 <div>
                   <span className="text-slate-400">Date Of Birth:</span>
@@ -8505,72 +8507,419 @@ REGISTRY PRO`;
                   <span className="text-slate-400">Driving School Holder:</span>
                   <p className="font-semibold">{app.licenseDetails?.isDrivingSchoolHolder ? "YES" : "NO"}</p>
                 </div>
-                {app.licenseDetails?.generalLicenceServices?.dlNumber && (
-                  <div>
-                    <span className="text-slate-400">DL Number:</span>
-                    <p className="font-semibold font-mono">{app.licenseDetails.generalLicenceServices.dlNumber}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.classOfVehicle && app.licenseDetails.generalLicenceServices.classOfVehicle.length > 0 && (
-                  <div>
-                    <span className="text-slate-400">Class Of Vehicle:</span>
-                    <p className="font-semibold">{app.licenseDetails.generalLicenceServices.classOfVehicle.join(", ")}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.issueDate && (
-                  <div>
-                    <span className="text-slate-400">Issue Date:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.issueDate)}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.validityDate && (
-                  <div>
-                    <span className="text-slate-400">Validity Date:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.validityDate)}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.vehicleTypes && (
-                  <div>
-                    <span className="text-slate-400">Vehicle Types:</span>
-                    <p className="font-semibold">
-                      {Object.entries(app.licenseDetails.generalLicenceServices.vehicleTypes)
-                        .filter(([_, enabled]) => enabled)
-                        .map(([type]) => type.toUpperCase())
-                        .join(", ") || "—"}
-                    </p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.ntValidity && (
-                  <div>
-                    <span className="text-slate-400">NT Validity:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.ntValidity)}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.trValidity && (
-                  <div>
-                    <span className="text-slate-400">TR Validity:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.trValidity)}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.hazardousValidity && (
-                  <div>
-                    <span className="text-slate-400">Hazardous Validity:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.hazardousValidity)}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.hazardousTrainingValidity && (
-                  <div>
-                    <span className="text-slate-400">Hazardous Training Validity:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.hazardousTrainingValidity)}</p>
-                  </div>
-                )}
-                {app.licenseDetails?.generalLicenceServices?.internationalLicenceValidity && (
-                  <div>
-                    <span className="text-slate-400">International Licence Validity:</span>
-                    <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.internationalLicenceValidity)}</p>
-                  </div>
-                )}
               </div>
+
+              {/* 1. New Learning Licence Details */}
+              {app.licenseDetails?.newLearningLicence?.enabled && (
+                <div className="border-t border-slate-200 pt-3 space-y-3">
+                  <h4 className="font-bold text-blue-900 text-[11px] uppercase tracking-wider">New Learning Licence</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] bg-white p-3 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="text-slate-400">Appointment Date:</span>
+                      <p className="font-semibold">{displayDate(app.licenseDetails.newLearningLicence.appointmentDate)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Application No:</span>
+                      <p className="font-semibold font-mono">{app.licenseDetails.newLearningLicence.applicationNo || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Class Of Vehicle:</span>
+                      <p className="font-semibold">
+                        {Array.isArray(app.licenseDetails.newLearningLicence.classOfVehicle) 
+                          ? app.licenseDetails.newLearningLicence.classOfVehicle.join(", ") 
+                          : app.licenseDetails.newLearningLicence.classOfVehicle || "—"}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Step 1: LL Details */}
+                  {app.licenseDetails.newLearningLicence.step1 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 1: LL Details</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">LL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.newLearningLicence.step1.llNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.newLearningLicence.step1.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Expiry Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.newLearningLicence.step1.expiryDate)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 2: DL Details */}
+                  {app.licenseDetails.newLearningLicence.step2 && (
+                    <div className="pl-3 border-l-2 border-blue-500 space-y-1.5">
+                      <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Step 2: DL Details</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.newLearningLicence.step2.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.newLearningLicence.step2.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.newLearningLicence.step2.validityDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Vehicle Types:</span>
+                          <p className="font-semibold">
+                            {Object.entries(app.licenseDetails.newLearningLicence.step2.vehicleTypes || {})
+                              .filter(([_, val]) => val)
+                              .map(([key]) => key.toUpperCase())
+                              .join(", ") || "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. DL New LL Endorsement Details */}
+              {app.licenseDetails?.dlNewLlEndorsement?.enabled && (
+                <div className="border-t border-slate-200 pt-3 space-y-3">
+                  <h4 className="font-bold text-blue-900 text-[11px] uppercase tracking-wider">DL New LL Endorsement</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] bg-white p-3 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="text-slate-400">Application No:</span>
+                      <p className="font-semibold font-mono">{app.licenseDetails.dlNewLlEndorsement.applicationNo || "—"}</p>
+                    </div>
+                  </div>
+
+                  {/* Step 1: Existing DL */}
+                  {app.licenseDetails.dlNewLlEndorsement.step1 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 1: Existing DL</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlNewLlEndorsement.step1.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlNewLlEndorsement.step1.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlNewLlEndorsement.step1.validityDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Vehicle Types:</span>
+                          <p className="font-semibold">
+                            {Object.entries(app.licenseDetails.dlNewLlEndorsement.step1.vehicleTypes || {})
+                              .filter(([_, val]) => val)
+                              .map(([key]) => key.toUpperCase())
+                              .join(", ") || "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 2: Endorsement LL */}
+                  {app.licenseDetails.dlNewLlEndorsement.step2 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 2: Endorsement LL</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">LL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlNewLlEndorsement.step2.llNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlNewLlEndorsement.step2.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Expiry Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlNewLlEndorsement.step2.expiryDate)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: New DL */}
+                  {app.licenseDetails.dlNewLlEndorsement.step3 && (
+                    <div className="pl-3 border-l-2 border-blue-500 space-y-1.5">
+                      <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Step 3: New DL Details</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlNewLlEndorsement.step3.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlNewLlEndorsement.step3.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlNewLlEndorsement.step3.validityDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Vehicle Types:</span>
+                          <p className="font-semibold">
+                            {Object.entries(app.licenseDetails.dlNewLlEndorsement.step3.vehicleTypes || {})
+                              .filter(([_, val]) => val)
+                              .map(([key]) => key.toUpperCase())
+                              .join(", ") || "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. LL Renew / Class Details */}
+              {app.licenseDetails?.llRenewClass?.enabled && (
+                <div className="border-t border-slate-200 pt-3 space-y-3">
+                  <h4 className="font-bold text-blue-900 text-[11px] uppercase tracking-wider">LL Renew / Class</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] bg-white p-3 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="text-slate-400">Appointment Date:</span>
+                      <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.appointmentDate)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Application No:</span>
+                      <p className="font-semibold font-mono">{app.licenseDetails.llRenewClass.applicationNo || "—"}</p>
+                    </div>
+                  </div>
+
+                  {/* Step 1: Existing LL */}
+                  {app.licenseDetails.llRenewClass.step1 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 1: Existing LL</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">LL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.llRenewClass.step1.llNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.step1.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Expiry Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.step1.expiryDate)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 2: Existing DL */}
+                  {app.licenseDetails.llRenewClass.step2 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 2: Existing DL</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.llRenewClass.step2.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.step2.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.step2.validityDate)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: New DL */}
+                  {app.licenseDetails.llRenewClass.step3 && (
+                    <div className="pl-3 border-l-2 border-blue-500 space-y-1.5">
+                      <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Step 3: New DL Details</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.llRenewClass.step3.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.step3.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.llRenewClass.step3.validityDate)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. DL Renew Retest Details */}
+              {app.licenseDetails?.dlRenewRetest?.enabled && (
+                <div className="border-t border-slate-200 pt-3 space-y-3">
+                  <h4 className="font-bold text-blue-900 text-[11px] uppercase tracking-wider">DL Renew Retest</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] bg-white p-3 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="text-slate-400">Application No:</span>
+                      <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.applicationNo || "—"}</p>
+                    </div>
+                  </div>
+
+                  {/* Step 1: Existing DL */}
+                  {app.licenseDetails.dlRenewRetest.step1 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 1: Existing DL</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.step1.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlRenewRetest.step1.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlRenewRetest.step1.validityDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Application No:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.step1.appNo1 || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 2: Retest LL */}
+                  {app.licenseDetails.dlRenewRetest.step2 && (
+                    <div className="pl-3 border-l-2 border-slate-300 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Step 2: Retest LL</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">LL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.step2.llNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlRenewRetest.step2.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Expiry Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlRenewRetest.step2.expiryDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Application No:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.step2.appNo2 || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: New DL */}
+                  {app.licenseDetails.dlRenewRetest.step3 && (
+                    <div className="pl-3 border-l-2 border-blue-500 space-y-1.5">
+                      <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Step 3: New DL Details</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">DL Number:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.step3.dlNumber || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Issue Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlRenewRetest.step3.issueDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Validity Date:</span>
+                          <p className="font-semibold">{displayDate(app.licenseDetails.dlRenewRetest.step3.validityDate)}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Application No:</span>
+                          <p className="font-semibold font-mono">{app.licenseDetails.dlRenewRetest.step3.appNo1 || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 5. General Licence Services Details */}
+              {app.licenseDetails?.generalLicenceServices?.selectedServices && app.licenseDetails.generalLicenceServices.selectedServices.length > 0 && (
+                <div className="border-t border-slate-200 pt-3 space-y-3">
+                  <h4 className="font-bold text-blue-900 text-[11px] uppercase tracking-wider">General Services Details</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] bg-white p-3 rounded-lg border border-slate-100">
+                    {app.licenseDetails.generalLicenceServices.dlNumber && (
+                      <div>
+                        <span className="text-slate-400">DL Number:</span>
+                        <p className="font-semibold font-mono">{app.licenseDetails.generalLicenceServices.dlNumber}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.classOfVehicle && app.licenseDetails.generalLicenceServices.classOfVehicle.length > 0 && (
+                      <div>
+                        <span className="text-slate-400">Class Of Vehicle:</span>
+                        <p className="font-semibold">{app.licenseDetails.generalLicenceServices.classOfVehicle.join(", ")}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.issueDate && (
+                      <div>
+                        <span className="text-slate-400">Issue Date:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.issueDate)}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.validityDate && (
+                      <div>
+                        <span className="text-slate-400">Validity Date:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.validityDate)}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.vehicleTypes && (
+                      <div>
+                        <span className="text-slate-400">Vehicle Types:</span>
+                        <p className="font-semibold">
+                          {Object.entries(app.licenseDetails.generalLicenceServices.vehicleTypes)
+                            .filter(([_, enabled]) => enabled)
+                            .map(([type]) => type.toUpperCase())
+                            .join(", ") || "—"}
+                        </p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.ntValidity && (
+                      <div>
+                        <span className="text-slate-400">NT Validity:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.ntValidity)}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.trValidity && (
+                      <div>
+                        <span className="text-slate-400">TR Validity:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.trValidity)}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.hazardousValidity && (
+                      <div>
+                        <span className="text-slate-400">Hazardous Validity:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.hazardousValidity)}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.hazardousTrainingValidity && (
+                      <div>
+                        <span className="text-slate-400">Hazardous Training Validity:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.hazardousTrainingValidity)}</p>
+                      </div>
+                    )}
+                    {app.licenseDetails.generalLicenceServices.internationalLicenceValidity && (
+                      <div>
+                        <span className="text-slate-400">International Licence Validity:</span>
+                        <p className="font-semibold">{displayDate(app.licenseDetails.generalLicenceServices.internationalLicenceValidity)}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
