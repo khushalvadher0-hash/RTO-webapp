@@ -2413,7 +2413,7 @@ function AccountingDashboardPage() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.vehicleNumber, r.balanceAmount)}
+                                    onClick={() => sendWhatsAppReminder(mobile, r.clientName, r.vehicleNumber, r.totalCharges - r.advancePaid)}
                                     className="text-emerald-600 hover:text-emerald-900 text-xs px-2 py-1 h-auto font-semibold"
                                   >
                                     WhatsApp
