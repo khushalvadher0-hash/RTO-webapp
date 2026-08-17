@@ -28,6 +28,7 @@ import {
   Download,
   Printer,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ApplicationFullDetailsModalProps {
   open: boolean;
@@ -234,16 +235,19 @@ REGISTRY PRO`;
               </DialogDescription>
             </div>
             <div className="flex items-center gap-2">
-              {!isCompleted && (
-                <Button
-                  onClick={handleMarkAsCompleted}
-                  disabled={markingCompleted}
-                  className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 px-3 rounded-lg border-0 shadow-sm"
-                >
-                  <CheckCircle2 className="size-3.5" />
-                  <span>{markingCompleted ? "COMPLETING..." : "MARK COMPLETED"}</span>
-                </Button>
-              )}
+              <Button
+                onClick={handleMarkAsCompleted}
+                disabled={markingCompleted || isCompleted}
+                className={cn(
+                  "h-8 text-xs text-white font-bold flex items-center gap-1.5 px-3 rounded-lg border-0 shadow-sm",
+                  isCompleted 
+                    ? "bg-slate-400 cursor-not-allowed" 
+                    : "bg-blue-600 hover:bg-blue-700"
+                )}
+              >
+                <CheckCircle2 className="size-3.5" />
+                <span>{markingCompleted ? "COMPLETING..." : isCompleted ? "COMPLETED" : "MARK COMPLETED"}</span>
+              </Button>
               <Button
                 onClick={handleOpenWhatsappPreview}
                 className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 px-3 rounded-lg border-0 shadow-sm"

@@ -221,6 +221,7 @@ export function ServiceDashboard({
   const [searchQuery, setSearchQuery] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [groupFilter, setGroupFilter] = useState("all");
+  const [apptDateFilter, setApptDateFilter] = useState("");
   const [appsList, setAppsList] = useState<any[]>([]);
   const [selectedAppModal, setSelectedAppModal] = useState<any>(null);
   const [appModalOpen, setAppModalOpen] = useState(false);
@@ -657,6 +658,19 @@ export function ServiceDashboard({
       list = list.filter((t: any) => t.groupName === groupFilter);
     }
 
+    if (apptDateFilter) {
+      list = list.filter((t: any) => {
+        if (!t.appointmentDate) return false;
+        const apptDate = new Date(t.appointmentDate);
+        if (isNaN(apptDate.getTime())) return false;
+        const yyyy = apptDate.getFullYear();
+        const mm = String(apptDate.getMonth() + 1).padStart(2, "0");
+        const dd = String(apptDate.getDate()).padStart(2, "0");
+        const apptStr = `${yyyy}-${mm}-${dd}`;
+        return apptStr === apptDateFilter;
+      });
+    }
+
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
     return list.filter((t: any) => {
@@ -771,6 +785,26 @@ export function ServiceDashboard({
             </p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Appointment Date Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 h-9">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Appt Date:</span>
+              <input
+                type="date"
+                value={apptDateFilter}
+                onChange={(e) => setApptDateFilter(e.target.value)}
+                className="bg-transparent border-none text-xs font-semibold text-slate-700 focus:outline-none h-full outline-none w-28 cursor-pointer"
+              />
+              {apptDateFilter && (
+                <button
+                  onClick={() => setApptDateFilter("")}
+                  className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1 ml-1"
+                  title="Clear Date Filter"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
             <select
               value={groupFilter}
               onChange={(e) => setGroupFilter(e.target.value)}
