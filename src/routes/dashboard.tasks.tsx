@@ -4143,6 +4143,124 @@ function TaskDetailsSheet({
                 </div>
               </div>
 
+              {/* Task Step Detail (Only for License SubModule Tasks with active License step details) */}
+              {((activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence") &&
+                (activeTask as any).licenseDetails &&
+                ((activeTask as any).licenseDetails?.newLearningLicence?.enabled ||
+                  (activeTask as any).licenseDetails?.dlNewLlEndorsement?.enabled ||
+                  (activeTask as any).licenseDetails?.llRenewClass?.enabled ||
+                  (activeTask as any).licenseDetails?.dlRenewRetest?.enabled ||
+                  (activeTask as any).licenseDetails?.changeDobDl?.enabled)) && (
+                <CollapsibleSection title="Task Step Detail (License Workflow)" defaultOpen={true}>
+                  <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs">
+                    {(() => {
+                      const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
+                      const currentStep = (activeTask as any).currentStep || 1;
+                      
+                      // Render 2 steps for New Learning Licence or 3 steps for DL New LL Endorsement / Renewals
+                      return (
+                        <div className="space-y-4">
+                          {/* Application Numbers summary */}
+                          {(lic.newLearningLicence?.applicationNo || lic.dlNewLlEndorsement?.applicationNo || lic.llRenewClass?.applicationNo || lic.dlRenewRetest?.applicationNo) && (
+                            <div className="bg-blue-100/50 p-2.5 rounded-lg border border-blue-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                              {lic.newLearningLicence?.enabled && lic.newLearningLicence?.applicationNo && (
+                                <div><span className="font-semibold text-slate-600">New Learning Licence App No:</span> <span className="font-mono font-bold text-slate-800">{lic.newLearningLicence.applicationNo}</span></div>
+                              )}
+                              {lic.dlNewLlEndorsement?.enabled && lic.dlNewLlEndorsement?.applicationNo && (
+                                <div><span className="font-semibold text-slate-600">DL Endorsement App No:</span> <span className="font-mono font-bold text-slate-800">{lic.dlNewLlEndorsement.applicationNo}</span></div>
+                              )}
+                              {lic.llRenewClass?.enabled && lic.llRenewClass?.applicationNo && (
+                                <div><span className="font-semibold text-slate-600">LL Renew Class App No:</span> <span className="font-mono font-bold text-slate-800">{lic.llRenewClass.applicationNo}</span></div>
+                              )}
+                              {lic.dlRenewRetest?.enabled && lic.dlRenewRetest?.applicationNo && (
+                                <div><span className="font-semibold text-slate-600">DL Renew + Retest App No:</span> <span className="font-mono font-bold text-slate-800">{lic.dlRenewRetest.applicationNo}</span></div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Step 1 */}
+                          <div className={cn(
+                            "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
+                            currentStep === 1 
+                              ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
+                              : "bg-slate-100/40 border-slate-200 opacity-60"
+                          )}>
+                            <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                              <span className={cn(
+                                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                                currentStep === 1 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                              )}>1</span>
+                              <span>STEP 1: LEARNING / DL DETAILS</span>
+                              {currentStep === 1 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                              <div><span className="font-semibold text-slate-500 block">LL / DL NO:</span> {lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || "GJ0120260001234"}</div>
+                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate || "—"}</div>
+                              <div><span className="font-semibold text-slate-500 block">EXPIRY / VALIDITY:</span> {lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate || "—"}</div>
+                            </div>
+                          </div>
+
+                          {/* Step 2 */}
+                          <div className={cn(
+                            "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
+                            currentStep === 2 
+                              ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
+                              : "bg-slate-100/40 border-slate-200 opacity-60"
+                          )}>
+                            <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                              <span className={cn(
+                                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                                currentStep === 2 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                              )}>2</span>
+                              <span>STEP 2: DRIVING LICENCE DETAILS</span>
+                              {currentStep === 2 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                              <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
+                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || "—"}</div>
+                              <div><span className="font-semibold text-slate-500 block">VALIDITY DATE:</span> {lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || "—"}</div>
+                              <div className="col-span-2">
+                                <span className="font-semibold text-slate-500 block">VEHICLE TYPE:</span> 
+                                <span className="font-bold text-blue-700">
+                                  {lic.newLearningLicence?.step2?.vehicleTypes?.nt ? "NT " : ""}
+                                  {lic.newLearningLicence?.step2?.vehicleTypes?.tr ? "TR " : ""}
+                                  {lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "Hazardous" : ""}
+                                  {!lic.newLearningLicence?.step2?.vehicleTypes?.nt && !lic.newLearningLicence?.step2?.vehicleTypes?.tr && !lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "NT" : ""}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Step 3 (For 3-step License Services) */}
+                          {(lic.dlNewLlEndorsement?.enabled || lic.llRenewClass?.enabled || lic.dlRenewRetest?.enabled) && (
+                            <div className={cn(
+                              "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
+                              currentStep === 3 
+                                ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
+                                : "bg-slate-100/40 border-slate-200 opacity-60"
+                            )}>
+                              <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                                <span className={cn(
+                                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                                  currentStep === 3 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                                )}>3</span>
+                                <span>STEP 3: FINAL DL DETAILS & ENDORSEMENT</span>
+                                {currentStep === 3 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                                <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || "—"}</div>
+                                <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate || "—"}</div>
+                                <div><span className="font-semibold text-slate-500 block">VALIDITY:</span> {lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate || "—"}</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </CollapsibleSection>
+              )}
+
               {/* Expected Completion Date */}
               <div className="grid gap-1.5">
                 <Label className="text-xs uppercase font-bold text-gray-400">Expected Completion Date</Label>
@@ -4174,124 +4292,6 @@ function TaskDetailsSheet({
               </div>
             </div>
           </CollapsibleSection>
-
-          {/* Task Step Detail (Only for License SubModule Tasks with active License step details) */}
-          {((activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence") &&
-            (activeTask as any).licenseDetails &&
-            ((activeTask as any).licenseDetails?.newLearningLicence?.enabled ||
-              (activeTask as any).licenseDetails?.dlNewLlEndorsement?.enabled ||
-              (activeTask as any).licenseDetails?.llRenewClass?.enabled ||
-              (activeTask as any).licenseDetails?.dlRenewRetest?.enabled ||
-              (activeTask as any).licenseDetails?.changeDobDl?.enabled)) && (
-            <CollapsibleSection title="Task Step Detail (License Workflow)" defaultOpen={true}>
-              <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs">
-                {(() => {
-                  const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
-                  const currentStep = (activeTask as any).currentStep || 1;
-                  
-                  // Render 2 steps for New Learning Licence or 3 steps for DL New LL Endorsement / Renewals
-                  return (
-                    <div className="space-y-4">
-                      {/* Application Numbers summary */}
-                      {(lic.newLearningLicence?.applicationNo || lic.dlNewLlEndorsement?.applicationNo || lic.llRenewClass?.applicationNo || lic.dlRenewRetest?.applicationNo) && (
-                        <div className="bg-blue-100/50 p-2.5 rounded-lg border border-blue-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                          {lic.newLearningLicence?.enabled && lic.newLearningLicence?.applicationNo && (
-                            <div><span className="font-semibold text-slate-600">New Learning Licence App No:</span> <span className="font-mono font-bold text-slate-800">{lic.newLearningLicence.applicationNo}</span></div>
-                          )}
-                          {lic.dlNewLlEndorsement?.enabled && lic.dlNewLlEndorsement?.applicationNo && (
-                            <div><span className="font-semibold text-slate-600">DL Endorsement App No:</span> <span className="font-mono font-bold text-slate-800">{lic.dlNewLlEndorsement.applicationNo}</span></div>
-                          )}
-                          {lic.llRenewClass?.enabled && lic.llRenewClass?.applicationNo && (
-                            <div><span className="font-semibold text-slate-600">LL Renew Class App No:</span> <span className="font-mono font-bold text-slate-800">{lic.llRenewClass.applicationNo}</span></div>
-                          )}
-                          {lic.dlRenewRetest?.enabled && lic.dlRenewRetest?.applicationNo && (
-                            <div><span className="font-semibold text-slate-600">DL Renew + Retest App No:</span> <span className="font-mono font-bold text-slate-800">{lic.dlRenewRetest.applicationNo}</span></div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Step 1 */}
-                      <div className={cn(
-                        "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
-                        currentStep === 1 
-                          ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
-                          : "bg-slate-100/40 border-slate-200 opacity-60"
-                      )}>
-                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
-                          <span className={cn(
-                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                            currentStep === 1 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
-                          )}>1</span>
-                          <span>STEP 1: LEARNING / DL DETAILS</span>
-                          {currentStep === 1 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
-                          <div><span className="font-semibold text-slate-500 block">LL / DL NO:</span> {lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || "GJ0120260001234"}</div>
-                          <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate || "—"}</div>
-                          <div><span className="font-semibold text-slate-500 block">EXPIRY / VALIDITY:</span> {lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate || "—"}</div>
-                        </div>
-                      </div>
-
-                      {/* Step 2 */}
-                      <div className={cn(
-                        "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
-                        currentStep === 2 
-                          ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
-                          : "bg-slate-100/40 border-slate-200 opacity-60"
-                      )}>
-                        <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
-                          <span className={cn(
-                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                            currentStep === 2 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
-                          )}>2</span>
-                          <span>STEP 2: DRIVING LICENCE DETAILS</span>
-                          {currentStep === 2 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
-                          <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
-                          <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || "—"}</div>
-                          <div><span className="font-semibold text-slate-500 block">VALIDITY DATE:</span> {lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || "—"}</div>
-                          <div className="col-span-2">
-                            <span className="font-semibold text-slate-500 block">VEHICLE TYPE:</span> 
-                            <span className="font-bold text-blue-700">
-                              {lic.newLearningLicence?.step2?.vehicleTypes?.nt ? "NT " : ""}
-                              {lic.newLearningLicence?.step2?.vehicleTypes?.tr ? "TR " : ""}
-                              {lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "Hazardous" : ""}
-                              {!lic.newLearningLicence?.step2?.vehicleTypes?.nt && !lic.newLearningLicence?.step2?.vehicleTypes?.tr && !lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "NT" : ""}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Step 3 (For 3-step License Services) */}
-                      {(lic.dlNewLlEndorsement?.enabled || lic.llRenewClass?.enabled || lic.dlRenewRetest?.enabled) && (
-                        <div className={cn(
-                          "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
-                          currentStep === 3 
-                            ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
-                            : "bg-slate-100/40 border-slate-200 opacity-60"
-                        )}>
-                          <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
-                            <span className={cn(
-                              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                              currentStep === 3 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
-                            )}>3</span>
-                            <span>STEP 3: FINAL DL DETAILS & ENDORSEMENT</span>
-                            {currentStep === 3 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
-                            <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || "—"}</div>
-                            <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate || "—"}</div>
-                            <div><span className="font-semibold text-slate-500 block">VALIDITY:</span> {lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate || "—"}</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </CollapsibleSection>
-          )}
 
           {/* 2. Subtasks Collapsible Section */}
           {activeTask.subtasks && activeTask.subtasks.length > 0 && (
