@@ -3730,14 +3730,14 @@ function ApplicationFormModal({
                           </div>
                         </div>
 
-                        {/* Vehicle Type Checkboxes & Validity Dates (NT, TR, Hazardous) */}
+                        {/* Vehicle Type Checkboxes & Expiry Dates (NT, TR, Hazardous) */}
                         <div className="pt-2 space-y-3 border-t border-slate-100">
-                          <label className="font-semibold text-slate-700 block mb-1">VEHICLE TYPE & VALIDITY DATES</label>
+                          <label className="font-semibold text-slate-700 block mb-1">VEHICLE TYPE & EXPIRY DATES</label>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             {[
-                              { label: "NT Validity Date", key: "nt", stateKey: "ntValidity" },
-                              { label: "TR Validity Date", key: "tr", stateKey: "trValidity" },
-                              { label: "Hazardous Validity Date", key: "hazardous", stateKey: "hazardousValidity" },
+                              { label: "NT Expiry Date", key: "nt", stateKey: "ntValidity" },
+                              { label: "TR Expiry Date", key: "tr", stateKey: "trValidity" },
+                              { label: "Hazardous Expiry Date", key: "hazardous", stateKey: "hazardousValidity" },
                             ].map((vtItem) => {
                               const vtKey = vtItem.key as "nt" | "tr" | "hazardous";
                               const checked = !!newLL.step2.vehicleTypes?.[vtKey];
@@ -5015,11 +5015,11 @@ function ApplicationFormModal({
                       </div>
                     </div>
 
-                    {/* Validity Dates for NT, TR, Hazardous */}
+                    {/* Expiry Dates for NT, TR, Hazardous */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                       {genVehicleTypes.nt && (
                         <div>
-                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">NT Validity Date</label>
+                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">NT Expiry Date</label>
                           <input
                             type="date"
                             value={genNtValidity}
@@ -5030,7 +5030,7 @@ function ApplicationFormModal({
                       )}
                       {genVehicleTypes.tr && (
                         <div>
-                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">TR Validity Date</label>
+                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">TR Expiry Date</label>
                           <input
                             type="date"
                             value={genTrValidity}
@@ -5041,7 +5041,7 @@ function ApplicationFormModal({
                       )}
                       {genVehicleTypes.hazardous && (
                         <div>
-                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">Hazardous Validity Date</label>
+                          <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">Hazardous Expiry Date</label>
                           <input
                             type="date"
                             value={genHazardousValidity}
@@ -5053,6 +5053,7 @@ function ApplicationFormModal({
                     </div>
                   </div>
                 )}
+
 
                 {/* 2. HAZARDOUS TRAINING CARD */}
                 {generalLicServices.selected.includes("Hazardous Training Card") && (

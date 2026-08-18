@@ -602,7 +602,7 @@ REGISTRY PRO`;
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-slate-700">
                               <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || lic.llRenewClass?.step2?.dlNumber || lic.dlRenewRetest?.step2?.dlNumber || "—"}</div>
                               <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDate(lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || lic.llRenewClass?.step2?.issueDate || lic.dlRenewRetest?.step2?.issueDate)}</div>
-                              <div><span className="font-semibold text-slate-500 block">VALIDITY DATE:</span> {formatDate(lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || lic.llRenewClass?.step2?.validityDate || lic.dlRenewRetest?.step2?.validityDate)}</div>
+                              <div><span className="font-semibold text-slate-500 block">EXPIRY DATE:</span> {formatDate(lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || lic.llRenewClass?.step2?.validityDate || lic.dlRenewRetest?.step2?.validityDate)}</div>
                             </div>
                           </div>
                         ) : null}

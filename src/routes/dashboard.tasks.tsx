@@ -3719,6 +3719,13 @@ function TaskDetailsSheet({
   const [vahaanRtoReceiptNo, setVahaanRtoReceiptNo] = useState("");
   const [vahaanAppointmentDate, setVahaanAppointmentDate] = useState("");
 
+  const [showLicenseStepModal, setShowLicenseStepModal] = useState(false);
+  const [licenseStepDate, setLicenseStepDate] = useState("");
+  const [licenseStepModalData, setLicenseStepModalData] = useState<{
+    currentStep: number;
+    nextStep: number;
+  } | null>(null);
+
   const assignedEmp = useMemo(() => {
     return (
       employees.find(
@@ -3867,29 +3874,12 @@ function TaskDetailsSheet({
 
       if (isLicenceTask && currentStep < maxSteps) {
         const nextStep = currentStep + 1;
-        const newApptDateStr = prompt(
-          `Step ${currentStep} completed! Enter new appointment date for Step ${nextStep} (DD/MM/YYYY):`,
-          new Date().toLocaleDateString("en-GB")
-        );
-        
-        if (newApptDateStr === null) {
-          return; // User cancelled
-        }
-
-        const updates: any = {
-          currentStep: nextStep,
-          appointmentDate: newApptDateStr,
-          status: "In Progress" as TaskStatus,
-          done: false,
-        };
-
-        if (remarkInput.trim()) {
-          await addComment(activeTask.id, actor, remarkInput.trim());
-          setRemarkInput("");
-        }
-
-        await updateTask(activeTask.id, updates, actor, `Step ${currentStep} completed. Started Step ${nextStep}.`);
-        toast.success(`Step ${currentStep} completed! Started Step ${nextStep}.`);
+        setLicenseStepModalData({
+          currentStep,
+          nextStep,
+        });
+        setLicenseStepDate(new Date().toISOString().slice(0, 10));
+        setShowLicenseStepModal(true);
         return;
       }
 
@@ -4218,7 +4208,7 @@ function TaskDetailsSheet({
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                               <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
                               <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || "—"}</div>
-                              <div><span className="font-semibold text-slate-500 block">VALIDITY DATE:</span> {lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || "—"}</div>
+                              <div><span className="font-semibold text-slate-500 block">EXPIRY DATE:</span> {lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || "—"}</div>
                               <div className="col-span-2">
                                 <span className="font-semibold text-slate-500 block">VEHICLE TYPE:</span> 
                                 <span className="font-bold text-blue-700">
@@ -4620,6 +4610,68 @@ function TaskDetailsSheet({
             </ol>
           </CollapsibleSection>
         </div>
+
+        {showLicenseStepModal && licenseStepModalData && (
+          <Dialog open={showLicenseStepModal} onOpenChange={setShowLicenseStepModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Complete Step {licenseStepModalData.currentStep}</DialogTitle>
+                <DialogDescription>
+                  Step {licenseStepModalData.currentStep} completed! Please select the appointment date for Step {licenseStepModalData.nextStep}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label>Appointment Date *</Label>
+                  <Input
+                    type="date"
+                    value={licenseStepDate}
+                    onChange={(e) => setLicenseStepDate(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowLicenseStepModal(false)}>Cancel</Button>
+                <Button onClick={async () => {
+                  if (!activeTask) return;
+                  try {
+                    let formattedDate = licenseStepDate;
+                    if (licenseStepDate.includes("-")) {
+                      const parts = licenseStepDate.split("-");
+                      if (parts.length === 3) {
+                        formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                      }
+                    }
+
+                    const updates: any = {
+                      currentStep: licenseStepModalData.nextStep,
+                      appointmentDate: formattedDate,
+                      status: "In Progress" as TaskStatus,
+                      done: false,
+                    };
+
+                    if (remarkInput.trim()) {
+                      await addComment(activeTask.id, actor, remarkInput.trim());
+                      setRemarkInput("");
+                    }
+
+                    await updateTask(
+                      activeTask.id,
+                      updates,
+                      actor,
+                      `Step ${licenseStepModalData.currentStep} completed. Started Step ${licenseStepModalData.nextStep}.`
+                    );
+                    toast.success(`Step ${licenseStepModalData.currentStep} completed! Started Step ${licenseStepModalData.nextStep}.`);
+                    setShowLicenseStepModal(false);
+                    setLicenseStepModalData(null);
+                  } catch (err: any) {
+                    toast.error(err.message || "Failed to update step");
+                  }
+                }}>Save & Continue</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </SheetContent>
     </Sheet>
   );
