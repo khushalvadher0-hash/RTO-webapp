@@ -28,6 +28,92 @@ if (typeof Date !== "undefined") {
   };
 }
 
+// Global input[type=date] display format override
+if (typeof HTMLInputElement !== "undefined") {
+  const typeDescriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "type");
+  if (typeDescriptor && typeDescriptor.set) {
+    const originalTypeSet = typeDescriptor.set;
+    typeDescriptor.set = function(newType) {
+      if (newType === "date") {
+        originalTypeSet.call(this, "text");
+        this.setAttribute("data-is-date-input", "true");
+        this.setAttribute("placeholder", "DD/MM/YYYY");
+        return;
+      }
+      originalTypeSet.call(this, newType);
+    };
+    Object.defineProperty(HTMLInputElement.prototype, "type", typeDescriptor);
+  }
+
+  const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  if (valueDescriptor && valueDescriptor.set && valueDescriptor.get) {
+    const originalSet = valueDescriptor.set;
+    const originalGet = valueDescriptor.get;
+
+    valueDescriptor.set = function(val) {
+      if (this.getAttribute("data-is-date-input") === "true") {
+        if (!val) {
+          originalSet.call(this, "");
+          return;
+        }
+        if (typeof val === "string" && val.includes("-")) {
+          const parts = val.split("-");
+          if (parts.length === 3) {
+            originalSet.call(this, `${parts[2]}/${parts[1]}/${parts[0]}`);
+            return;
+          }
+        }
+      }
+      originalSet.call(this, val);
+    };
+
+    valueDescriptor.get = function() {
+      const rawVal = originalGet.call(this);
+      if (this.getAttribute("data-is-date-input") === "true") {
+        if (!rawVal) return "";
+        const parts = rawVal.split("/");
+        if (parts.length === 3) {
+          return `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        return rawVal;
+      }
+      return rawVal;
+    };
+
+    Object.defineProperty(HTMLInputElement.prototype, "value", valueDescriptor);
+  }
+
+  // Handle typing mask
+  const handleInput = function(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (target && target.getAttribute("data-is-date-input") === "true") {
+      const rawVal = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.get?.call(target) || "";
+      let digits = rawVal.replace(/\D/g, "");
+      let formatted = digits;
+      if (digits.length > 2) {
+        formatted = digits.slice(0, 2) + "/" + digits.slice(2);
+      }
+      if (digits.length > 4) {
+        formatted = digits.slice(0, 2) + "/" + digits.slice(2, 4) + "/" + digits.slice(4, 8);
+      }
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(target, formatted);
+    }
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("input", handleInput, true);
+    document.addEventListener("keypress", (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target && target.getAttribute("data-is-date-input") === "true") {
+        const rawVal = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.get?.call(target) || "";
+        if (rawVal.length >= 10 && e.key !== "Backspace" && e.key !== "Delete") {
+          e.preventDefault();
+        }
+      }
+    }, true);
+  }
+}
+
 // Get the router instance
 const router = getRouter();
 

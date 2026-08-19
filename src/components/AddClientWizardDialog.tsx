@@ -115,9 +115,10 @@ export function AddClientWizardDialog({
         registrationDate: new Date().toISOString().split("T")[0],
         status: "Pending",
       });
+      const isLic = isLicenseService(defaultServiceType);
       setServiceForm({
         serviceType: defaultServiceType,
-        applicationType: "Home",
+        applicationType: isLic ? "Non-Faceless" : "Home",
         applicationId: "",
         templateId: "",
         dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0],
@@ -610,12 +611,26 @@ export function AddClientWizardDialog({
                       <SelectValue placeholder="Select Application Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
-                      <SelectItem value="Faceless">Faceless</SelectItem>
-                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                      <SelectItem value="Out Of Bhavnagar To Bhavnagar">
-                        Out Of Bhavnagar To Bhavnagar
-                      </SelectItem>
+                      {isLicenseService(serviceForm.serviceType) ? (
+                        <>
+                          <SelectItem value="Non-Faceless">Non-Faceless</SelectItem>
+                          <SelectItem value="Faceless">Faceless</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar To Bhavnagar">
+                            Out Of Bhavnagar To Bhavnagar
+                          </SelectItem>
+                        </>
+                      ) : (
+                        <>
+                          <SelectItem value="Home">Home</SelectItem>
+                          <SelectItem value="Faceless">Faceless</SelectItem>
+                          <SelectItem value="CNG">CNG</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar To Bhavnagar">
+                            Out Of Bhavnagar To Bhavnagar
+                          </SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

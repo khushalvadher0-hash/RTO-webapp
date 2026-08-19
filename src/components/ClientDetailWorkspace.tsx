@@ -447,12 +447,14 @@ export function ClientDetailWorkspace({
       });
     } else {
       setEditingService(null);
+      const defaultServiceType = vehicleId ? "Insurance" : "License New";
+      const isLic = isLicenseService(defaultServiceType);
       setServiceForm({
         id: `service_${crypto.randomUUID()}`,
         clientId,
         vehicleId: vehicleId || "",
-        serviceType: vehicleId ? "Insurance" : "License New",
-        applicationType: "Home",
+        serviceType: defaultServiceType,
+        applicationType: isLic ? "Non-Faceless" : "Home",
         dueDate: "",
         serviceAmount: undefined,
         amountReceived: undefined,
@@ -2108,7 +2110,15 @@ export function ClientDetailWorkspace({
               <Label className="text-xs font-bold uppercase">Service Type</Label>
               <Select
                 value={serviceForm.serviceType || "Insurance"}
-                onValueChange={(v: any) => setServiceForm({ ...serviceForm, serviceType: v })}
+                onValueChange={(v: any) => {
+                  const wasLic = isLicenseService(serviceForm.serviceType);
+                  const isLic = isLicenseService(v);
+                  let appType = serviceForm.applicationType;
+                  if (wasLic !== isLic) {
+                    appType = isLic ? "Non-Faceless" : "Home";
+                  }
+                  setServiceForm({ ...serviceForm, serviceType: v, applicationType: appType });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -2146,17 +2156,29 @@ export function ClientDetailWorkspace({
             <div className="space-y-1">
               <Label className="text-xs font-bold uppercase">Application Type</Label>
               <Select
-                value={serviceForm.applicationType || "Non - Faceless"}
+                value={serviceForm.applicationType || (isLicenseService(serviceForm.serviceType) ? "Non-Faceless" : "Home")}
                 onValueChange={(v: any) => setServiceForm({ ...serviceForm, applicationType: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
-                  <SelectItem value="Faceless">Faceless</SelectItem>
-                  <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                  <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                  {isLicenseService(serviceForm.serviceType) ? (
+                    <>
+                      <SelectItem value="Non-Faceless">Non-Faceless</SelectItem>
+                      <SelectItem value="Faceless">Faceless</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      <SelectItem value="Home">Home</SelectItem>
+                      <SelectItem value="Faceless">Faceless</SelectItem>
+                      <SelectItem value="CNG">CNG</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                      <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>

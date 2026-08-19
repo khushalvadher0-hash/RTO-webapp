@@ -13,12 +13,28 @@ export const getApplicationTypeStyle = (appType?: string) => {
   if (t === "faceless") return { borderColor: "#1d4ed8", color: "#1d4ed8", backgroundColor: "transparent" };
   if (t === "out of bhavnagar") return { borderColor: "#b91c1c", color: "#b91c1c", backgroundColor: "transparent" };
   if (t === "out of bhavnagar to bhavnagar") return { borderColor: "#c2410c", color: "#c2410c", backgroundColor: "transparent" };
+  if (t === "cng") return { borderColor: "#10b981", color: "#047857", backgroundColor: "transparent" };
   return {};
 };
 
 export function ApplicationTypeBadge({ appType, className }: ApplicationTypeBadgeProps) {
-  const type = (appType || "Non - Faceless").trim();
+  const type = (appType || "Home").trim();
   const lower = type.toLowerCase();
+
+  let displayVal = type;
+  if (lower === "non-faceless" || lower === "non - faceless") {
+    displayVal = "Non-Faceless";
+  } else if (lower === "home") {
+    displayVal = "Home";
+  } else if (lower === "faceless") {
+    displayVal = "Faceless";
+  } else if (lower === "cng") {
+    displayVal = "CNG";
+  } else if (lower === "out of bhavnagar") {
+    displayVal = "Out Of Bhavnagar";
+  } else if (lower === "out of bhavnagar to bhavnagar" || lower === "out of bhavanagr to bhavnagar") {
+    displayVal = "Out Of Bhavnagar To Bhavnagar";
+  }
 
   return (
     <span
@@ -28,16 +44,17 @@ export function ApplicationTypeBadge({ appType, className }: ApplicationTypeBadg
         lower === "faceless" && "bg-transparent text-blue-700 border-blue-600",
         lower === "out of bhavnagar" && "bg-transparent text-red-700 border-red-600",
         lower === "out of bhavnagar to bhavnagar" && "bg-transparent text-orange-700 border-orange-600",
-        !["home", "non - faceless", "non-faceless", "faceless", "out of bhavnagar", "out of bhavnagar to bhavnagar"].includes(lower) && "border-slate-500 text-slate-700 bg-transparent",
+        lower === "cng" && "bg-transparent text-emerald-700 border-emerald-600",
+        !["home", "non - faceless", "non-faceless", "faceless", "out of bhavnagar", "out of bhavnagar to bhavnagar", "cng"].includes(lower) && "border-slate-500 text-slate-700 bg-transparent",
         className
       )}
       style={
-        !["home", "non - faceless", "non-faceless", "faceless", "out of bhavnagar", "out of bhavnagar to bhavnagar"].includes(lower)
+        !["home", "non - faceless", "non-faceless", "faceless", "out of bhavnagar", "out of bhavnagar to bhavnagar", "cng"].includes(lower)
           ? getApplicationTypeStyle(type)
           : undefined
       }
     >
-      {type === "Home" || type === "home" ? "Non - Faceless" : type}
+      {displayVal}
     </span>
   );
 }

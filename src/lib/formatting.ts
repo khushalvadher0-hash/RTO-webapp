@@ -34,10 +34,18 @@ export function formatPaymentStatus(status?: string): string {
   return status;
 }
 
-export function formatDateDDMMYYYY(val?: string | Date | null): string {
+export function formatDateDDMMYYYY(val?: string | Date | null | any): string {
   if (!val) return "—";
   try {
-    const d = new Date(val);
+    let d: Date;
+    if (val && typeof val.toDate === "function") {
+      d = val.toDate();
+    } else if (val && val.seconds !== undefined && val.nanoseconds !== undefined) {
+      d = new Date(val.seconds * 1000);
+    } else {
+      d = new Date(val);
+    }
+    
     if (isNaN(d.getTime())) {
       if (typeof val === "string") {
         const cleaned = val.trim();

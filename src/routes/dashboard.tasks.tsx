@@ -192,8 +192,7 @@ const getApplicationTypeStyle = (appType?: string) => {
 };
 
 function formatDate(iso?: string) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return formatDateDDMMYYYY(iso);
 }
 
 function isOverdue(t: Task) {
@@ -1500,12 +1499,12 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All App Types</SelectItem>
-                  <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
+                  <SelectItem value="Home">Home</SelectItem>
+                  <SelectItem value="non-faceless">non-faceless</SelectItem>
                   <SelectItem value="Faceless">Faceless</SelectItem>
+                  <SelectItem value="CNG">CNG</SelectItem>
                   <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                  <SelectItem value="Out Of Bhavnagar To Bhavnagar">
-                    Out Of Bhavnagar To Bhavnagar
-                  </SelectItem>
+                  <SelectItem value="Out of Bhavanagr to bhavnagar">Out of Bhavanagr to bhavnagar</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -1705,12 +1704,12 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All App Types</SelectItem>
-                  <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
+                  <SelectItem value="Home">Home</SelectItem>
+                  <SelectItem value="non-faceless">non-faceless</SelectItem>
                   <SelectItem value="Faceless">Faceless</SelectItem>
+                  <SelectItem value="CNG">CNG</SelectItem>
                   <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                  <SelectItem value="Out Of Bhavnagar To Bhavnagar">
-                    Out Of Bhavnagar To Bhavnagar
-                  </SelectItem>
+                  <SelectItem value="Out of Bhavanagr to bhavnagar">Out of Bhavanagr to bhavnagar</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -2140,10 +2139,22 @@ function TasksPage() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
-                      <SelectItem value="Faceless">Faceless</SelectItem>
-                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                      <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
+                      {(completeModalTask?.applicationType === "Licence" || (completeModalTask as any)?.subModule === "licence") ? (
+                        <>
+                          <SelectItem value="Non-Faceless">Non-Faceless</SelectItem>
+                          <SelectItem value="Faceless">Faceless</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                        </>
+                      ) : (
+                        <>
+                          <SelectItem value="Home">Home</SelectItem>
+                          <SelectItem value="Faceless">Faceless</SelectItem>
+                          <SelectItem value="CNG">CNG</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2398,14 +2409,14 @@ function TaskTable({
                   const fd = (t as any).form5Details || linkedApp?.form5Details || {};
 
                   const nameVal = fd.name || "—";
-                  const dobVal = fd.dateOfBirth || "—";
+                  const dobVal = formatDateDDMMYYYY(fd.dateOfBirth);
                   const appNoVal = fd.applicationNo || "—";
                   const aadhaarVal = fd.aadhaarNumber || "—";
                   const llVal = fd.llNumber || "—";
                   const dlVal = fd.dlNumber || "—";
-                  const llExpiryVal = fd.llExpiryDate || "—";
-                  const ntVal = fd.ntValidityDate || "—";
-                  const trVal = fd.trValidityDate || "—";
+                  const llExpiryVal = formatDateDDMMYYYY(fd.llExpiryDate);
+                  const ntVal = formatDateDDMMYYYY(fd.ntValidityDate);
+                  const trVal = formatDateDDMMYYYY(fd.trValidityDate);
 
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
@@ -2456,7 +2467,7 @@ function TaskTable({
                   const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;
                   const linkedApp = applications?.find((a: any) => a.id === targetAppKey || a.applicationId === t.applicationId);
                   const insDetails = (t as any).insuranceDetails || linkedApp?.vehicleDetails?.insuranceDetails || {};
-                  const clientDob = (t as any).dateOfBirth || (t as any).licenseDetails?.dateOfBirth || linkedApp?.dateOfBirth || linkedApp?.licenseDetails?.dateOfBirth || "—";
+                  const clientDob = formatDateDDMMYYYY((t as any).dateOfBirth || (t as any).licenseDetails?.dateOfBirth || linkedApp?.dateOfBirth || linkedApp?.licenseDetails?.dateOfBirth);
                   
                   const acc = accountingMap?.get(targetAppKey) || accountingMap?.get(t.applicationId || "");
                   const totalPay = acc?.totalPayment ?? ((t as any).amount || (t as any).totalAmount || 0);
@@ -2474,7 +2485,7 @@ function TaskTable({
                       <td className="p-3 font-mono text-slate-700">{t.vehicleNumber || linkedApp?.vehicleNumber || "—"}</td>
                       <td className="p-3 font-semibold text-slate-800">{insDetails.company || "—"}</td>
                       <td className="p-3 font-mono text-slate-600">{insDetails.policyNumber || "—"}</td>
-                      <td className="p-3 font-mono text-slate-600">{insDetails.expiryDate || "—"}</td>
+                      <td className="p-3 font-mono text-slate-600">{formatDateDDMMYYYY(insDetails.expiryDate)}</td>
                       <td className="p-3 font-bold text-slate-900 font-mono">
                         ₹{Number(totalPay).toLocaleString("en-IN")}
                       </td>
@@ -2539,7 +2550,7 @@ function TaskTable({
 
                 if (isLicenceSubModule) {
                   const ld = (t as any).licenseDetails;
-                  const clientDob = ld?.dateOfBirth || "—";
+                  const clientDob = formatDateDDMMYYYY(ld?.dateOfBirth);
                   
                   const targetAppKey = (t as any).applicationDocId || t.applicationId || (t as any).recordId || t.id;
                   const acc = accountingMap?.get(targetAppKey) || accountingMap?.get(t.applicationId || "");
@@ -2575,12 +2586,12 @@ function TaskTable({
                       {licenseExpiryCols.length > 0
                         ? licenseExpiryCols.map((srv) => (
                             <td key={srv} className="p-3 font-mono text-slate-600">
-                              {getExpiryForService(srv)}
+                              {formatDateDDMMYYYY(getExpiryForService(srv))}
                             </td>
                           ))
                         : (
                           <td className="p-3 font-mono text-slate-600">
-                            {t.dueDate || (t as any).expiryDate || "—"}
+                            {formatDateDDMMYYYY(t.dueDate || (t as any).expiryDate)}
                           </td>
                         )}
                       <td className="p-3 font-bold text-slate-900 font-mono">
@@ -4124,10 +4135,22 @@ function TaskDetailsSheet({
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Non - Faceless">Non - Faceless</SelectItem>
-                      <SelectItem value="Faceless">Faceless</SelectItem>
-                      <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
-                      <SelectItem value="Out Of Bhavnagar to Bhavnagar">Out Of Bhavnagar to Bhavnagar</SelectItem>
+                      {(activeTask.applicationType === "Licence" || (activeTask as any).subModule === "licence") ? (
+                        <>
+                          <SelectItem value="Non-Faceless">Non-Faceless</SelectItem>
+                          <SelectItem value="Faceless">Faceless</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                        </>
+                      ) : (
+                        <>
+                          <SelectItem value="Home">Home</SelectItem>
+                          <SelectItem value="Faceless">Faceless</SelectItem>
+                          <SelectItem value="CNG">CNG</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar">Out Of Bhavnagar</SelectItem>
+                          <SelectItem value="Out Of Bhavnagar To Bhavnagar">Out Of Bhavnagar To Bhavnagar</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -4167,8 +4190,7 @@ function TaskDetailsSheet({
                               )}
                             </div>
                           )}
-
-                          {/* Step 1 */}
+                                                          {/* Step 1 */}
                           <div className={cn(
                             "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
                             currentStep === 1 
@@ -4185,8 +4207,8 @@ function TaskDetailsSheet({
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                               <div><span className="font-semibold text-slate-500 block">LL / DL NO:</span> {lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || "GJ0120260001234"}</div>
-                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate || "—"}</div>
-                              <div><span className="font-semibold text-slate-500 block">EXPIRY / VALIDITY:</span> {lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate || "—"}</div>
+                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate)}</div>
+                              <div><span className="font-semibold text-slate-500 block">EXPIRE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate)}</div>
                             </div>
                           </div>
 
@@ -4207,8 +4229,8 @@ function TaskDetailsSheet({
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                               <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
-                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || "—"}</div>
-                              <div><span className="font-semibold text-slate-500 block">EXPIRY DATE:</span> {lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || "—"}</div>
+                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate)}</div>
+                              <div><span className="font-semibold text-slate-500 block">EXPIRE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate)}</div>
                               <div className="col-span-2">
                                 <span className="font-semibold text-slate-500 block">VEHICLE TYPE:</span> 
                                 <span className="font-bold text-blue-700">
@@ -4239,8 +4261,8 @@ function TaskDetailsSheet({
                               </div>
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
                                 <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || "—"}</div>
-                                <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate || "—"}</div>
-                                <div><span className="font-semibold text-slate-500 block">VALIDITY:</span> {lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate || "—"}</div>
+                                <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDateDDMMYYYY(lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate)}</div>
+                                <div><span className="font-semibold text-slate-500 block">EXPIRE DATE:</span> {formatDateDDMMYYYY(lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate)}</div>
                               </div>
                             </div>
                           )}

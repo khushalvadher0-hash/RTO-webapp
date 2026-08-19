@@ -66,7 +66,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { formatPaymentStatus } from "@/lib/formatting";
+import { formatPaymentStatus, formatDateDDMMYYYY } from "@/lib/formatting";
 
 const toDateString = (ts: any) => {
   if (!ts) return "";
@@ -667,8 +667,8 @@ function ApplicationsPage() {
                     <th className="py-3.5 px-4">LL NO</th>
                     <th className="py-3.5 px-4">DL NO</th>
                     <th className="py-3.5 px-4">Expire date</th>
-                    <th className="py-3.5 px-4">nt validity</th>
-                    <th className="py-3.5 px-4">tr validity</th>
+                    <th className="py-3.5 px-4">nt expire date</th>
+                    <th className="py-3.5 px-4">tr expire date</th>
                   </>
                 ) : activeSubModule === "licence" ? (
                   <>
@@ -892,14 +892,14 @@ function ApplicationsPage() {
                   if (activeSubModule === "form5") {
                     const fd = (app.form5Details || {}) as Form5DetailsData;
                     const nameVal = fd.name || "—";
-                    const dobVal = fd.dateOfBirth || "—";
+                    const dobVal = formatDateDDMMYYYY(fd.dateOfBirth);
                     const appNoVal = fd.applicationNo || "—";
                     const aadhaarVal = fd.aadhaarNumber || "—";
                     const llVal = fd.llNumber || "—";
                     const dlVal = fd.dlNumber || "—";
-                    const llExpiryVal = fd.llExpiryDate || "—";
-                    const ntVal = fd.ntValidityDate || "—";
-                    const trVal = fd.trValidityDate || "—";
+                    const llExpiryVal = formatDateDDMMYYYY(fd.llExpiryDate);
+                    const ntVal = formatDateDDMMYYYY(fd.ntValidityDate);
+                    const trVal = formatDateDDMMYYYY(fd.trValidityDate);
 
                     return (
                       <tr
@@ -1036,7 +1036,7 @@ function ApplicationsPage() {
 
                   if (activeSubModule === "licence") {
                     const ld = app.licenseDetails;
-                    const clientDob = ld?.dateOfBirth || "—";
+                    const clientDob = formatDateDDMMYYYY(ld?.dateOfBirth);
                     const acc = accountingMap.get(app.id) || accountingMap.get(app.applicationId);
                     const totalPay = acc?.totalPayment ?? app.amount ?? 0;
                     const advPay = acc?.advancePayment ?? app.totalPaid ?? 0;
@@ -1091,7 +1091,7 @@ function ApplicationsPage() {
                         <td className="py-3.5 px-4 font-mono text-slate-700">{app.mobileNumber}</td>
                         {allUniqueServices.map((srvName) => (
                           <td key={srvName} className="py-3.5 px-4 font-mono text-slate-600">
-                            {getExpiryForService(srvName)}
+                            {formatDateDDMMYYYY(getExpiryForService(srvName))}
                           </td>
                         ))}
                         <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
@@ -3887,7 +3887,7 @@ function ApplicationFormModal({
                             />
                           </div>
                           <div>
-                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRE DATE</label>
                             <input
                               type="date"
                               value={dlEndorsement.step1.validityDate}
@@ -4035,7 +4035,7 @@ function ApplicationFormModal({
                             />
                           </div>
                           <div>
-                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRE DATE</label>
                             <input
                               type="date"
                               value={dlEndorsement.step3.validityDate}
@@ -4463,7 +4463,7 @@ function ApplicationFormModal({
                             />
                           </div>
                           <div>
-                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRE DATE</label>
                             <input
                               type="date"
                               value={(llRenew as any).step3?.validityDate || ""}
@@ -4681,7 +4681,7 @@ function ApplicationFormModal({
                             />
                           </div>
                           <div>
-                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRE DATE</label>
                             <input
                               type="date"
                               value={dlRenewRetest.step1.validityDate}
@@ -4773,7 +4773,7 @@ function ApplicationFormModal({
                             />
                           </div>
                           <div>
-                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">VALIDITY</label>
+                            <label className="font-semibold text-slate-500 text-[11px] block mb-1 uppercase">EXPIRE DATE</label>
                             <input
                               type="date"
                               value={(dlRenewRetest as any).step3?.validityDate || ""}
@@ -4984,7 +4984,7 @@ function ApplicationFormModal({
                         />
                       </div>
                       <div>
-                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">VALIDITY</label>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">EXPIRE DATE</label>
                         <input
                           type="date"
                           value={genValidityDate}
@@ -5061,7 +5061,7 @@ function ApplicationFormModal({
                     <h4 className="font-bold text-slate-800 uppercase tracking-wide">HAZARDOUS TRAINING CARD</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">VALIDITY</label>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">EXPIRE DATE</label>
                         <input
                           type="date"
                           value={genHazardousTrainingValidity}
@@ -5079,7 +5079,7 @@ function ApplicationFormModal({
                     <h4 className="font-bold text-slate-800 uppercase tracking-wide">INTERNATIONAL LICENCE</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">VALIDITY</label>
+                        <label className="font-semibold text-slate-500 text-[10px] block mb-1 uppercase">EXPIRE DATE</label>
                         <input
                           type="date"
                           value={genInternationalLicenceValidity}
@@ -5692,7 +5692,7 @@ function ApplicationFormModal({
                     />
                   </div>
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">NT VALIDITY</label>
+                    <label className="font-semibold text-slate-700 block mb-1">NT EXPIRE DATE</label>
                     <input
                       type="date"
                       value={form5Details.ntValidityDate || ""}
@@ -5701,7 +5701,7 @@ function ApplicationFormModal({
                     />
                   </div>
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">TR VALIDITY</label>
+                    <label className="font-semibold text-slate-700 block mb-1">TR EXPIRE DATE</label>
                     <input
                       type="date"
                       value={form5Details.trValidityDate || ""}

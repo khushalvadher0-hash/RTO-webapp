@@ -23,6 +23,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDateDDMMYYYY } from "@/lib/formatting";
 
 import { SubModuleTabs, type SubModuleType } from "@/components/SubModuleTabs";
 import { DrivingSchoolDashboard } from "@/components/DrivingSchoolDashboard";
@@ -751,10 +752,10 @@ function Overview() {
                         </div>
 
                         <div className="text-right">
-                          <div className="font-mono text-[10px] text-slate-400">{item.expiryDate}</div>
+                          <div className="font-mono text-[10px] text-slate-400">{formatDateDDMMYYYY(item.expiryDate)}</div>
                           {item.appointmentDate && (
                             <div className="text-[10px] text-blue-600 font-bold mt-0.5 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 inline-block">
-                              Appt: {item.appointmentDate}
+                              Appt: {formatDateDDMMYYYY(item.appointmentDate)}
                             </div>
                           )}
                           <div className="mt-0.5">
