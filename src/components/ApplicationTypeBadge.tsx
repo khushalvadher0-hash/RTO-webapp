@@ -9,11 +9,19 @@ interface ApplicationTypeBadgeProps {
 export const getApplicationTypeStyle = (appType?: string) => {
   if (!appType) return {};
   const t = appType.trim().toLowerCase();
-  if (t === "home" || t === "non - faceless" || t === "non-faceless") return { borderColor: "#475569", color: "#475569", backgroundColor: "transparent" };
-  if (t === "faceless") return { borderColor: "#1d4ed8", color: "#1d4ed8", backgroundColor: "transparent" };
-  if (t === "out of bhavnagar") return { borderColor: "#b91c1c", color: "#b91c1c", backgroundColor: "transparent" };
-  if (t === "out of bhavnagar to bhavnagar") return { borderColor: "#c2410c", color: "#c2410c", backgroundColor: "transparent" };
-  if (t === "cng") return { borderColor: "#10b981", color: "#047857", backgroundColor: "transparent" };
+  let color = "";
+  if (t === "home" || t === "non - faceless" || t === "non-faceless") color = "#1e293b";
+  else if (t === "faceless") color = "#1e40af";
+  else if (t === "out of bhavnagar") color = "#991b1b";
+  else if (t === "out of bhavnagar to bhavnagar" || t === "out of bhavanagr to bhavnagar") color = "#9a3412";
+  else if (t === "cng") color = "#065f46";
+
+  if (color) {
+    return {
+      borderBottom: `3px solid ${color}`,
+      borderLeft: `4px solid ${color}`,
+    };
+  }
   return {};
 };
 

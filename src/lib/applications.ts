@@ -507,8 +507,7 @@ export async function saveApplicationAndVehicle(
 
   if (!finalAppId) {
     // ─── CREATE NEW APPLICATION: SINGLE FIRESTORE TRANSACTION ────────────
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    generatedAppIdStr = `APL-2026-${randomNum}`;
+    generatedAppIdStr = (appData as any).applicationId || "";
 
     const newAppRef = doc(collection(db, APPLICATIONS_COL));
     finalAppId = newAppRef.id;

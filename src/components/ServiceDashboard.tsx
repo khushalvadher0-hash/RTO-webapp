@@ -932,10 +932,6 @@ export function ServiceDashboard({
             <Download className="size-4 mr-1.5" />
             Export PDF
           </Button>
-          <Button size="sm" onClick={() => setWizardOpen(true)}>
-            <Plus className="size-4 mr-1.5" />
-            Add Client
-          </Button>
         </div>
       </div>
 
@@ -1008,6 +1004,7 @@ export function ServiceDashboard({
                   <th className="p-3 text-center">SR NO</th>
                   {activeSubModule === "licence" ? (
                     <>
+                      <th className="p-3">REFERENCE</th>
                       <th className="p-3">CLIENT NAME</th>
                       <th className="p-3">DOB</th>
                       <th className="p-3">MOBILE NUMBER</th>
@@ -1031,10 +1028,11 @@ export function ServiceDashboard({
                       <th className="p-3">બાકી</th>
                       <th className="p-3">PAYMENT STATUS</th>
                       <th className="p-3">STATUS OF TASK</th>
-                      <th className="p-3">REFERENCE</th>
+                      <th className="p-3">LATEST REMARK</th>
                     </>
                   ) : (
                     <>
+                      <th className="p-3">APPLICATION NUMBER</th>
                       <th className="p-3">APPOINTMENT DATE</th>
                       <th className="p-3 text-center">DAYS</th>
                       <th className="p-3 text-center">DAYS AFTER APPOINTMENT</th>
@@ -1043,6 +1041,7 @@ export function ServiceDashboard({
                       <th className="p-3 text-center">TOTAL SERVICES</th>
                       <th className="p-3">ASSIGNED EMPLOYEE</th>
                       <th className="p-3">TASK STATUS</th>
+                      <th className="p-3">LATEST REMARK</th>
                       <th className="p-3">PUC EXPIRY</th>
                       <th className="p-3">TAX EXPIRY</th>
                       <th className="p-3">FITNESS EXPIRY</th>
@@ -1053,7 +1052,6 @@ export function ServiceDashboard({
                       <th className="p-3">REGISTRATION RENEWAL</th>
                       <th className="p-3 font-bold text-slate-900">કુલ રકમ</th>
                       <th className="p-3 font-bold text-emerald-700">કુલ જમા</th>
-                      <th className="p-3">APPLICATION NUMBER</th>
                       <th className="p-3">APPLICATION TYPE</th>
                     </>
                   )}
@@ -1128,9 +1126,14 @@ export function ServiceDashboard({
                         return formatDateDDMMYYYY(t.dueDate || t.expiryDate);
                       };
 
+                      const latestComment = t.comments && t.comments.length > 0
+                        ? [...t.comments].sort((a: any, b: any) => new Date(b.at || b.createdAt).getTime() - new Date(a.at || a.createdAt).getTime())[0]?.text
+                        : (t as any).lastRemark || (t as any).remarks || "—";
+
                       return (
                         <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                          <td className="p-3 font-mono text-slate-700 font-semibold">{refCode}</td>
                           <td className="p-3 text-blue-600 font-bold">{t.clientName || "—"}</td>
                           <td className="p-3 font-mono text-slate-600">{formatDateDDMMYYYY(clientDob)}</td>
                           <td className="p-3 font-mono text-slate-500">{t.mobileNumber || t.phone || "—"}</td>
@@ -1183,23 +1186,27 @@ export function ServiceDashboard({
                               );
                             })()}
                           </td>
-                          <td className="p-3 font-mono text-slate-700 font-semibold">{refCode}</td>
+                          <td className="p-3 max-w-[150px] truncate text-slate-500 text-[11px]" title={latestComment}>
+                            {latestComment}
+                          </td>
                           <td className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  const linkedApp = appsList.find(
-                                    (a: any) =>
-                                      a.id === (t.applicationDocId || t.recordId || t.clientId || t.id.replace("task-app-", "")) ||
-                                      a.applicationId === t.applicationId
-                                  );
-                                  const appDoc = { ...linkedApp, ...t };
-                                  setSelectedAppModal(appDoc);
-                                  setAppModalOpen(true);
+                                  setEditingService(t);
+                                  setEditStatus(t.status || t.taskStatus || "Completed");
+                                  setEditAssignee(t.assignee || "");
+                                  setEditApptDate(t.appointmentDate ? formatDateDDMMYYYY(t.appointmentDate) : "");
+                                  setEditRtoReceiptAmount(t.rtoReceiptAmount || t.rtoExpense || t.rtoReceiptNo || "");
+                                  setEditAppId(t.applicationId || "");
+                                  setEditAppType(t.applicationType || "Home");
+                                  setEditRemarks(t.remarks || t.notes || "");
+                                  setEditHoldReason(t.holdReason || "");
+                                  setEditHoldDate(t.holdDate || "");
                                 }}
-                                title="View Full Licence Application Details"
+                                title="Edit Licence Service"
                               >
                                 <Eye className="size-3.5 text-blue-600" />
                               </Button>
@@ -1230,9 +1237,14 @@ export function ServiceDashboard({
 
                   const srvCount = t.services?.length || (t.serviceName ? t.serviceName.split(",").length : 1);
 
+                  const latestComment = t.comments && t.comments.length > 0
+                    ? [...t.comments].sort((a: any, b: any) => new Date(b.at || b.createdAt).getTime() - new Date(a.at || a.createdAt).getTime())[0]?.text
+                    : (t as any).lastRemark || (t as any).remarks || "—";
+
                   return (
                     <tr key={t.id} style={getApplicationTypeStyle(t.applicationType)} className="hover:bg-slate-50/40 border-b border-slate-100 transition-colors">
                       <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                      <td className="p-3 font-mono text-xs font-semibold text-blue-600">{t.applicationId || "—"}</td>
                       <td className="p-3 font-mono font-semibold text-slate-900">
                         {formatDateDDMMYYYY(t.appointmentDate)}
                       </td>
@@ -1285,6 +1297,9 @@ export function ServiceDashboard({
                           );
                         })()}
                       </td>
+                      <td className="p-3 max-w-[150px] truncate text-slate-500 text-[11px]" title={latestComment}>
+                        {latestComment}
+                      </td>
                       <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.pucExpiryDate)}</td>
                       <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.taxExpiryDate)}</td>
                       <td className="p-3 font-mono text-xs text-slate-600">{formatDateDDMMYYYY(t.fitnessExpiryDate)}</td>
@@ -1299,27 +1314,27 @@ export function ServiceDashboard({
                       <td className="p-3 font-bold text-emerald-700 font-mono">
                         ₹{Number(t.totalPaid || t.advanceAmount || 0).toLocaleString("en-IN")}
                       </td>
-                      <td className="p-3 font-mono text-xs font-semibold text-blue-600">{t.applicationId || "—"}</td>
                        <td className="p-3">
-                        <ApplicationTypeBadge appType={t.applicationType} />
-                      </td>
+                         <ApplicationTypeBadge appType={t.applicationType} />
+                       </td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              const linkedApp = appsList.find(
-                                (a: any) =>
-                                  a.id === (t.applicationDocId || t.recordId || t.clientId) ||
-                                  a.applicationId === t.applicationId ||
-                                  (t.vehicleNumber && a.vehicleNumber === t.vehicleNumber)
-                              );
-                              const appDoc = { ...linkedApp, ...t };
-                              setSelectedAppModal(appDoc);
-                              setAppModalOpen(true);
+                              setEditingService(t);
+                              setEditStatus(t.status || t.taskStatus || "Completed");
+                              setEditAssignee(t.assignee || "");
+                              setEditApptDate(t.appointmentDate ? formatDateDDMMYYYY(t.appointmentDate) : "");
+                              setEditRtoReceiptAmount(t.rtoReceiptAmount || t.rtoExpense || t.rtoReceiptNo || "");
+                              setEditAppId(t.applicationId || "");
+                              setEditAppType(t.applicationType || "Home");
+                              setEditRemarks(t.remarks || t.notes || "");
+                              setEditHoldReason(t.holdReason || "");
+                              setEditHoldDate(t.holdDate || "");
                             }}
-                            title="View Completed Vaahan Service Details"
+                            title="Edit Service"
                           >
                             <Eye className="size-3.5 text-blue-600" />
                           </Button>

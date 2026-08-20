@@ -129,8 +129,7 @@ export async function saveDrivingSchoolApplication(
   };
 
   if (!finalId) {
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    generatedAppId = `DS-2026-${randomNum}`;
+    generatedAppId = (appData as any).applicationId || "";
     docRef = doc(collection(db, DRIVING_SCHOOL_COL));
     finalId = docRef.id;
 

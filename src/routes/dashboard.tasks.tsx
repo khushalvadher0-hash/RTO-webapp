@@ -183,11 +183,19 @@ const statusBadgeClass = (s: string) => {
 const getApplicationTypeStyle = (appType?: string) => {
   if (!appType) return {};
   const t = appType.trim().toLowerCase();
-  if (t === "home") return { borderColor: "#475569", color: "#475569", backgroundColor: "transparent" };
-  if (t === "faceless") return { borderColor: "#1d4ed8", color: "#1d4ed8", backgroundColor: "transparent" };
-  if (t === "out of bhavnagar") return { borderColor: "#b91c1c", color: "#b91c1c", backgroundColor: "transparent" };
-  if (t === "cng") return { borderColor: "#047857", color: "#047857", backgroundColor: "transparent" };
-  if (t === "out of bhavnagar to bhavnagar") return { borderColor: "#c2410c", color: "#c2410c", backgroundColor: "transparent" };
+  let color = "";
+  if (t === "home" || t === "non - faceless" || t === "non-faceless") color = "#1e293b";
+  else if (t === "faceless") color = "#1e40af";
+  else if (t === "out of bhavnagar") color = "#991b1b";
+  else if (t === "cng") color = "#065f46";
+  else if (t === "out of bhavnagar to bhavnagar" || t === "out of bhavanagr to bhavnagar") color = "#9a3412";
+
+  if (color) {
+    return {
+      borderBottom: `3px solid ${color}`,
+      borderLeft: `4px solid ${color}`,
+    };
+  }
   return {};
 };
 
@@ -1233,8 +1241,8 @@ function TasksPage() {
         throw new Error(`RTO Receipt Amount (₹${rtoReceipt}) cannot exceed Outstanding + Advance (₹${totalCharges}).`);
       }
 
-      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
-      const profit = outstanding - rtoExpense;
+      const outstanding = Math.max(0, totalCharges - advancePaid);
+      const profit = outstanding - rtoReceipt - rtoExpense;
 
       if (appDocId) {
         const accRef = doc(db, "registry_accounting", appDocId);
@@ -2353,6 +2361,7 @@ function TaskTable({
                     <th className="p-3">બાકી</th>
                     <th className="p-3">PAYMENT STATUS</th>
                     <th className="p-3">STATUS OF TASK</th>
+                    <th className="p-3">LATEST REMARK</th>
                     <th className="p-3">ASSIGNED TO</th>
                   </>
                 ) : isLicenceSubModule ? (
@@ -2372,6 +2381,7 @@ function TaskTable({
                     <th className="p-3">બાકી</th>
                     <th className="p-3">PAYMENT STATUS</th>
                     <th className="p-3">STATUS OF TASK</th>
+                    <th className="p-3">LATEST REMARK</th>
                     <th className="p-3">REFERENCE</th>
                   </>
                 ) : (
@@ -2382,6 +2392,7 @@ function TaskTable({
                     <th className="p-3 text-center">TOTAL SERVICES</th>
                     <th className="p-3">ASSIGNED EMPLOYEE</th>
                     <th className="p-3">TASK STATUS</th>
+                    <th className="p-3">LATEST REMARK</th>
                     <th className="p-3">APPLICATION NO.</th>
                     <th className="p-3">PUC EXPIRY</th>
                     <th className="p-3">TAX EXPIRY</th>
@@ -2476,6 +2487,10 @@ function TaskTable({
                   const rawStatus = acc?.paymentStatus ?? (t as any).paymentStatus ?? (remPay <= 0 ? "Paid" : advPay > 0 ? "Partially Paid" : "Pending");
                   const pStatus = rawStatus === "Partially Paid" ? "Partial" : rawStatus;
 
+                  const latestComment = t.comments && t.comments.length > 0
+                    ? [...t.comments].sort((a: any, b: any) => new Date(b.at || b.createdAt).getTime() - new Date(a.at || a.createdAt).getTime())[0]?.text
+                    : (t as any).lastRemark || (t as any).remarks || "—";
+
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                       <td className="p-3 text-center font-mono text-slate-400 font-semibold">{srNo}</td>
@@ -2522,6 +2537,9 @@ function TaskTable({
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td className="p-3 max-w-[150px] truncate text-slate-500 text-[11px]" title={latestComment}>
+                        {latestComment}
                       </td>
                       <td className="p-3 text-slate-700 font-semibold">{t.assignee || t.assignedEmployeeName || "—"}</td>
                       <td className="p-3 text-center">
@@ -2576,6 +2594,9 @@ function TaskTable({
                   };
 
                   const appType = (t as any).applicationType || acc?.applicationType || "Home";
+                  const latestComment = t.comments && t.comments.length > 0
+                    ? [...t.comments].sort((a: any, b: any) => new Date(b.at || b.createdAt).getTime() - new Date(a.at || a.createdAt).getTime())[0]?.text
+                    : (t as any).lastRemark || (t as any).remarks || "—";
 
                   return (
                     <tr key={t.id} style={getApplicationTypeStyle(appType)} className="hover:bg-slate-50/60 transition-colors">
@@ -2630,6 +2651,9 @@ function TaskTable({
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td className="p-3 max-w-[150px] truncate text-slate-500 text-[11px]" title={latestComment}>
+                        {latestComment}
                       </td>
                       <td className="p-3 font-mono text-slate-700 font-semibold">{refCode}</td>
                       <td className="p-3 text-center">
@@ -2695,6 +2719,10 @@ function TaskTable({
                 const totalServices = srvList.length || 1;
                 
                 const assignedEmployee = tRaw.assignedEmployeeName || tRaw.assignee || linkedApp?.assignedEmployeeName || "Unassigned";
+
+                const latestComment = t.comments && t.comments.length > 0
+                  ? [...t.comments].sort((a: any, b: any) => new Date(b.at || b.createdAt).getTime() - new Date(a.at || a.createdAt).getTime())[0]?.text
+                  : (t as any).lastRemark || (t as any).remarks || "—";
                 
                 const pucExp = formatDateDDMMYYYY(appRaw.pucExpiryDate || v.pucExpiryDate || v.pucDetails?.expiryDate);
                 const taxExp = formatDateDDMMYYYY(appRaw.taxExpiryDate || v.taxExpiryDate || v.taxDetails?.expiryDate);
@@ -2747,6 +2775,9 @@ function TaskTable({
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="p-3 max-w-[150px] truncate text-slate-500 text-[11px]" title={latestComment}>
+                      {latestComment}
                     </td>
                     <td className="p-3 font-semibold text-blue-600 font-mono">
                       {appNo}
@@ -3719,6 +3750,24 @@ function TaskDetailsSheet({
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [sheetApplicationId, setSheetApplicationId] = useState("");
   const [sheetApplicationType, setSheetApplicationType] = useState("Home");
+  const [licenseForm, setLicenseForm] = useState<any>(null);
+
+  const updateLicenseField = (path: string, value: any) => {
+    setLicenseForm((prev: any) => {
+      const updated = prev ? { ...prev } : {};
+      const parts = path.split(".");
+      let current = updated;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) {
+          current[parts[i]] = {};
+        }
+        current[parts[i]] = { ...current[parts[i]] };
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = value;
+      return updated;
+    });
+  };
   
   // Vahaan specific states
   const [showVahaanHoldModal, setShowVahaanHoldModal] = useState(false);
@@ -3756,6 +3805,7 @@ function TaskDetailsSheet({
     if (!open || !initialTask.id) return;
     setLiveTask(null);
     setLinkedApp(null);
+    setLicenseForm(null);
     setRemarkInput("");
     
     setSelectedStatus(initialTask.status || "Read");
@@ -3789,7 +3839,9 @@ function TaskDetailsSheet({
       if (targetAppId) {
         getDoc(doc(db, "registry_applications_v1", targetAppId)).then((aSnap) => {
           if (aSnap.exists()) {
-            setLinkedApp({ id: aSnap.id, ...aSnap.data() });
+            const appData: any = { id: aSnap.id, ...aSnap.data() };
+            setLinkedApp(appData);
+            setLicenseForm(appData.licenseDetails || {});
           }
         }).catch(console.error);
       }
@@ -3836,6 +3888,7 @@ function TaskDetailsSheet({
         done: selectedStatus === "Completed" || selectedStatus === "COMPLETED",
         applicationId: sheetApplicationId.trim(),
         applicationType: sheetApplicationType,
+        licenseDetails: licenseForm || {},
       };
 
       const appDocId = (activeTask as any).applicationDocId || activeTask.recordId || activeTask.id.replace("task-app-", "");
@@ -3844,6 +3897,7 @@ function TaskDetailsSheet({
         await setDoc(appRef, {
           applicationId: sheetApplicationId.trim(),
           applicationType: sheetApplicationType,
+          licenseDetails: licenseForm || {},
           updatedAt: new Date().toISOString(),
         }, { merge: true }).catch(() => {});
         
@@ -4167,7 +4221,7 @@ function TaskDetailsSheet({
                 <CollapsibleSection title="Task Step Detail (License Workflow)" defaultOpen={true}>
                   <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs">
                     {(() => {
-                      const lic = (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
+                      const lic = licenseForm || (activeTask as any).licenseDetails || linkedApp?.licenseDetails || {};
                       const currentStep = (activeTask as any).currentStep || 1;
                       
                       // Render 2 steps for New Learning Licence or 3 steps for DL New LL Endorsement / Renewals
@@ -4192,53 +4246,168 @@ function TaskDetailsSheet({
                           )}
                                                           {/* Step 1 */}
                           <div className={cn(
-                            "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
-                            currentStep === 1 
-                              ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
-                              : "bg-slate-100/40 border-slate-200 opacity-60"
+                            "p-3 rounded-lg border shadow-sm space-y-1 transition-all bg-white border-blue-200"
                           )}>
                             <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
                               <span className={cn(
-                                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                                currentStep === 1 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-blue-600 text-white"
                               )}>1</span>
                               <span>STEP 1: LEARNING / DL DETAILS</span>
                               {currentStep === 1 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
                             </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
-                              <div><span className="font-semibold text-slate-500 block">LL / DL NO:</span> {lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || "GJ0120260001234"}</div>
-                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate)}</div>
-                              <div><span className="font-semibold text-slate-500 block">EXPIRE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate)}</div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                              <div>
+                                <span className="font-semibold text-slate-500 block mb-0.5">LL / DL NO:</span>
+                                <Input
+                                  className="h-7 text-xs bg-slate-50"
+                                  value={lic.newLearningLicence?.step1?.llNumber || lic.dlNewLlEndorsement?.step1?.dlNumber || ""}
+                                  onChange={(e) => {
+                                    if (lic.newLearningLicence?.enabled) {
+                                      updateLicenseField("newLearningLicence.step1.llNumber", e.target.value);
+                                    } else {
+                                      updateLicenseField("dlNewLlEndorsement.step1.dlNumber", e.target.value);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-500 block mb-0.5">ISSUE DATE:</span>
+                                <Input
+                                  type="date"
+                                  className="h-7 text-xs bg-slate-50"
+                                  value={lic.newLearningLicence?.step1?.issueDate || lic.dlNewLlEndorsement?.step1?.issueDate || ""}
+                                  onChange={(e) => {
+                                    if (lic.newLearningLicence?.enabled) {
+                                      updateLicenseField("newLearningLicence.step1.issueDate", e.target.value);
+                                    } else {
+                                      updateLicenseField("dlNewLlEndorsement.step1.issueDate", e.target.value);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-500 block mb-0.5">EXPIRE DATE:</span>
+                                <Input
+                                  type="date"
+                                  className="h-7 text-xs bg-slate-50"
+                                  value={lic.newLearningLicence?.step1?.expiryDate || lic.dlNewLlEndorsement?.step1?.validityDate || ""}
+                                  onChange={(e) => {
+                                    if (lic.newLearningLicence?.enabled) {
+                                      updateLicenseField("newLearningLicence.step1.expiryDate", e.target.value);
+                                    } else {
+                                      updateLicenseField("dlNewLlEndorsement.step1.validityDate", e.target.value);
+                                    }
+                                  }}
+                                />
+                              </div>
                             </div>
                           </div>
 
                           {/* Step 2 */}
                           <div className={cn(
-                            "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
-                            currentStep === 2 
-                              ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
-                              : "bg-slate-100/40 border-slate-200 opacity-60"
+                            "p-3 rounded-lg border shadow-sm space-y-1 transition-all bg-white border-blue-200"
                           )}>
                             <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
                               <span className={cn(
-                                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                                currentStep === 2 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-blue-600 text-white"
                               )}>2</span>
                               <span>STEP 2: DRIVING LICENCE DETAILS</span>
                               {currentStep === 2 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
                             </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
-                              <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || "GJ01 20260001234"}</div>
-                              <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate)}</div>
-                              <div><span className="font-semibold text-slate-500 block">EXPIRE DATE:</span> {formatDateDDMMYYYY(lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate)}</div>
-                              <div className="col-span-2">
-                                <span className="font-semibold text-slate-500 block">VEHICLE TYPE:</span> 
-                                <span className="font-bold text-blue-700">
-                                  {lic.newLearningLicence?.step2?.vehicleTypes?.nt ? "NT " : ""}
-                                  {lic.newLearningLicence?.step2?.vehicleTypes?.tr ? "TR " : ""}
-                                  {lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "Hazardous" : ""}
-                                  {!lic.newLearningLicence?.step2?.vehicleTypes?.nt && !lic.newLearningLicence?.step2?.vehicleTypes?.tr && !lic.newLearningLicence?.step2?.vehicleTypes?.hazardous ? "NT" : ""}
-                                </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                              <div>
+                                <span className="font-semibold text-slate-500 block mb-0.5">DL NO:</span>
+                                <Input
+                                  className="h-7 text-xs bg-slate-50"
+                                  value={lic.newLearningLicence?.step2?.dlNumber || lic.dlNewLlEndorsement?.step2?.llNumber || ""}
+                                  onChange={(e) => {
+                                    if (lic.newLearningLicence?.enabled) {
+                                      updateLicenseField("newLearningLicence.step2.dlNumber", e.target.value);
+                                    } else {
+                                      updateLicenseField("dlNewLlEndorsement.step2.llNumber", e.target.value);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-500 block mb-0.5">ISSUE DATE:</span>
+                                <Input
+                                  type="date"
+                                  className="h-7 text-xs bg-slate-50"
+                                  value={lic.newLearningLicence?.step2?.issueDate || lic.dlNewLlEndorsement?.step2?.issueDate || ""}
+                                  onChange={(e) => {
+                                    if (lic.newLearningLicence?.enabled) {
+                                      updateLicenseField("newLearningLicence.step2.issueDate", e.target.value);
+                                    } else {
+                                      updateLicenseField("dlNewLlEndorsement.step2.issueDate", e.target.value);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-500 block mb-0.5">EXPIRE DATE:</span>
+                                <Input
+                                  type="date"
+                                  className="h-7 text-xs bg-slate-50"
+                                  value={lic.newLearningLicence?.step2?.validityDate || lic.dlNewLlEndorsement?.step2?.expiryDate || ""}
+                                  onChange={(e) => {
+                                    if (lic.newLearningLicence?.enabled) {
+                                      updateLicenseField("newLearningLicence.step2.validityDate", e.target.value);
+                                    } else {
+                                      updateLicenseField("dlNewLlEndorsement.step2.expiryDate", e.target.value);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="col-span-1 sm:col-span-3">
+                                <span className="font-semibold text-slate-500 block mb-0.5">VEHICLE TYPE:</span> 
+                                <div className="flex gap-4 items-center mt-1 text-xs">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      className="size-3.5 accent-blue-600 rounded"
+                                      checked={!!(lic.newLearningLicence?.step2?.vehicleTypes?.nt || lic.dlNewLlEndorsement?.step1?.vehicleTypes?.nt)}
+                                      onChange={(e) => {
+                                        if (lic.newLearningLicence?.enabled) {
+                                          updateLicenseField("newLearningLicence.step2.vehicleTypes.nt", e.target.checked);
+                                        } else {
+                                          updateLicenseField("dlNewLlEndorsement.step1.vehicleTypes.nt", e.target.checked);
+                                        }
+                                      }}
+                                    />
+                                    NT
+                                  </label>
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      className="size-3.5 accent-blue-600 rounded"
+                                      checked={!!(lic.newLearningLicence?.step2?.vehicleTypes?.tr || lic.dlNewLlEndorsement?.step1?.vehicleTypes?.tr)}
+                                      onChange={(e) => {
+                                        if (lic.newLearningLicence?.enabled) {
+                                          updateLicenseField("newLearningLicence.step2.vehicleTypes.tr", e.target.checked);
+                                        } else {
+                                          updateLicenseField("dlNewLlEndorsement.step1.vehicleTypes.tr", e.target.checked);
+                                        }
+                                      }}
+                                    />
+                                    TR
+                                  </label>
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      className="size-3.5 accent-blue-600 rounded"
+                                      checked={!!(lic.newLearningLicence?.step2?.vehicleTypes?.hazardous || lic.dlNewLlEndorsement?.step1?.vehicleTypes?.hazardous)}
+                                      onChange={(e) => {
+                                        if (lic.newLearningLicence?.enabled) {
+                                          updateLicenseField("newLearningLicence.step2.vehicleTypes.hazardous", e.target.checked);
+                                        } else {
+                                          updateLicenseField("dlNewLlEndorsement.step1.vehicleTypes.hazardous", e.target.checked);
+                                        }
+                                      }}
+                                    />
+                                    Hazardous
+                                  </label>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -4246,23 +4415,60 @@ function TaskDetailsSheet({
                           {/* Step 3 (For 3-step License Services) */}
                           {(lic.dlNewLlEndorsement?.enabled || lic.llRenewClass?.enabled || lic.dlRenewRetest?.enabled) && (
                             <div className={cn(
-                              "p-3 rounded-lg border shadow-sm space-y-1 transition-all",
-                              currentStep === 3 
-                                ? "bg-white border-blue-500 ring-2 ring-blue-500/20" 
-                                : "bg-slate-100/40 border-slate-200 opacity-60"
+                              "p-3 rounded-lg border shadow-sm space-y-1 transition-all bg-white border-blue-200"
                             )}>
                               <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
                                 <span className={cn(
-                                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                                  currentStep === 3 ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"
+                                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-blue-600 text-white"
                                 )}>3</span>
                                 <span>STEP 3: FINAL DL DETAILS & ENDORSEMENT</span>
                                 {currentStep === 3 && <span className="ml-auto text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shadow-sm">Active</span>}
                               </div>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
-                                <div><span className="font-semibold text-slate-500 block">DL NO:</span> {lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || "—"}</div>
-                                <div><span className="font-semibold text-slate-500 block">ISSUE DATE:</span> {formatDateDDMMYYYY(lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate)}</div>
-                                <div><span className="font-semibold text-slate-500 block">EXPIRE DATE:</span> {formatDateDDMMYYYY(lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate)}</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-700">
+                                <div>
+                                  <span className="font-semibold text-slate-500 block mb-0.5">DL NO:</span>
+                                  <Input
+                                    className="h-7 text-xs bg-slate-50"
+                                    value={lic.dlNewLlEndorsement?.step3?.dlNumber || lic.dlRenewRetest?.step3?.dlNumber || ""}
+                                    onChange={(e) => {
+                                      if (lic.dlNewLlEndorsement?.enabled) {
+                                        updateLicenseField("dlNewLlEndorsement.step3.dlNumber", e.target.value);
+                                      } else {
+                                        updateLicenseField("dlRenewRetest.step3.dlNumber", e.target.value);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-slate-500 block mb-0.5">ISSUE DATE:</span>
+                                  <Input
+                                    type="date"
+                                    className="h-7 text-xs bg-slate-50"
+                                    value={lic.dlNewLlEndorsement?.step3?.issueDate || lic.dlRenewRetest?.step3?.issueDate || ""}
+                                    onChange={(e) => {
+                                      if (lic.dlNewLlEndorsement?.enabled) {
+                                        updateLicenseField("dlNewLlEndorsement.step3.issueDate", e.target.value);
+                                      } else {
+                                        updateLicenseField("dlRenewRetest.step3.issueDate", e.target.value);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-slate-500 block mb-0.5">EXPIRE DATE:</span>
+                                  <Input
+                                    type="date"
+                                    className="h-7 text-xs bg-slate-50"
+                                    value={lic.dlNewLlEndorsement?.step3?.validityDate || lic.dlRenewRetest?.step3?.validityDate || ""}
+                                    onChange={(e) => {
+                                      if (lic.dlNewLlEndorsement?.enabled) {
+                                        updateLicenseField("dlNewLlEndorsement.step3.validityDate", e.target.value);
+                                      } else {
+                                        updateLicenseField("dlRenewRetest.step3.validityDate", e.target.value);
+                                      }
+                                    }}
+                                  />
+                                </div>
                               </div>
                             </div>
                           )}

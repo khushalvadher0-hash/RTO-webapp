@@ -424,9 +424,9 @@ function AccountingDashboardPage() {
       const totalCharges = isDrivingSchoolHolder ? 0 : (acc?.totalCharges !== undefined ? Number(acc.totalCharges) : totAmt);
       const advancePaid = isDrivingSchoolHolder ? 0 : (acc?.advancePaid !== undefined ? Number(acc.advancePaid) : totPaid);
       const rtoReceipt = isDrivingSchoolHolder ? 0 : (acc?.rtoReceipt !== undefined ? Number(acc.rtoReceipt) : 0);
-      const outstanding = isDrivingSchoolHolder ? 0 : Math.max(0, totalCharges - advancePaid - rtoReceipt);
+      const outstanding = isDrivingSchoolHolder ? 0 : Math.max(0, totalCharges - advancePaid);
       const rtoExpense = isDrivingSchoolHolder ? 0 : (acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : (Number(app.rtoExpense) || 0));
-      const profit = isDrivingSchoolHolder ? 0 : (outstanding - rtoExpense);
+      const profit = isDrivingSchoolHolder ? 0 : (outstanding - rtoReceipt - rtoExpense);
 
       summariesMap.set(app.id, {
         clientId: app.id,
@@ -589,8 +589,8 @@ function AccountingDashboardPage() {
       const rtoExpense = acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : 0;
       const totalCharges = acc?.totalCharges !== undefined ? Number(acc.totalCharges) : group.totalAmount;
       const advancePaid = acc?.advancePaid !== undefined ? Number(acc.advancePaid) : group.totalReceived;
-      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
-      const profit = outstanding - rtoExpense;
+      const outstanding = Math.max(0, totalCharges - advancePaid);
+      const profit = outstanding - rtoReceipt - rtoExpense;
 
       const paymentStatus =
         outstanding === 0
@@ -710,8 +710,8 @@ function AccountingDashboardPage() {
       const rtoExpense = isDrivingSchoolHolder ? 0 : (acc?.rtoExpense !== undefined ? Number(acc.rtoExpense) : (Number(app.rtoExpense) || 0));
       const totalCharges = isDrivingSchoolHolder ? 0 : (acc?.totalCharges !== undefined ? Number(acc.totalCharges) : totAmt);
       const advancePaid = isDrivingSchoolHolder ? 0 : (acc?.advancePaid !== undefined ? Number(acc.advancePaid) : totPaid);
-      const outstanding = isDrivingSchoolHolder ? 0 : Math.max(0, totalCharges - advancePaid - rtoReceipt);
-      const profit = isDrivingSchoolHolder ? 0 : (outstanding - rtoExpense);
+      const outstanding = isDrivingSchoolHolder ? 0 : Math.max(0, totalCharges - advancePaid);
+      const profit = isDrivingSchoolHolder ? 0 : (outstanding - rtoReceipt - rtoExpense);
 
       const balAmt = outstanding;
       const paymentStatus = isDrivingSchoolHolder ? "Driving School Holder" : (acc?.paymentStatus ?? (balAmt === 0 && totalCharges > 0 ? "Paid" : advancePaid > 0 ? "Partially Paid" : "Pending"));
@@ -1407,8 +1407,8 @@ function AccountingDashboardPage() {
         rtoReceipt = Number(existingAccData.rtoReceipt) || 0;
       }
 
-      const outstanding = Math.max(0, totalCharges - advancePaid - rtoReceipt);
-      const profit = outstanding - expenseVal;
+      const outstanding = Math.max(0, totalCharges - advancePaid);
+      const profit = outstanding - rtoReceipt - expenseVal;
 
       await setDoc(accRef, {
         ...existingAccData,

@@ -139,6 +139,8 @@ export function ClientDetailWorkspace({
   const [serviceForm, setServiceForm] = useState<Partial<Service>>({});
   const [activeEmployees, setActiveEmployees] = useState<UserRecord[]>([]);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
+  const [clientApplications, setClientApplications] = useState<any[]>([]);
+  const [clientTasks, setClientTasks] = useState<any[]>([]);
 
   const [docFields, setDocFields] = useState<Record<string, { documentNumber?: string; expiryDate?: string }>>({});
   const [personalDocsCollapsed, setPersonalDocsCollapsed] = useState(true);
@@ -335,6 +337,25 @@ export function ClientDetailWorkspace({
     };
   }, [clientId]);
 
+  // Load real-time client applications and tasks to extract appointment date
+  useEffect(() => {
+    if (!clientId) return;
+    const qApps = query(collection(db, "registry_applications_v1"), where("clientId", "==", clientId));
+    const unsubApps = onSnapshot(qApps, (snap) => {
+      setClientApplications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    const qTasks = query(collection(db, "tasks"), where("clientId", "==", clientId));
+    const unsubTasks = onSnapshot(qTasks, (snap) => {
+      setClientTasks(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => {
+      unsubApps();
+      unsubTasks();
+    };
+  }, [clientId]);
+
   // Handle Client Save
   const handleEditClient = () => {
     if (!canEdit) {
@@ -456,6 +477,7 @@ export function ClientDetailWorkspace({
         serviceType: defaultServiceType,
         applicationType: isLic ? "Non-Faceless" : "Home",
         dueDate: "",
+        appointmentDate: "",
         serviceAmount: undefined,
         amountReceived: undefined,
         advancePayment: undefined,
@@ -1273,6 +1295,24 @@ export function ClientDetailWorkspace({
                               <Badge variant="outline" className="text-[10px]">
                                 {s.taskStatus}
                               </Badge>
+                              {(() => {
+                                const linkedApp = clientApplications.find(
+                                  (app) => app.applicationId === s.applicationId || app.id === s.applicationId
+                                );
+                                const linkedAppDate = linkedApp?.appointmentDate || 
+                                  linkedApp?.licenseDetails?.newLearningLicence?.appointmentDate || 
+                                  linkedApp?.licenseDetails?.llRenewClass?.appointmentDate;
+                                const linkedTask = clientTasks.find(
+                                  (t) => t.serviceId === s.id || t.applicationId === s.applicationId
+                                );
+                                const linkedTaskDate = linkedTask?.appointmentDate;
+                                const apptDate = (s as any).appointmentDate || linkedTaskDate || linkedAppDate;
+                                return apptDate ? (
+                                  <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
+                                    Appt: {formatDateDDMMYYYY(apptDate)}
+                                  </Badge>
+                                ) : null;
+                              })()}
                               {s.dueDate && (
                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                                   <Calendar className="size-3" />
@@ -1481,11 +1521,20 @@ export function ClientDetailWorkspace({
                                       <Badge variant="outline" className="text-[10px]">
                                         {s.taskStatus}
                                       </Badge>
-                                      {(s as any).appointmentDate && (
-                                        <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
-                                          Appt: {formatDateDDMMYYYY((s as any).appointmentDate)}
-                                        </Badge>
-                                      )}
+                                      {(() => {
+                                        const vApp = clientApplications.find(
+                                          (app) => app.applicationId === s.applicationId || app.id === s.applicationId
+                                        );
+                                        const vTask = clientTasks.find(
+                                          (t) => t.serviceId === s.id || t.applicationId === s.applicationId
+                                        );
+                                        const vApptDate = (s as any).appointmentDate || vTask?.appointmentDate || vApp?.appointmentDate;
+                                        return vApptDate ? (
+                                          <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
+                                            Appt: {formatDateDDMMYYYY(vApptDate)}
+                                          </Badge>
+                                        ) : null;
+                                      })()}
                                       {s.dueDate && (
                                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                                           <Calendar className="size-3" />
@@ -2196,6 +2245,14 @@ export function ClientDetailWorkspace({
                 type="date"
                 value={serviceForm.dueDate || ""}
                 onChange={(e) => setServiceForm({ ...serviceForm, dueDate: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold uppercase">Appointment Date</Label>
+              <Input
+                type="date"
+                value={serviceForm.appointmentDate ? serviceForm.appointmentDate.slice(0, 10) : ""}
+                onChange={(e) => setServiceForm({ ...serviceForm, appointmentDate: e.target.value })}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">

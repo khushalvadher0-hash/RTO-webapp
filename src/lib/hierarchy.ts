@@ -101,6 +101,7 @@ export interface Service {
   title?: string;
   description?: string;
   subtasks?: any[];
+  appointmentDate?: string;
 }
 
 export interface ClientAccounting {
